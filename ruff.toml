@@ -1,0 +1,35 @@
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = [".venv", "build", "dist"]
+
+[lint]
+select = [
+    "E", "F", "W",
+    "I",
+    "N",
+    "UP",
+    "B",
+    "C4",
+    "SIM",
+    "RUF",
+    "PIE",
+    "PT",
+    "RET",
+    "ARG",
+    "PL",
+    "TRY",
+    "PERF",
+    "FURB",
+    "LOG",
+    "G",
+]
+ignore = ["PLR2004"]
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["PLR2004", "S101", "ARG", "FBT"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
