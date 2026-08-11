@@ -18,7 +18,19 @@ def acquire_point_cloud_from_observation(observation_path: Path) -> np.ndarray:
     Raises:
         FileNotFoundError: If ``observation_path`` does not exist.
     """
-    raise NotImplementedError
+    if not isinstance(observation_path, Path):
+        raise TypeError("observation_path must be a pathlib.Path instance")
+    if not observation_path.exists():
+        raise FileNotFoundError(f"Observation path '{observation_path}' does not exist")
+    try:
+        pts = np.load(observation_path)
+    except Exception as e:
+        raise ValueError(f"Failed to load observation: {e}") from e
+    if not isinstance(pts, np.ndarray) or pts.ndim != 2 or pts.shape[1] != 3:
+        raise ValueError("Invalid observation shape: expected (N, 3)")
+    if not np.isfinite(pts).all():
+        raise ValueError("Observation point cloud contains non-finite values")
+    return pts
 
 
 def acquire_point_cloud_stream(observation_paths: list[Path]) -> Iterator[np.ndarray]:

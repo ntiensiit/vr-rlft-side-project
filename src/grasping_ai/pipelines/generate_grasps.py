@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 
@@ -20,7 +21,7 @@ def build_generation_pipeline(
     Returns:
         Candidate grasp poses as a numpy array.
     """
-    raise NotImplementedError
+    return grasp_generator(object_point_cloud, num_candidates)
 
 
 def generate_grasps_for_dataset(
@@ -38,7 +39,7 @@ def generate_grasps_for_dataset(
     Returns:
         List of per-object candidate grasp-pose arrays.
     """
-    raise NotImplementedError
+    return [grasp_generator(pc, num_candidates) for pc in dataset_point_clouds]
 
 
 def write_generated_grasps(output_path: Path, grasps_by_object: dict[str, np.ndarray]) -> None:
@@ -48,4 +49,12 @@ def write_generated_grasps(output_path: Path, grasps_by_object: dict[str, np.nda
         output_path: Destination path for the generated-grasp file.
         grasps_by_object: Mapping from object identifier to grasp-pose array.
     """
-    raise NotImplementedError
+    if not isinstance(output_path, Path):
+        raise TypeError("output_path must be a pathlib.Path instance")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        from typing import Any
+        np.save(output_path, cast(Any, grasps_by_object), allow_pickle=True)
+    except Exception as e:
+        raise ValueError(f"Failed to write generated grasps: {e}") from e

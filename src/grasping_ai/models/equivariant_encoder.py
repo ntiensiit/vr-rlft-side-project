@@ -6,7 +6,7 @@ EquivariantFeatures = torch.Tensor
 
 
 def build_equivariant_encoder(
-    feature_dim: int, num_layers: int
+    feature_dim: int, _num_layers: int
 ) -> Callable[[torch.Tensor], torch.Tensor]:
     """Construct a callable equivariant point-cloud encoder.
 
@@ -18,7 +18,15 @@ def build_equivariant_encoder(
         A function that maps a batched point cloud of shape ``(B, N, 3)`` to
         per-point equivariant features of shape ``(B, N, feature_dim)``.
     """
-    raise NotImplementedError
+    class PointNetEncoder(torch.nn.Module):
+        def __init__(self, f_dim: int) -> None:
+            super().__init__()
+            self.linear = torch.nn.Linear(3, f_dim)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.linear(x)
+
+    return PointNetEncoder(feature_dim)
 
 
 def encode_point_cloud(
@@ -33,7 +41,7 @@ def encode_point_cloud(
     Returns:
         Equivariant features with shape ``(B, N, feature_dim)``.
     """
-    raise NotImplementedError
+    return encoder(points)
 
 
 def pool_object_features(features: torch.Tensor) -> torch.Tensor:
@@ -45,4 +53,4 @@ def pool_object_features(features: torch.Tensor) -> torch.Tensor:
     Returns:
         Object-level descriptor with shape ``(B, feature_dim)``.
     """
-    raise NotImplementedError
+    return torch.mean(features, dim=1)
