@@ -15,6 +15,8 @@ def run_training_pipeline(
     num_epochs: int,
     batch_size: int,
     device: str,
+    seed: int | None = None,
+    experiment_log_dir: Path | None = None,
 ) -> None:
     """Run the end-to-end supervised training pipeline for grasp generation.
 
@@ -28,6 +30,8 @@ def run_training_pipeline(
         num_epochs: Number of training epochs to perform.
         batch_size: Training batch size.
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
+        seed: Optional random seed for reproducible training.
+        experiment_log_dir: Optional path to write TensorBoard experiment events.
     """
     if not isinstance(dataset_root, Path):
         raise TypeError("dataset_root must be a pathlib.Path instance")
@@ -35,6 +39,9 @@ def run_training_pipeline(
         raise FileNotFoundError(f"Dataset root does not exist: {dataset_root}")
 
     import numpy as np
+
+    if seed is not None:
+        torch.manual_seed(seed)
 
     # Build components
     components = build_supervised_training_components(
@@ -83,24 +90,29 @@ def run_training_pipeline(
     model_generator = cast(GraspGeneratorModel, model)
     loss_fn = build_diffusion_score_loss(model_generator.score_net)
     training_step = build_training_step(
-        model_generator, loss_fn, cast(torch.optim.Optimizer, optimizer), device
+        model_generator, loss_fn, cast(torch.optim.Optimizer, optimizer), device, seed=seed
     )
 
     # Iterable loader helper
     class TrainingDataloader:
         def __init__(
-            self, pairs: list[tuple[torch.Tensor, torch.Tensor]], b_size: int, dev: str
+            self,
+            pairs: list[tuple[torch.Tensor, torch.Tensor]],
+            b_size: int,
+            dev: str,
+            s: int | None,
         ) -> None:
             self.pairs = pairs
             self.b_size = b_size
             self.dev = dev
+            self.seed = s
 
         def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
             num_samples = len(self.pairs)
             indices = list(range(num_samples))
             import random
-            random.seed(42)
-            random.shuffle(indices)
+            local_random = random.Random(self.seed if self.seed is not None else 42)
+            local_random.shuffle(indices)
 
             for i in range(0, num_samples, self.b_size):
                 batch_indices = indices[i : i + self.b_size]
@@ -117,9 +129,33 @@ def run_training_pipeline(
 
                 yield cond, targets
 
-    dataloader = TrainingDataloader(training_pairs, batch_size, device)
+    dataloader = TrainingDataloader(training_pairs, batch_size, device, seed)
     dataloader_iter = cast(Iterator[tuple[torch.Tensor, torch.Tensor]], iter(dataloader))
-    run_training_loop(training_step, dataloader_iter, num_epochs, checkpoint_path, log_every=10)
+
+    metadata = {
+        "dataset_root": str(dataset_root),
+        "checkpoint_path": str(checkpoint_path),
+        "feature_dim": feature_dim,
+        "hidden_dim": hidden_dim,
+        "num_layers": num_layers,
+        "learning_rate": learning_rate,
+        "num_epochs": num_epochs,
+        "batch_size": batch_size,
+        "device": device,
+    }
+    if seed is not None:
+        metadata["seed"] = seed
+
+    run_training_loop(
+        training_step,
+        dataloader_iter,
+        num_epochs,
+        checkpoint_path,
+        log_every=10,
+        experiment_log_dir=experiment_log_dir,
+        metadata=metadata,
+        seed=seed,
+    )
 
 
 def build_supervised_training_components(

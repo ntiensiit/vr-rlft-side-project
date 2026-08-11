@@ -113,12 +113,17 @@ def aggregate_evaluation_results(
     }
 
 
-def write_evaluation_report(report_path: Path, results: dict[str, float]) -> None:
+def write_evaluation_report(
+    report_path: Path,
+    results: dict[str, float],
+    experiment_log_dir: Path | None = None,
+) -> None:
     """Persist a human-readable evaluation report to disk.
 
     Args:
         report_path: Destination path for the report file.
         results: Aggregated evaluation metrics to serialize.
+        experiment_log_dir: Optional path to write TensorBoard experiment events.
     """
     if not isinstance(report_path, Path):
         raise TypeError("report_path must be a pathlib.Path instance")
@@ -129,3 +134,14 @@ def write_evaluation_report(report_path: Path, results: dict[str, float]) -> Non
             json.dump(results, fp, indent=4)
     except Exception as e:
         raise ValueError(f"Failed to write evaluation report: {e}") from e
+
+    if experiment_log_dir is not None:
+        from torch.utils.tensorboard import SummaryWriter
+
+        writer = SummaryWriter(log_dir=str(experiment_log_dir))
+        try:
+            for k, v in results.items():
+                if isinstance(v, (int, float)):
+                    writer.add_scalar(k, float(v), global_step=0)
+        finally:
+            writer.close()

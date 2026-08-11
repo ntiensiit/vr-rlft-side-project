@@ -68,5 +68,7 @@ Key implemented features:
 - **Phase 4**: Generative Grasp Model (Diffusion, Flow matching, SE(3) Equivariant Encoders)
 - **Phase 5**: Reinforcement Learning (RL Policy network, PPO trainer integration)
 - **Phase 6**: Orchestration & Evaluation (Force-closure judging, stability/collision checking, end-to-end simulation pipelines)
+- **Phase 7**: Synthetic Data (Analytical antipodal grasping, ground truth grasp generation)
+- **Phase 8**: Experiment Tracking and Reproducibility (TensorBoard logging, deterministic seeding)
 
 All public interfaces, data flows, and module dependencies correspond to the architecture designed in `docs/PROJECT.md` and are supported by an exhaustive test suite with >80% coverage.

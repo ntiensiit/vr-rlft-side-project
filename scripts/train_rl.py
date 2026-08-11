@@ -15,6 +15,8 @@ def train_rl_main(
     num_updates: int,
     gamma: float,
     device: str,
+    seed: int | None = None,
+    experiment_log_dir: Path | None = None,
 ) -> None:
     """Run the RL training pipeline against a MuJoCo+YCB environment.
 
@@ -30,6 +32,8 @@ def train_rl_main(
         num_updates: Number of policy update steps to perform.
         gamma: Discount factor for return computation.
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
+        seed: Optional random seed for reproducible training.
+        experiment_log_dir: Optional path to write TensorBoard experiment events.
     """
     run_rl_training_pipeline(
         robot_xml_path=robot_xml_path,
@@ -43,6 +47,8 @@ def train_rl_main(
         num_updates=num_updates,
         gamma=gamma,
         device=device,
+        seed=seed,
+        experiment_log_dir=experiment_log_dir,
     )
 
 
@@ -61,6 +67,8 @@ if __name__ == "__main__":
     parser.add_argument("--num-updates", type=int, required=True)
     parser.add_argument("--gamma", type=float, required=True)
     parser.add_argument("--device", type=str, required=True)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--experiment-log-dir", type=Path, default=None)
     args = parser.parse_args()
     train_rl_main(
         args.robot_xml,
@@ -74,4 +82,6 @@ if __name__ == "__main__":
         args.num_updates,
         args.gamma,
         args.device,
+        args.seed,
+        args.experiment_log_dir,
     )

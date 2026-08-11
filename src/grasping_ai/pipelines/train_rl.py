@@ -19,6 +19,8 @@ def run_rl_training_pipeline(
     num_updates: int,
     gamma: float,
     device: str,
+    seed: int | None = None,
+    experiment_log_dir: Path | None = None,
 ) -> None:
     """Run an end-to-end RL training pipeline using MuJoCo as the environment.
 
@@ -34,6 +36,8 @@ def run_rl_training_pipeline(
         num_updates: Number of policy update steps to perform.
         gamma: Discount factor for return computation.
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
+        seed: Optional random seed for reproducible policy initialization.
+        experiment_log_dir: Optional path to write TensorBoard experiment events.
     """
     if not isinstance(robot_xml_path, Path):
         raise TypeError("robot_xml_path must be a pathlib.Path instance")
@@ -88,6 +92,9 @@ def run_rl_training_pipeline(
         run_rl_training_loop,
     )
 
+    if seed is not None:
+        torch.manual_seed(seed)
+
     policy = build_policy_network(observation_dim, action_dim, hidden_dim, 2)
     policy_module = cast(torch.nn.Module, policy)
     policy_module.to(torch.device(device))
@@ -97,7 +104,7 @@ def run_rl_training_pipeline(
 
     update_step = build_rl_training_step(
         policy_module, optimizer, clip_ratio=0.2, entropy_coefficient=0.0,
-        device=device,
+        device=device, gamma=gamma,
     )
 
     def rollout_generator():
@@ -114,9 +121,31 @@ def run_rl_training_pipeline(
     rollout_iter = iter(rollout_generator())
 
     policy_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+
+    metadata = {
+        "robot_xml_path": str(robot_xml_path),
+        "ycb_root": str(ycb_root),
+        "object_id": object_id,
+        "policy_checkpoint_path": str(policy_checkpoint_path),
+        "observation_dim": observation_dim,
+        "action_dim": action_dim,
+        "hidden_dim": hidden_dim,
+        "learning_rate": learning_rate,
+        "num_updates": num_updates,
+        "gamma": gamma,
+        "device": device,
+        "rollout_step_count": 64,
+        "clip_ratio": 0.2,
+        "entropy_coefficient": 0.0,
+    }
+    if seed is not None:
+        metadata["seed"] = seed
+
     run_rl_training_loop(
         update_step, rollout_iter, num_updates,
         policy_checkpoint_path, log_every=10,
+        experiment_log_dir=experiment_log_dir,
+        metadata=metadata, seed=seed,
     )
 
 

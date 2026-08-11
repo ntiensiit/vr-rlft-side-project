@@ -17,6 +17,7 @@ def build_rl_training_step(
     clip_ratio: float,
     entropy_coefficient: float,
     device: str,
+    gamma: float = 0.99,
 ) -> Callable[[list[RLTransition]], dict[str, float]]:
     """Construct a callable that performs a single RL policy update step.
 
@@ -26,6 +27,7 @@ def build_rl_training_step(
         clip_ratio: PPO-style clipping ratio applied to the objective.
         entropy_coefficient: Coefficient applied to the entropy bonus.
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
+        gamma: Discount factor in ``[0, 1]``.
 
     Returns:
         A callable that accepts a list of collected transitions and returns
@@ -41,7 +43,7 @@ def build_rl_training_step(
         actions = np.array([t[1] for t in transitions])
         rewards_arr = np.array([t[2] for t in transitions], dtype=np.float32)
 
-        returns = compute_discounted_returns(transitions, 0.99)
+        returns = compute_discounted_returns(transitions, gamma)
 
         obs_t = torch.from_numpy(observations).float().to(device_obj)
         act_t = torch.from_numpy(actions).float().to(device_obj)
@@ -55,9 +57,10 @@ def build_rl_training_step(
         log_prob = -0.5 * (action_diff ** 2).sum(dim=-1)
 
         advantages = ret_t - ret_t.mean()
-        std = ret_t.std()
-        if std > 1e-8:
-            advantages = advantages / std
+        if ret_t.numel() > 1:
+            std = ret_t.std()
+            if std > 1e-8:
+                advantages = advantages / std
 
         clipped_advantages = torch.clamp(
             advantages, -clip_ratio, clip_ratio
@@ -86,6 +89,9 @@ def run_rl_training_loop(
     num_updates: int,
     checkpoint_path: Path,
     log_every: int,
+    experiment_log_dir: Path | None = None,
+    metadata: dict[str, object] | None = None,
+    seed: int | None = None,
 ) -> None:
     """Run a closed-loop RL training loop over rollout data.
 
@@ -95,22 +101,52 @@ def run_rl_training_loop(
         num_updates: Number of policy update steps to perform.
         checkpoint_path: Path where the final policy checkpoint is written.
         log_every: Logging interval measured in update steps.
+        experiment_log_dir: Optional path to write TensorBoard experiment events.
+        metadata: Optional dictionary of experiment hyperparameters/run metadata.
+        seed: Optional training seed to record in the checkpoint.
     """
     if num_updates <= 0:
         raise ValueError("num_updates must be a positive integer")
 
-    for _ in range(num_updates):
-        try:
-            rollout = next(rollout_iterator)
-        except StopIteration:
-            break
+    writer = None
+    if experiment_log_dir is not None:
+        from torch.utils.tensorboard import SummaryWriter
 
-        update_step(rollout)
+        writer = SummaryWriter(log_dir=str(experiment_log_dir))
+        if metadata:
+            for k, v in metadata.items():
+                writer.add_text(f"metadata/{k}", str(v), global_step=0)
+
+    try:
+        for step_idx in range(1, num_updates + 1):
+            try:
+                rollout = next(rollout_iterator)
+            except StopIteration:
+                break
+
+            metrics = update_step(rollout)
+
+            if log_every > 0 and step_idx % log_every == 0:
+                loss_val = metrics.get("loss", 0.0)
+                pl_val = metrics.get("policy_loss", 0.0)
+                r_val = metrics.get("mean_reward", 0.0)
+                print(
+                    f"Update {step_idx}: Loss = {loss_val:.4f}, "
+                    f"Policy Loss = {pl_val:.4f}, Mean Reward = {r_val:.4f}"
+                )
+                if writer is not None:
+                    for k, v in metrics.items():
+                        writer.add_scalar(k, float(v), global_step=step_idx)
+    finally:
+        if writer is not None:
+            writer.close()
 
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     model = getattr(update_step, "model", None)
     optimizer = getattr(update_step, "optimizer", None)
     checkpoint: dict[str, object] = {"epoch": num_updates}
+    if seed is not None:
+        checkpoint["seed"] = seed
     if model is not None:
         checkpoint["model_state_dict"] = model.state_dict()
     if optimizer is not None:

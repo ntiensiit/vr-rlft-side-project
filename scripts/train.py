@@ -13,6 +13,8 @@ def train_main(
     num_epochs: int,
     batch_size: int,
     device: str,
+    seed: int | None = None,
+    experiment_log_dir: Path | None = None,
 ) -> None:
     """Run the supervised training pipeline and persist a model checkpoint.
 
@@ -26,6 +28,8 @@ def train_main(
         num_epochs: Number of training epochs to perform.
         batch_size: Training batch size.
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
+        seed: Optional random seed for reproducible training.
+        experiment_log_dir: Optional path to write TensorBoard experiment events.
     """
     run_training_pipeline(
         dataset_root=dataset_root,
@@ -37,6 +41,8 @@ def train_main(
         num_epochs=num_epochs,
         batch_size=batch_size,
         device=device,
+        seed=seed,
+        experiment_log_dir=experiment_log_dir,
     )
 
 
@@ -53,6 +59,8 @@ if __name__ == "__main__":
     parser.add_argument("--num-epochs", type=int, required=True)
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--device", type=str, required=True)
+    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--experiment-log-dir", type=Path, default=None)
     args = parser.parse_args()
     train_main(
         args.dataset_root,
@@ -64,4 +72,6 @@ if __name__ == "__main__":
         args.num_epochs,
         args.batch_size,
         args.device,
+        args.seed,
+        args.experiment_log_dir,
     )

@@ -17,6 +17,7 @@ def evaluate_main(
     report_path: Path,
     friction_coefficient: float,
     lift_height_threshold: float,
+    experiment_log_dir: Path | None = None,
 ) -> None:
     """Evaluate a set of generated grasps and write a report to disk.
 
@@ -28,6 +29,7 @@ def evaluate_main(
         report_path: Destination path for the evaluation report.
         friction_coefficient: Friction coefficient used in force-closure checks.
         lift_height_threshold: Height threshold used for lift-success checks.
+        experiment_log_dir: Optional path to write TensorBoard experiment events.
     """
     grasps = np.load(grasps_path)
     object_point_cloud = np.load(object_point_cloud_path)
@@ -45,7 +47,7 @@ def evaluate_main(
         lift_height_threshold=lift_height_threshold,
     )
     aggregated = aggregate_evaluation_results({object_id: per_grasp})
-    write_evaluation_report(report_path, aggregated)
+    write_evaluation_report(report_path, aggregated, experiment_log_dir)
 
 
 if __name__ == "__main__":
@@ -59,6 +61,7 @@ if __name__ == "__main__":
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--friction-coefficient", type=float, required=True)
     parser.add_argument("--lift-height-threshold", type=float, required=True)
+    parser.add_argument("--experiment-log-dir", type=Path, default=None)
     args = parser.parse_args()
     evaluate_main(
         args.grasps,
@@ -68,4 +71,5 @@ if __name__ == "__main__":
         args.report,
         args.friction_coefficient,
         args.lift_height_threshold,
+        args.experiment_log_dir,
     )
