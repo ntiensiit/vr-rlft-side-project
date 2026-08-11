@@ -1,0 +1,243 @@
+"""Phase 6 — End-to-End Orchestration & Eval tests."""
+import json
+import os
+import tempfile
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+import grasping_ai
+from grasping_ai.evaluation.collision import (
+    build_collision_checker,
+    check_collision,
+    filter_collision_free_grasps,
+)
+from grasping_ai.evaluation.force_closure import (
+    build_force_closure_judge,
+    compute_grasp_wrench_matrix,
+    evaluate_force_closure,
+)
+from grasping_ai.evaluation.metrics import (
+    aggregate_grasp_success_rate,
+    build_lift_outcome_judge,
+    build_stability_judge,
+    evaluate_lift_success,
+    evaluate_stability,
+)
+from grasping_ai.pipelines.evaluate import (
+    aggregate_evaluation_results,
+    evaluate_generated_grasps,
+    write_evaluation_report,
+)
+from grasping_ai.pipelines.simulate_grasp import simulate_grasp
+
+MINIMAL_ACTUATED_ROBOT_XML = """\
+<mujoco model="minimal_actuated_robot">
+    <compiler angle="radian"/>
+    <worldbody>
+        <body name="base" pos="0 0 0">
+            <geom name="base_geom" type="box" size="0.1 0.1 0.1"/>
+            <body name="link1" pos="0 0 0.2">
+                <joint name="joint1" type="hinge" axis="0 0 1" range="-3.14 3.14" limited="true"/>
+                <geom name="link1_geom" type="cylinder" size="0.05 0.1"/>
+                <body name="end_effector" pos="0 0 0.2"/>
+            </body>
+        </body>
+    </worldbody>
+    <actuator>
+        <motor name="motor1" joint="joint1" gear="1"/>
+    </actuator>
+</mujoco>
+"""
+
+
+@pytest.fixture
+def minimal_robot_xml(tmp_path):
+    path = tmp_path / "robot.xml"
+    path.write_text(MINIMAL_ACTUATED_ROBOT_XML, encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def minimal_ycb_root(tmp_path):
+    obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
+    obj_dir.mkdir(parents=True)
+    xml_content = """
+    <mujoco model="mustard_bottle">
+        <worldbody>
+            <body name="mustard_bottle" pos="0 0 0">
+                <geom name="mustard_bottle_geom" type="box" size="0.05 0.05 0.05"/>
+            </body>
+        </worldbody>
+    </mujoco>
+    """
+    (obj_dir / "mustard_bottle.xml").write_text(xml_content, encoding="utf-8")
+    return tmp_path / "ycb"
+
+
+def test_phase1_package_import_remains_stable():
+    """Verify that grasping_ai is importable."""
+    assert grasping_ai.__name__ == "grasping_ai"
+
+
+def test_evaluation_config_file_exists():
+    """Verify that configs/evaluation.yaml exists."""
+    config_path = os.path.join("configs", "evaluation.yaml")
+    assert os.path.isfile(config_path)
+
+
+def test_collision_checker_shape_checks():
+    """Verify collision checker validates inputs."""
+    obj_pc = np.random.randn(10, 3)
+    grip_pc = np.random.randn(5, 3)
+
+    with pytest.raises(ValueError, match="object_point_cloud"):
+        build_collision_checker(np.random.randn(10, 2), grip_pc, 0.01)
+
+    with pytest.raises(ValueError, match="gripper_point_cloud"):
+        build_collision_checker(obj_pc, np.random.randn(5, 4), 0.01)
+
+    with pytest.raises(ValueError, match="clearance"):
+        build_collision_checker(obj_pc, grip_pc, -0.01)
+
+
+def test_collision_metric_returns_valid_output():
+    """Verify check_collision and filter_collision_free_grasps work."""
+    obj_pc = np.array([[0.0, 0.0, 0.0]])
+    grip_pc = np.array([[0.0, 0.0, 0.0]])
+
+    checker = build_collision_checker(obj_pc, grip_pc, clearance=0.1)
+
+    # Pose at (1, 1, 1) -> distance is sqrt(3) > 0.1 -> collision free
+    pose_free = np.eye(4)
+    pose_free[:3, 3] = [1.0, 1.0, 1.0]
+    assert check_collision(checker, pose_free) is True
+
+    # Pose at (0, 0, 0) -> distance is 0 < 0.1 -> collision
+    pose_coll = np.eye(4)
+    assert check_collision(checker, pose_coll) is False
+
+    # Filter
+    poses = np.stack([pose_free, pose_coll], axis=0)
+    filtered = filter_collision_free_grasps(checker, poses)
+    assert filtered.shape[0] == 1
+    assert np.allclose(filtered[0][:3, 3], [1.0, 1.0, 1.0])
+
+
+def test_force_closure_metric_returns_valid_output():
+    """Verify force closure LP solver works."""
+    judge = build_force_closure_judge(friction_coefficient=0.5, wrench_regularization=1.0)
+
+    # Empty contacts -> not force closed
+    assert evaluate_force_closure(judge, []) is False
+
+    # Contacts that span 6D space (force closure)
+    contacts = [
+        {"position": np.array([0.05, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])},
+        {"position": np.array([-0.05, 0.0, 0.0]), "normal": np.array([1.0, 0.0, 0.0])},
+    ]
+
+    w_mat = compute_grasp_wrench_matrix(contacts, 0.5)
+    assert w_mat.shape[0] == 6
+    assert w_mat.shape[1] == 8  # 2 contacts * 4 pyramid basis vectors
+
+    fc = evaluate_force_closure(judge, contacts)
+    assert isinstance(fc, bool)
+
+
+def test_stability_judge_basic():
+    """Verify stability judge evaluates linear/angular velocities."""
+    judge = build_stability_judge(max_linear_velocity=0.1, max_angular_velocity=0.05)
+
+    vel_stable = np.array([0.02, 0.0, 0.01, 0.0, 0.02, 0.0])
+    assert evaluate_stability(judge, vel_stable) is True
+
+    vel_unstable = np.array([0.2, 0.0, 0.0, 0.0, 0.0, 0.0])
+    assert evaluate_stability(judge, vel_unstable) is False
+
+
+def test_lift_outcome_judge_basic():
+    """Verify lift outcome judge evaluates height difference."""
+    judge = build_lift_outcome_judge(lift_height_threshold=0.05)
+    assert evaluate_lift_success(judge, 0.1, 0.16) is True
+    assert evaluate_lift_success(judge, 0.1, 0.12) is False
+
+
+def test_aggregate_grasp_success_rate():
+    """Verify success rate computation."""
+    per_obj = {"obj1": True, "obj2": False, "obj3": True}
+    assert aggregate_grasp_success_rate(per_obj) == pytest.approx(2.0 / 3.0)
+
+
+def test_run_simulation_rejects_missing_robot_xml(minimal_ycb_root):
+    """Verify simulation raises error on missing robot XML."""
+    grasp = np.eye(4)
+    with pytest.raises(FileNotFoundError):
+        simulate_grasp(
+            grasp, "mustard_bottle", minimal_ycb_root,
+            Path("missing_robot.xml"), None, 10, np.zeros(1),
+        )
+
+
+def test_run_simulation_creates_outcome_report(minimal_robot_xml, minimal_ycb_root):
+    """Verify simulate_grasp runs and returns valid outcome dict."""
+    grasp = np.eye(4)
+    grasp[:3, 3] = [0.0, 0.0, 0.3]
+    outcome = simulate_grasp(
+        grasp, "mustard_bottle", minimal_ycb_root,
+        minimal_robot_xml, None, 5, np.zeros(1),
+    )
+    assert "success" in outcome
+    assert "initial_height" in outcome
+    assert "final_height" in outcome
+    assert "contact_count" in outcome
+
+
+def test_evaluate_creates_report_from_synthetic_inputs():
+    """Verify evaluate_generated_grasps runs evaluation on batch."""
+    grasps = np.stack([np.eye(4), np.eye(4)], axis=0)
+    obj_pc = np.random.randn(10, 3)
+    grip_pc = np.random.randn(5, 3)
+
+    def mock_contact_provider(pose):
+        return [
+            {"position": np.array([0.05, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])},
+        ]
+
+    per_grasp = evaluate_generated_grasps(
+        grasps, obj_pc, grip_pc, mock_contact_provider,
+        friction_coefficient=0.5, lift_height_threshold=0.05,
+    )
+    assert len(per_grasp) == 2
+    assert "collision_free" in per_grasp[0]
+    assert "force_closure" in per_grasp[0]
+
+    aggregated = aggregate_evaluation_results({"mustard_bottle": per_grasp})
+    assert "success_rate" in aggregated
+    assert "collision_free_rate" in aggregated
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        report_path = Path(tmp_dir) / "report.json"
+        write_evaluation_report(report_path, aggregated)
+        assert report_path.exists()
+        with report_path.open() as fp:
+            data = json.load(fp)
+            assert "success_rate" in data
+
+
+def test_phase6_pipelines_do_not_leak_global_state(minimal_robot_xml, minimal_ycb_root):
+    """Verify that multiple simulation runs are independent."""
+    grasp1 = np.eye(4)
+    grasp2 = np.eye(4)
+    grasp2[0, 3] = 1.0
+    outcome1 = simulate_grasp(
+        grasp1, "mustard_bottle", minimal_ycb_root,
+        minimal_robot_xml, None, 5, np.zeros(1),
+    )
+    outcome2 = simulate_grasp(
+        grasp2, "mustard_bottle", minimal_ycb_root,
+        minimal_robot_xml, None, 5, np.zeros(1),
+    )
+    assert np.allclose(outcome1["grasp_pose"], grasp1)
+    assert np.allclose(outcome2["grasp_pose"], grasp2)

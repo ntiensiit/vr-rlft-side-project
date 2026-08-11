@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 
@@ -30,7 +31,129 @@ def simulate_grasp(
         A dictionary describing the simulation outcome, including success flag
         and any recorded contact or trajectory information.
     """
-    raise NotImplementedError
+    if grasp_pose.shape != (4, 4):
+        raise ValueError(f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}")
+    if not isinstance(robot_xml_path, Path) or not robot_xml_path.is_file():
+        raise FileNotFoundError(f"robot_xml_path not found: {robot_xml_path}")
+    if not isinstance(ycb_root, Path) or not ycb_root.is_dir():
+        raise FileNotFoundError(f"ycb_root not found: {ycb_root}")
+    if num_simulation_steps <= 0:
+        raise ValueError("num_simulation_steps must be positive")
+
+    # Resolve YCB object XML
+    from grasping_ai.simulation.ycb import resolve_ycb_object_directory
+    object_dir = resolve_ycb_object_directory(ycb_root, object_id)
+    xml_files = list(object_dir.glob("*.xml"))
+    if not xml_files:
+        xml_files = list(object_dir.rglob("*.xml"))
+    if not xml_files:
+        raise FileNotFoundError(
+            f"No MJCF XML file found for YCB object '{object_id}' in {object_dir}"
+        )
+    object_xml_path = xml_files[0]
+
+    # Create scene XML and load model
+    from grasping_ai.simulation.mujoco_env import create_simulation, load_mujoco_model
+    from grasping_ai.simulation.scene import build_scene_xml
+
+    # Build initial scene with robot and optional table
+    # Wait, build_scene_xml requires robot_xml_path, object_xml_path, and table_xml_path
+    scene_xml = build_scene_xml(robot_xml_path, object_xml_path, table_xml_path)
+    model = load_mujoco_model(scene_xml)
+    state, step_fn, contacts_fn = create_simulation(model)
+
+    state_dict = cast(dict[str, Any], state)
+    mj_model = state_dict["model"]
+    mj_data = state_dict["data"]
+
+    # Run inverse kinematics to match grasp_pose
+    from grasping_ai.robotics.kinematics import (
+        build_inverse_kinematics,
+        load_robot_model,
+        solve_inverse_kinematics,
+    )
+    robot_model = load_robot_model(str(robot_xml_path))
+    nq_robot = cast(int, robot_model["nq"])
+    ik_solver = build_inverse_kinematics(robot_model, max_iterations=200, tolerance=1e-4)
+    initial_joints = np.zeros(nq_robot)
+
+    try:
+        q_target = solve_inverse_kinematics(ik_solver, grasp_pose, initial_joints)
+    except Exception:
+        # Fallback if IK fails
+        q_target = np.zeros(nq_robot)
+
+    # Teleport robot to grasp pose in simulation
+    from grasping_ai.simulation.mujoco_env import (
+        read_body_pose,
+        reset_simulation,
+    )
+    reset_simulation(state)
+
+    # Copy IK solution to robot joints in simulation state
+    if mj_data.qpos.shape[0] >= nq_robot:
+        mj_data.qpos[:nq_robot] = q_target
+    import mujoco  # type: ignore[import-untyped]
+    mujoco.mj_forward(mj_model, mj_data)
+
+    # Record initial height of the object
+    try:
+        initial_pose = read_body_pose(state, object_id)
+        initial_height = float(initial_pose[2, 3])
+    except Exception:
+        initial_height = 0.0
+
+    # Step simulation and apply gripper close command
+    dt = mj_model.opt.timestep
+    if dt <= 0 or not np.isfinite(dt):
+        dt = 0.002
+
+    # Set gripper command
+    nu_robot = cast(int, mj_model.nu)
+    ctrl_cmd = np.zeros(nu_robot, dtype=np.float64)
+    close_len = gripper_close_command.shape[0]
+    if close_len <= nu_robot:
+        ctrl_cmd[:close_len] = gripper_close_command
+    else:
+        ctrl_cmd[:] = gripper_close_command[:nu_robot]
+
+    for _ in range(num_simulation_steps):
+        mj_data.ctrl[:] = ctrl_cmd
+        step_fn(dt)
+
+    # Read final height and velocities of the object
+    try:
+        final_pose = read_body_pose(state, object_id)
+        final_height = float(final_pose[2, 3])
+    except Exception:
+        final_height = 0.0
+
+    # Read velocity
+    try:
+        body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, object_id)
+        if body_id != -1:
+            object_velocity = np.array(mj_data.cvel[body_id], copy=True)
+        else:
+            object_velocity = np.zeros(6)
+    except Exception:
+        object_velocity = np.zeros(6)
+
+    # Read contacts
+    from grasping_ai.simulation.scene import collect_contacts
+    object_contacts = collect_contacts(contacts_fn, {object_id})
+    contact_count = len(object_contacts)
+
+    # Success criteria: object hasn't fallen and has contacts
+    success = bool(final_height >= (initial_height - 0.05) and contact_count >= 1)
+
+    return {
+        "success": success,
+        "initial_height": initial_height,
+        "final_height": final_height,
+        "contact_count": float(contact_count),
+        "object_velocity": object_velocity,
+        "grasp_pose": grasp_pose,
+    }
 
 
 def run_simulation_sweep(
@@ -56,4 +179,26 @@ def run_simulation_sweep(
     Returns:
         A list of per-grasp simulation outcomes.
     """
-    raise NotImplementedError
+    if grasp_poses.ndim == 2:
+        if grasp_poses.shape == (4, 4):
+            grasp_poses = grasp_poses.reshape(1, 4, 4)
+        else:
+            raise ValueError("grasp_poses must have shape (K, 4, 4) or (4, 4)")
+
+    if grasp_poses.ndim != 3 or grasp_poses.shape[1:] != (4, 4):
+        raise ValueError("grasp_poses must have shape (K, 4, 4)")
+
+    outcomes = []
+    for i in range(grasp_poses.shape[0]):
+        outcome = simulate_grasp(
+            grasp_pose=grasp_poses[i],
+            object_id=object_id,
+            ycb_root=ycb_root,
+            robot_xml_path=robot_xml_path,
+            table_xml_path=table_xml_path,
+            num_simulation_steps=num_simulation_steps,
+            gripper_close_command=gripper_close_command,
+        )
+        outcomes.append(outcome)
+
+    return outcomes

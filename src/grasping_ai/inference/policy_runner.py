@@ -53,11 +53,11 @@ def build_rl_policy_runner(
 
     hidden_dim = 64
     num_layers = 2
-    model_state = checkpoint.get("model_state_dict")
+    model_state = cast(dict[str, torch.Tensor], checkpoint.get("model_state_dict"))
     if model_state is not None:
         if "0.weight" in model_state:
             hidden_dim = model_state["0.weight"].shape[0]
-        weight_keys = [k for k in model_state.keys() if k.endswith(".weight")]
+        weight_keys = [k for k in model_state if k.endswith(".weight")]
         num_layers = max(1, len(weight_keys) - 1)
 
     policy = build_policy_network(observation_dim, action_dim, hidden_dim, num_layers)
