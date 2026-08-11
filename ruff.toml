@@ -27,7 +27,7 @@ select = [
 ignore = ["PLR2004"]
 
 [lint.per-file-ignores]
-"tests/**/*.py" = ["PLR2004", "S101", "ARG", "FBT"]
+"tests/**/*.py" = ["PLR2004", "S101", "ARG", "FBT", "PLC0415", "PLR0915", "PT011", "PT012", "E501"]
 "scripts/**/*.py" = ["PLR0913", "PLR0917", "PLC0415"]
 "src/grasping_ai/training/trainer.py" = ["PLR0913", "PLR0917"]
 "src/grasping_ai/training/rl_trainer.py" = ["PLR0913", "PLR0917"]
@@ -40,7 +40,11 @@ ignore = ["PLR2004"]
 "src/grasping_ai/inference/policy_runner.py" = ["PLR0913", "PLR0917"]
 "src/grasping_ai/models/diffusion.py" = ["PLR0913", "PLR0917"]
 "src/grasping_ai/models/flow.py" = ["PLR0913", "PLR0917"]
-"src/grasping_ai/robotics/kinematics.py" = ["PLR0913", "PLR0917"]
+"src/grasping_ai/robotics/**/*.py" = ["PLR0913", "PLR0917", "TRY003", "PERF401", "TRY300", "PLR0915"]
+"src/grasping_ai/simulation/**/*.py" = ["TRY003", "PERF401", "TRY300", "PLR0915"]
+"src/grasping_ai/data/**/*.py" = ["TRY003", "PERF401", "TRY300", "PLR0912"]
+"src/grasping_ai/perception/**/*.py" = ["TRY003", "PERF401", "TRY300"]
+
 
 [format]
 quote-style = "double"

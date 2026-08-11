@@ -1,0 +1,591 @@
+import json
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from grasping_ai.data.pointcloud_dataset import (
+    discover_dataset_files,
+    iterate_grasp_dataset,
+    load_grasp_sample,
+    resolve_ycb_object_id,
+)
+from grasping_ai.data.transforms import (
+    compose_transforms,
+    make_random_rotation_jitter,
+    make_translation_jitter,
+    save_grasp_dataset_index,
+)
+from grasping_ai.perception.pointcloud import (
+    build_kdtree,
+    estimate_point_cloud_normals,
+    farthest_point_sampling,
+    normalize_point_cloud,
+    sample_point_cloud,
+    voxel_downsample,
+)
+
+
+def test_numpy_runtime_dependency_available():
+    """Verify that numpy package is available and can be imported."""
+    import numpy as np
+    assert np.__version__ is not None
+
+
+def test_phase1_package_import_remains_stable():
+    """Verify that the package remains importable."""
+    import grasping_ai
+    assert grasping_ai.__name__ == "grasping_ai"
+
+
+def test_data_config_file_exists():
+    """Verify data configuration file existence."""
+    path = Path("configs/data.yaml")
+    assert path.is_file()
+
+
+def test_prepare_data_creates_index_from_minimal_dataset(tmp_path):
+    """Test discovering files and writing a JSON index."""
+    dataset_root = tmp_path / "dataset"
+    dataset_root.mkdir()
+
+    # Create dummy record
+    record_data = {
+        "point_cloud": np.random.rand(10, 3),
+        "grasp_poses": np.random.rand(2, 4, 4),
+        "scores": np.random.rand(2),
+        "object_id": "bottle",
+    }
+    record_path = dataset_root / "record_0.npy"
+    np.save(record_path, record_data, allow_pickle=True)
+
+    records = discover_dataset_files(dataset_root)
+    assert len(records) == 1
+    assert records[0] == record_path
+
+    # Save index
+    entries = [{"path": str(record)} for record in records]
+    save_grasp_dataset_index(tmp_path, entries)
+
+    index_file = tmp_path / "index.json"
+    assert index_file.is_file()
+
+    with open(index_file, encoding="utf-8") as f:
+        loaded_entries = json.load(f)
+    assert len(loaded_entries) == 1
+    assert loaded_entries[0]["path"] == str(record_path)
+
+
+def test_prepare_data_rejects_missing_dataset_root():
+    """Verify that discover_dataset_files raises FileNotFoundError for missing paths."""
+    with pytest.raises(FileNotFoundError):
+        discover_dataset_files(Path("non_existent_dataset_root"))
+    with pytest.raises(TypeError):
+        discover_dataset_files("not-a-path-object")  # type: ignore[arg-type]
+
+
+def test_prepare_data_rejects_empty_dataset(tmp_path):
+    """Verify discover_dataset_files raises ValueError for empty directories."""
+    empty_root = tmp_path / "empty"
+    empty_root.mkdir()
+    with pytest.raises(ValueError, match="No dataset record files"):
+        discover_dataset_files(empty_root)
+
+
+def test_index_loader_reads_prepared_index(tmp_path):
+    """Verify loading dataset via index iterate functions."""
+    dataset_root = tmp_path / "dataset"
+    dataset_root.mkdir()
+
+    # Create a couple dummy records
+    rng = np.random.default_rng(42)
+    record1 = {"point_cloud": rng.random((10, 3)), "object_id": "obj1"}
+    record2 = {"point_cloud": rng.random((15, 3)), "object_id": "obj2"}
+
+    path1 = dataset_root / "rec1.npy"
+    path2 = dataset_root / "rec2.npy"
+    np.save(path1, record1, allow_pickle=True)
+    np.save(path2, record2, allow_pickle=True)
+
+    samples = list(iterate_grasp_dataset(dataset_root))
+    assert len(samples) == 2
+    assert samples[0]["object_id"] == "obj1"
+    assert samples[1]["object_id"] == "obj2"
+    assert samples[0]["point_cloud"].shape == (10, 3)
+    assert samples[1]["point_cloud"].shape == (15, 3)
+
+
+def test_index_loader_rejects_invalid_structure(tmp_path):
+    """Test loading invalid index inputs."""
+    with pytest.raises(TypeError):
+        list(iterate_grasp_dataset("not-a-path"))  # type: ignore[arg-type]
+
+
+def test_point_cloud_loader_reads_valid_npy_point_cloud(tmp_path):
+    """Test load_grasp_sample on valid file."""
+    record_data = {
+        "point_cloud": np.ones((5, 3)),
+        "object_id": "box",
+    }
+    path = tmp_path / "sample.npy"
+    np.save(path, record_data, allow_pickle=True)
+
+    sample = load_grasp_sample(path)
+    assert np.allclose(sample["point_cloud"], 1.0)
+    assert sample["object_id"] == "box"
+
+
+def test_point_cloud_loader_rejects_wrong_shape(tmp_path):
+    """Verify loader validation on malformed shapes."""
+    path = tmp_path / "bad.npy"
+
+    # Missing point_cloud key
+    np.save(path, {"other": 123}, allow_pickle=True)
+    with pytest.raises(ValueError, match="missing 'point_cloud'"):
+        load_grasp_sample(path)
+
+    # Not a numpy array
+    np.save(path, {"point_cloud": "not-array"}, allow_pickle=True)
+    with pytest.raises(TypeError, match="must be a numpy array"):
+        load_grasp_sample(path)
+
+    # Wrong shape
+    np.save(path, {"point_cloud": np.zeros((10, 2))}, allow_pickle=True)
+    with pytest.raises(ValueError, match="shape"):
+        load_grasp_sample(path)
+
+
+def test_point_cloud_loader_rejects_non_finite_values(tmp_path):
+    """Verify loader validation rejects NaN and Inf."""
+    path = tmp_path / "nan.npy"
+    np.save(path, {"point_cloud": np.array([[1.0, 2.0, np.nan]])}, allow_pickle=True)
+    with pytest.raises(ValueError, match="finite"):
+        load_grasp_sample(path)
+
+
+def test_resolve_ycb_object_id(tmp_path):
+    """Verify YCB mesh path lookup resolution."""
+    ycb_root = tmp_path / "ycb"
+    ycb_root.mkdir()
+
+    # Create dummy folders
+    obj_dir = ycb_root / "004_sugar_box"
+    obj_dir.mkdir()
+    mesh_file = obj_dir / "textured.obj"
+    mesh_file.write_text("mesh content", encoding="utf-8")
+
+    resolved = resolve_ycb_object_id(ycb_root, "sugar_box")
+    assert resolved == mesh_file
+
+    # Non-existent object
+    with pytest.raises(FileNotFoundError):
+        resolve_ycb_object_id(ycb_root, "banana")
+
+
+def test_make_random_rotation_jitter():
+    """Verify SO(3) random rotation transform."""
+    rng = np.random.default_rng(42)
+    transform = make_random_rotation_jitter(rng)
+
+    points = rng.random((5, 3))
+    grasp_poses = rng.random((2, 4, 4))
+    # Homogenize grasp poses
+    grasp_poses[:, 3, :] = [0, 0, 0, 1]
+    scores = np.array([0.9, 0.8])
+
+    pts_rot, gps_rot, scs_rot = transform(points, grasp_poses, scores)
+
+    assert pts_rot.shape == (5, 3)
+    assert gps_rot is not None
+    assert gps_rot.shape == (2, 4, 4)
+    assert np.allclose(scs_rot, scores)
+
+    # Verify that the relative distances between points are preserved (isometric transform)
+    dist_orig = np.linalg.norm(points[0] - points[1])
+    dist_rot = np.linalg.norm(pts_rot[0] - pts_rot[1])
+    assert np.isclose(dist_orig, dist_rot)
+
+
+def test_make_translation_jitter():
+    """Verify translation transform."""
+    rng = np.random.default_rng(42)
+    transform = make_translation_jitter(rng, scale=0.1)
+
+    points = np.zeros((5, 3))
+    grasp_poses = np.zeros((2, 4, 4))
+    grasp_poses[:, 3, 3] = 1.0
+    scores = np.array([0.5, 0.6])
+
+    pts_t, gps_t, _ = transform(points, grasp_poses, scores)
+
+    # Points should all have the same translation shift
+    shift = pts_t[0]
+    assert np.allclose(pts_t, shift)
+    assert gps_t is not None
+    assert np.allclose(gps_t[:, :3, 3], shift)
+
+
+def test_compose_transforms():
+    """Verify sequential composition of transforms."""
+    rng = np.random.default_rng(42)
+    t1 = make_translation_jitter(rng, scale=0.01)
+    t2 = make_translation_jitter(rng, scale=0.02)
+
+    composed = compose_transforms(t1, t2)
+
+    points = np.zeros((3, 3))
+    pts_out, _, _ = composed(points, None, None)
+
+    # Output should not be zero
+    assert not np.allclose(pts_out, 0.0)
+
+
+def test_sample_point_cloud():
+    """Verify point cloud fixed size sampling."""
+    rng = np.random.default_rng(42)
+    points = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+
+    # Downsample/upsample
+    sampled_1 = sample_point_cloud(points, 1, rng)
+    assert sampled_1.shape == (1, 3)
+
+    sampled_3 = sample_point_cloud(points, 3, rng)
+    assert sampled_3.shape == (3, 3)
+
+
+def test_normalize_point_cloud():
+    """Verify centering and unit scaling."""
+    points = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    normalized = normalize_point_cloud(points)
+
+    # Centroid should be at origin
+    assert np.allclose(np.mean(normalized, axis=0), 0.0)
+    # Max distance should be 1.0
+    assert np.allclose(np.max(np.linalg.norm(normalized, axis=1)), 1.0)
+
+
+def test_farthest_point_sampling():
+    """Verify Farthest Point Sampling indices selection."""
+    rng = np.random.default_rng(42)
+    points = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [10.0, 0.0, 0.0]])
+
+    indices = farthest_point_sampling(points, 2, rng)
+    assert indices.shape == (2,)
+    # Farthest points should be selected (index 0 and 2, or index 1 and 2 depending on random start)
+    assert 2 in indices
+
+
+def test_estimate_point_cloud_normals():
+    """Verify normal estimation using local PCA."""
+    # Create flat point cloud in XY plane
+    points = np.array([
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.5, 0.5, 0.0],
+    ])
+    normals = estimate_point_cloud_normals(points, neighborhood_size=4)
+    # Normals should be perpendicular to XY plane (i.e. parallel to Z axis)
+    for n in normals:
+        assert np.isclose(np.abs(n[2]), 1.0, atol=1e-4)
+        assert np.isclose(n[0], 0.0, atol=1e-4)
+        assert np.isclose(n[1], 0.0, atol=1e-4)
+
+
+def test_voxel_downsample():
+    """Verify voxel downsampling centroids grouping."""
+    points = np.array([
+        [0.01, 0.01, 0.01],
+        [0.02, 0.02, 0.02],
+        [0.9, 0.9, 0.9],
+    ])
+    downsampled = voxel_downsample(points, voxel_size=0.1)
+    # The first two points should fall in the same voxel and be averaged
+    assert len(downsampled) == 2
+    assert np.allclose(downsampled[0], [0.015, 0.015, 0.015]) or np.allclose(downsampled[1], [0.015, 0.015, 0.015])
+
+
+def test_build_kdtree():
+    """Verify KDTree construction and neighbor querying."""
+    points = np.array([[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    kdtree = build_kdtree(points)
+
+    # Query nearest to [1.1, 0, 0]
+    dist, idx = kdtree.query(np.array([1.1, 0.0, 0.0]))
+    assert idx == 0
+    assert np.isclose(dist, 0.1)
+
+
+def test_data_functions_do_not_leak_global_state(tmp_path):
+    # Test voxel downsampling determinism
+    points = np.random.rand(10, 3)
+    out1 = voxel_downsample(points, 0.2)
+    out2 = voxel_downsample(points, 0.2)
+    assert np.allclose(out1, out2)
+
+
+def test_data_perception_error_handling(tmp_path):
+    """Test all input validation and error handling paths in Phase 3 modules."""
+    rng = np.random.default_rng(42)
+
+    # --- pointcloud_dataset.py validations ---
+    # discover_dataset_files validations
+    with pytest.raises(TypeError, match="dataset_root"):
+        discover_dataset_files("not-a-path")  # type: ignore[arg-type]
+    file_path = tmp_path / "file.txt"
+    file_path.write_text("not a dir", encoding="utf-8")
+    with pytest.raises(ValueError, match="not a directory"):
+        discover_dataset_files(file_path)
+
+    # load_grasp_sample validations
+    with pytest.raises(TypeError, match="record_path"):
+        load_grasp_sample("not-a-path")  # type: ignore[arg-type]
+    with pytest.raises(FileNotFoundError, match="not found"):
+        load_grasp_sample(tmp_path / "non_existent.npy")
+    with pytest.raises(ValueError, match="not a file"):
+        load_grasp_sample(tmp_path)
+
+    # Invalid np load (corrupted file)
+    bad_npy = tmp_path / "corrupted.npy"
+    bad_npy.write_text("corrupted content", encoding="utf-8")
+    with pytest.raises(ValueError, match="Failed to load"):
+        load_grasp_sample(bad_npy)
+
+    # Loaded not a dict (loaded array instead of 0-D dict)
+    array_npy = tmp_path / "array.npy"
+    np.save(array_npy, np.zeros((2, 3)))
+    with pytest.raises(ValueError, match="expected a serialized dictionary"):
+        load_grasp_sample(array_npy)
+
+    # Loaded dict is not a dict (pickled string)
+    str_npy = tmp_path / "str.npy"
+    np.save(str_npy, "not-a-dict", allow_pickle=True)
+    with pytest.raises(TypeError, match="not a dictionary"):
+        load_grasp_sample(str_npy)
+
+    # resolve_ycb_object_id validations
+    with pytest.raises(TypeError, match="ycb_root"):
+        resolve_ycb_object_id("not-a-path", "sugar_box")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="object_name"):
+        resolve_ycb_object_id(tmp_path, 123)  # type: ignore[arg-type]
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        resolve_ycb_object_id(tmp_path / "non_existent_ycb", "sugar_box")
+    with pytest.raises(ValueError, match="not a directory"):
+        resolve_ycb_object_id(file_path, "sugar_box")
+
+    # --- transforms.py validations ---
+    # make_random_rotation_jitter validations
+    with pytest.raises(TypeError, match="rng"):
+        make_random_rotation_jitter("not-a-generator")  # type: ignore[arg-type]
+    rot_transform = make_random_rotation_jitter(rng)
+    with pytest.raises(TypeError, match="points"):
+        rot_transform("not-array", None, None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="points shape"):
+        rot_transform(np.zeros(3), None, None)
+    with pytest.raises(ValueError, match="finite"):
+        rot_transform(np.array([[np.nan, 2.0, 3.0]]), None, None)
+
+    # grasp_poses validation in rotation
+    with pytest.raises(TypeError, match="grasp_poses"):
+        rot_transform(np.zeros((2, 3)), "not-array", None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="grasp_poses"):
+        rot_transform(np.zeros((2, 3)), np.zeros((2, 3)), None)
+    with pytest.raises(ValueError, match="finite"):
+        rot_transform(np.zeros((2, 3)), np.array([[[np.nan]*4]*4]), None)
+
+    # scores validation in rotation
+    with pytest.raises(TypeError, match="scores"):
+        rot_transform(np.zeros((2, 3)), None, "not-array")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="scores"):
+        rot_transform(np.zeros((2, 3)), None, np.array([np.nan]))
+
+    # make_translation_jitter validations
+    with pytest.raises(TypeError, match="rng"):
+        make_translation_jitter("not-a-generator", 0.1)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="scale"):
+        make_translation_jitter(rng, -0.1)
+    with pytest.raises(ValueError, match="scale"):
+        make_translation_jitter(rng, np.nan)
+    trans_transform = make_translation_jitter(rng, 0.1)
+
+    # grasp_poses validation in translation
+    with pytest.raises(TypeError, match="grasp_poses"):
+        trans_transform(np.zeros((2, 3)), "not-array", None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="grasp_poses"):
+        trans_transform(np.zeros((2, 3)), np.zeros((2, 3)), None)
+    with pytest.raises(ValueError, match="finite"):
+        trans_transform(np.zeros((2, 3)), np.array([[[np.nan]*4]*4]), None)
+
+    # scores validation in translation
+    with pytest.raises(TypeError, match="scores"):
+        trans_transform(np.zeros((2, 3)), None, "not-array")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="scores"):
+        trans_transform(np.zeros((2, 3)), None, np.array([np.nan]))
+
+    # compose_transforms validation
+    with pytest.raises(TypeError, match="callable"):
+        compose_transforms("not-callable")(np.zeros((2, 3)), None, None)  # type: ignore[arg-type]
+
+    # save_grasp_dataset_index validations
+    with pytest.raises(TypeError, match="dataset_root"):
+        save_grasp_dataset_index("not-a-path", [])  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="entries"):
+        save_grasp_dataset_index(tmp_path, "not-a-list")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="dictionaries"):
+        save_grasp_dataset_index(tmp_path, ["not-a-dict"])  # type: ignore[arg-type]
+
+    # --- pointcloud.py validations ---
+    # sample_point_cloud validations
+    with pytest.raises(TypeError, match="points"):
+        sample_point_cloud("not-array", 5, rng)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="points shape"):
+        sample_point_cloud(np.zeros((2, 2)), 5, rng)
+    with pytest.raises(ValueError, match="not be empty"):
+        sample_point_cloud(np.zeros((0, 3)), 5, rng)
+    with pytest.raises(ValueError, match="positive integer"):
+        sample_point_cloud(np.zeros((2, 3)), 0, rng)
+    with pytest.raises(TypeError, match="rng"):
+        sample_point_cloud(np.zeros((2, 3)), 5, "not-generator")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="finite"):
+        sample_point_cloud(np.array([[np.nan, 2.0, 3.0]]), 1, rng)
+
+    # normalize_point_cloud validations
+    with pytest.raises(TypeError, match="points"):
+        normalize_point_cloud("not-array")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="points shape"):
+        normalize_point_cloud(np.zeros((2, 2)))
+    with pytest.raises(ValueError, match="not be empty"):
+        normalize_point_cloud(np.zeros((0, 3)))
+    with pytest.raises(ValueError, match="finite"):
+        normalize_point_cloud(np.array([[np.nan, 2.0, 3.0]]))
+    # Test zero distance normalization (single point)
+    zero_dist_pc = np.array([[1.0, 2.0, 3.0]])
+    assert np.allclose(normalize_point_cloud(zero_dist_pc), 0.0)
+
+    # farthest_point_sampling validations
+    with pytest.raises(TypeError, match="points"):
+        farthest_point_sampling("not-array", 5, rng)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="points shape"):
+        farthest_point_sampling(np.zeros((2, 2)), 5, rng)
+    with pytest.raises(ValueError, match="not be empty"):
+        farthest_point_sampling(np.zeros((0, 3)), 5, rng)
+    with pytest.raises(ValueError, match="positive integer"):
+        farthest_point_sampling(np.zeros((2, 3)), 0, rng)
+    with pytest.raises(TypeError, match="rng"):
+        farthest_point_sampling(np.zeros((2, 3)), 5, "not-generator")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="finite"):
+        farthest_point_sampling(np.array([[np.nan, 2.0, 3.0]]), 1, rng)
+
+    # estimate_point_cloud_normals validations
+    with pytest.raises(TypeError, match="points"):
+        estimate_point_cloud_normals("not-array", 4)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="points shape"):
+        estimate_point_cloud_normals(np.zeros((2, 2)), 4)
+    with pytest.raises(ValueError, match="not be empty"):
+        estimate_point_cloud_normals(np.zeros((0, 3)), 4)
+    with pytest.raises(ValueError, match="positive integer"):
+        estimate_point_cloud_normals(np.zeros((2, 3)), 0)
+    with pytest.raises(ValueError, match="finite"):
+        estimate_point_cloud_normals(np.array([[np.nan, 2.0, 3.0]]), 4)
+    # Estimate with neighborhood < 3 (returns default normal [0, 0, 1])
+    small_normals = estimate_point_cloud_normals(np.zeros((2, 3)), neighborhood_size=2)
+    assert np.allclose(small_normals, [0, 0, 1])
+
+    # voxel_downsample validations
+    with pytest.raises(TypeError, match="points"):
+        voxel_downsample("not-array", 0.1)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="points shape"):
+        voxel_downsample(np.zeros((2, 2)), 0.1)
+    with pytest.raises(ValueError, match="positive float"):
+        voxel_downsample(np.zeros((2, 3)), 0.0)
+    with pytest.raises(ValueError, match="finite"):
+        voxel_downsample(np.array([[np.nan, 2.0, 3.0]]), 0.1)
+
+    # build_kdtree validations
+    with pytest.raises(TypeError, match="points"):
+        build_kdtree("not-array")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="points shape"):
+        build_kdtree(np.zeros((2, 2)))
+    with pytest.raises(ValueError, match="finite"):
+        build_kdtree(np.array([[np.nan, 2.0, 3.0]]))
+
+
+def test_resolve_ycb_object_id_exact_and_fallbacks(tmp_path):
+    """Test resolve_ycb_object_id for exact directory matches and different mesh formats."""
+    ycb_root = tmp_path / "ycb"
+    ycb_root.mkdir()
+
+    # 1. Exact directory match & textured.obj exists
+    obj_dir1 = ycb_root / "mustard_bottle"
+    obj_dir1.mkdir()
+    mesh1 = obj_dir1 / "textured.obj"
+    mesh1.write_text("mesh mustard", encoding="utf-8")
+
+    assert resolve_ycb_object_id(ycb_root, "mustard_bottle") == mesh1
+
+    # 2. Substring directory match & .ply fallback
+    obj_dir2 = ycb_root / "003_cracker_box"
+    obj_dir2.mkdir()
+    mesh2 = obj_dir2 / "cracker_box.ply"
+    mesh2.write_text("mesh cracker", encoding="utf-8")
+
+    assert resolve_ycb_object_id(ycb_root, "cracker_box") == mesh2
+
+    # 3. Substring directory match & .obj fallback (no textured.obj or ply)
+    obj_dir3 = ycb_root / "011_banana"
+    obj_dir3.mkdir()
+    mesh3 = obj_dir3 / "banana.obj"
+    mesh3.write_text("mesh banana", encoding="utf-8")
+
+    assert resolve_ycb_object_id(ycb_root, "banana") == mesh3
+
+    # 4. Directory matches but contains no mesh files (returns directory Path)
+    obj_dir4 = ycb_root / "025_mug"
+    obj_dir4.mkdir()
+
+    assert resolve_ycb_object_id(ycb_root, "mug") == obj_dir4
+
+
+def test_transforms_optional_none_inputs():
+    """Verify transforms when grasp_poses and scores are None."""
+    rng = np.random.default_rng(42)
+    rot = make_random_rotation_jitter(rng)
+    trans = make_translation_jitter(rng, scale=0.1)
+
+    points = rng.random((5, 3))
+
+    p_rot, gp_rot, s_rot = rot(points, None, None)
+    assert p_rot.shape == (5, 3)
+    assert gp_rot is None
+    assert s_rot is None
+
+    p_trans, gp_trans, s_trans = trans(points, None, None)
+    assert p_trans.shape == (5, 3)
+    assert gp_trans is None
+    assert s_trans is None
+
+
+def test_perception_edge_cases():
+    """Verify FPS and normals estimation edge cases."""
+    rng = np.random.default_rng(42)
+
+    # FPS with num_samples = 1
+    pts = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    idx_1 = farthest_point_sampling(pts, 1, rng)
+    assert idx_1.shape == (1,)
+
+    # FPS with num_samples > n
+    idx_5 = farthest_point_sampling(pts, 5, rng)
+    assert idx_5.shape == (5,)
+
+    # Normals with zero covariance (identical points)
+    identical_pts = np.array([
+        [1.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0],
+    ])
+    normals = estimate_point_cloud_normals(identical_pts, neighborhood_size=4)
+    assert np.allclose(normals, [0, 0, 1])
+

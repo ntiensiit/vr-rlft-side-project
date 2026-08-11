@@ -12,7 +12,16 @@ def list_ycb_objects(ycb_root: Path) -> list[str]:
     Returns:
         Sorted list of YCB object identifiers.
     """
-    raise NotImplementedError
+    if not isinstance(ycb_root, Path):
+        raise TypeError("ycb_root must be a pathlib.Path instance")
+    if not ycb_root.is_dir():
+        raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
+
+    objects = []
+    for path in ycb_root.iterdir():
+        if path.is_dir():
+            objects.append(path.name)
+    return sorted(objects)
 
 
 def resolve_ycb_object_directory(ycb_root: Path, object_name: str) -> Path:
@@ -25,7 +34,39 @@ def resolve_ycb_object_directory(ycb_root: Path, object_name: str) -> Path:
     Returns:
         Path to the directory containing the YCB object assets.
     """
-    raise NotImplementedError
+    if not isinstance(ycb_root, Path):
+        raise TypeError("ycb_root must be a pathlib.Path instance")
+    if not isinstance(object_name, str):
+        raise TypeError("object_name must be a string")
+    if not ycb_root.is_dir():
+        raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
+
+    # 1. Check exact match
+    direct_path = ycb_root / object_name
+    if direct_path.is_dir():
+        return direct_path
+
+    # 2. Check suffix/prefix match
+    for path in ycb_root.iterdir():
+        if path.is_dir():
+            if path.name == object_name:
+                return path
+            # Prefix match, e.g. "006_mustard_bottle" matching "mustard_bottle"
+            if (
+                path.name.endswith("_" + object_name)
+                and len(path.name) > len(object_name) + 1
+                and path.name[:3].isdigit()
+            ):
+                return path
+            # Suffix match, e.g. "mustard_bottle" matching "006_mustard_bottle"
+            if (
+                object_name.endswith("_" + path.name)
+                and len(object_name) > len(path.name) + 1
+                and object_name[:3].isdigit()
+            ):
+                return path
+
+    raise FileNotFoundError(f"YCB object '{object_name}' not found under '{ycb_root}'")
 
 
 def find_ycb_mesh_file(object_dir: Path) -> YcbObjectMesh:
@@ -37,7 +78,24 @@ def find_ycb_mesh_file(object_dir: Path) -> YcbObjectMesh:
     Returns:
         Path to the mesh file (for example an OBJ) inside ``object_dir``.
     """
-    raise NotImplementedError
+    if not isinstance(object_dir, Path):
+        raise TypeError("object_dir must be a pathlib.Path instance")
+    if not object_dir.is_dir():
+        raise FileNotFoundError(f"YCB object directory '{object_dir}' does not exist")
+
+    for path in object_dir.rglob("textured.obj"):
+        if path.is_file():
+            return path
+
+    for path in object_dir.rglob("*.obj"):
+        if path.is_file():
+            return path
+
+    for path in object_dir.rglob("*.ply"):
+        if path.is_file():
+            return path
+
+    raise FileNotFoundError(f"No mesh file (.obj or .ply) found in '{object_dir}'")
 
 
 def ycb_object_exists(ycb_root: Path, object_name: str) -> bool:
@@ -50,4 +108,8 @@ def ycb_object_exists(ycb_root: Path, object_name: str) -> bool:
     Returns:
         ``True`` if the object is available, otherwise ``False``.
     """
-    raise NotImplementedError
+    try:
+        resolve_ycb_object_directory(ycb_root, object_name)
+        return True
+    except (FileNotFoundError, TypeError, ValueError):
+        return False
