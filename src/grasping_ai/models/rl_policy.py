@@ -22,7 +22,24 @@ def build_policy_network(
         ``(B, observation_dim)`` to action parameters of shape
         ``(B, action_dim)``.
     """
-    raise NotImplementedError
+    if observation_dim <= 0:
+        raise ValueError("observation_dim must be positive")
+    if action_dim <= 0:
+        raise ValueError("action_dim must be positive")
+    if hidden_dim <= 0:
+        raise ValueError("hidden_dim must be positive")
+    if num_layers <= 0:
+        raise ValueError("num_layers must be positive")
+
+    layers: list[torch.nn.Module] = []
+    in_dim = observation_dim
+    for _ in range(num_layers):
+        layers.append(torch.nn.Linear(in_dim, hidden_dim))
+        layers.append(torch.nn.Tanh())
+        in_dim = hidden_dim
+    layers.append(torch.nn.Linear(in_dim, action_dim))
+
+    return torch.nn.Sequential(*layers)
 
 
 def build_value_network(observation_dim: int, hidden_dim: int, num_layers: int) -> ValueNetwork:
@@ -36,7 +53,22 @@ def build_value_network(observation_dim: int, hidden_dim: int, num_layers: int) 
     Returns:
         A callable value network mapping observations to scalar values.
     """
-    raise NotImplementedError
+    if observation_dim <= 0:
+        raise ValueError("observation_dim must be positive")
+    if hidden_dim <= 0:
+        raise ValueError("hidden_dim must be positive")
+    if num_layers <= 0:
+        raise ValueError("num_layers must be positive")
+
+    layers: list[torch.nn.Module] = []
+    in_dim = observation_dim
+    for _ in range(num_layers):
+        layers.append(torch.nn.Linear(in_dim, hidden_dim))
+        layers.append(torch.nn.Tanh())
+        in_dim = hidden_dim
+    layers.append(torch.nn.Linear(in_dim, 1))
+
+    return torch.nn.Sequential(*layers)
 
 
 def select_action(
@@ -52,4 +84,16 @@ def select_action(
     Returns:
         A sampled action tensor with shape ``(B, action_dim)``.
     """
-    raise NotImplementedError
+    if observation.ndim != 2:
+        raise ValueError(
+            f"observation must have shape (B, obs_dim), got {observation.shape}"
+        )
+    if not isinstance(rng, torch.Generator):
+        raise TypeError("rng must be a torch.Generator instance")
+
+    action_mean = policy(observation)
+    noise = torch.randn(
+        action_mean.shape, generator=rng,
+        device=action_mean.device, dtype=action_mean.dtype,
+    )
+    return action_mean + 0.1 * noise
