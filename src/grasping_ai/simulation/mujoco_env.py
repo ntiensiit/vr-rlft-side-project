@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -8,6 +9,34 @@ import numpy as np
 
 SimulationStep = Callable[[float], None]
 ContactReporter = Callable[[], list[dict[str, np.ndarray]]]
+
+
+@dataclass(frozen=True)
+class RewardConfig:
+    """Reward scaling and terminal-condition parameters for the RL environment.
+
+    The reward is composed of task-terms whose weights are all configurable:
+
+    * a negative quadratic action cost scaled by ``action_cost_weight``;
+    * a ``survival_bonus`` granted while the observation stays finite;
+    * a per-step ``contact_reward`` when the tracked object is in contact;
+    * a ``lift_reward_weight``-scaled positive term for object height gain;
+    * a one-time ``grasp_success_bonus`` when the object is first lifted past
+      ``lift_height_threshold``.
+
+    The episode terminates on non-finite observations (when
+    ``terminate_on_non_finite``) or when the object drops more than
+    ``drop_height_threshold`` below its height at reset.
+    """
+
+    action_cost_weight: float = 0.01
+    survival_bonus: float = 1.0
+    contact_reward: float = 0.0
+    lift_reward_weight: float = 0.0
+    grasp_success_bonus: float = 0.0
+    lift_height_threshold: float = 0.05
+    drop_height_threshold: float = 0.1
+    terminate_on_non_finite: bool = True
 
 
 def load_mujoco_model(model_xml_path: Path) -> object:
@@ -115,6 +144,43 @@ def reset_simulation(state: object) -> None:
     mujoco.mj_forward(state_dict["model"], state_dict["data"])
 
 
+def set_actuator_controls(state: object, ctrl: np.ndarray) -> None:
+    """Write actuator controls into the simulation state.
+
+    This helper is the single authoritative command path for gripper and
+    robot actuation: every pipeline (the Gymnasium environment, grasp
+    simulation, and the gripper controller) routes control writes through
+    here rather than writing ``mj_data.ctrl`` directly.
+
+    Args:
+        state: Opaque state handle returned by ``create_simulation``.
+        ctrl: Actuator control vector with shape ``(num_actuators,)``.
+
+    Raises:
+        TypeError: If ``state`` or ``ctrl`` have incorrect types.
+        ValueError: If ``ctrl`` contains non-finite values or has the wrong
+            shape.
+    """
+    if not isinstance(state, dict) or "model" not in state or "data" not in state:
+        raise TypeError("state must be a simulation state dictionary")
+    if not isinstance(ctrl, np.ndarray):
+        raise TypeError("ctrl must be a numpy array")
+    if not np.isfinite(ctrl).all():
+        raise ValueError("ctrl must contain only finite values")
+
+    state_dict = cast(dict[str, Any], state)
+    model: Any = state_dict["model"]
+    data: Any = state_dict["data"]
+
+    nu: int = model.nu
+    if ctrl.shape != (nu,):
+        raise ValueError(
+            f"ctrl shape {ctrl.shape} does not match model.nu ({nu})"
+        )
+
+    data.ctrl[:] = ctrl
+
+
 def read_joint_positions(state: object) -> np.ndarray:
     """Read the current joint positions from the simulation state.
 
@@ -202,19 +268,44 @@ class MuJoCoGraspingEnv(gym.Env):
 
     Args:
         robot_xml_path: Path to the robot MJCF XML description.
+        object_name: Optional name of the object body to track for contact,
+            lift, and drop rewards. When ``None`` those reward terms are
+            disabled.
+        reward_config: Reward scaling and terminal-condition parameters. When
+            ``None`` the legacy reward behavior is preserved exactly.
     """
 
-    def __init__(self, robot_xml_path: Path) -> None:
+    def __init__(
+        self,
+        robot_xml_path: Path,
+        object_name: str | None = None,
+        reward_config: RewardConfig | None = None,
+    ) -> None:
         """Initialize the environment from a robot MJCF file.
 
         Args:
             robot_xml_path: Path to the robot MJCF XML description.
+            object_name: Optional name of the object body to track for
+                contact, lift, and drop rewards.
+            reward_config: Reward scaling and terminal-condition parameters.
 
         Raises:
             FileNotFoundError: If the robot XML file does not exist.
             ValueError: If the MuJoCo model has zero actuators.
         """
         super().__init__()
+
+        if not isinstance(robot_xml_path, Path):
+            raise TypeError("robot_xml_path must be a pathlib.Path instance")
+        if object_name is not None and not isinstance(object_name, str):
+            raise TypeError("object_name must be a string or None")
+        if reward_config is not None and not isinstance(reward_config, RewardConfig):
+            raise TypeError("reward_config must be a RewardConfig or None")
+
+        self._object_name = object_name
+        self._reward_config = reward_config or RewardConfig()
+        self._initial_object_height: float | None = None
+        self._grasp_success_granted = False
 
         model_handle = load_mujoco_model(robot_xml_path)
         self._state, self._step_fn, self._contacts_fn = create_simulation(
@@ -278,6 +369,11 @@ class MuJoCoGraspingEnv(gym.Env):
         """
         super().reset(seed=seed, options=options)
         reset_simulation(self._state)
+        self._grasp_success_granted = False
+        if self._object_name is not None:
+            self._initial_object_height = self._get_object_height()
+        else:
+            self._initial_object_height = None
         return self._get_observation(), {}
 
     def step(
@@ -312,24 +408,59 @@ class MuJoCoGraspingEnv(gym.Env):
             padded[: action.shape[0]] = action
             action = padded
 
-        mj_data.ctrl[:] = action
+        set_actuator_controls(self._state, action)
         mujoco.mj_step(mj_model, mj_data)
 
         obs = self._get_observation()
 
-        reward = -float(np.sum(action ** 2)) * 0.01
-        if np.isfinite(obs).all():
-            reward += 1.0
-        reward = float(np.clip(reward, -10.0, 10.0))
+        config = self._reward_config
+        reward = config.action_cost_weight * -float(np.sum(action ** 2))
+        terminated = bool(config.terminate_on_non_finite and not np.isfinite(obs).all())
 
-        terminated = not np.isfinite(obs).all()
+        if np.isfinite(obs).all():
+            reward += config.survival_bonus
+            if self._object_name is not None and self._initial_object_height is not None:
+                current_height = self._get_object_height()
+                height_gain = current_height - self._initial_object_height
+
+                if self._has_object_contact():
+                    reward += config.contact_reward
+                if config.lift_reward_weight > 0.0 and height_gain > 0.0:
+                    reward += config.lift_reward_weight * height_gain
+                if (
+                    config.grasp_success_bonus > 0.0
+                    and not self._grasp_success_granted
+                    and height_gain > config.lift_height_threshold
+                ):
+                    reward += config.grasp_success_bonus
+                    self._grasp_success_granted = True
+                if height_gain < -config.drop_height_threshold:
+                    terminated = True
+
+        reward = float(np.clip(reward, -10.0, 10.0))
         truncated = False
 
-        if terminated:
-            reset_simulation(self._state)
-            obs = self._get_observation()
-
         return obs, reward, terminated, truncated, {}
+
+    def _get_object_height(self) -> float:
+        """Read the current height of the tracked object body.
+
+        Returns:
+            The world-frame z-coordinate of the object body.
+        """
+        pose = read_body_pose(self._state, cast(str, self._object_name))
+        return float(pose[2, 3])
+
+    def _has_object_contact(self) -> bool:
+        """Report whether the tracked object is currently in contact.
+
+        Returns:
+            ``True`` if any contact report involves the object body.
+        """
+        reports = self._contacts_fn()
+        return any(
+            self._object_name in set(contact["body_names"]) for contact in reports
+        )
 
     def _get_observation(self) -> np.ndarray:
         """Read and concatenate qpos and qvel into a float32 observation.

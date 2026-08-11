@@ -1,10 +1,7 @@
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
-import numpy as np
 import torch
-
-from grasping_ai.simulation.mujoco_env import ContactReporter, SimulationStep
 
 
 def run_rl_training_pipeline(
@@ -64,13 +61,20 @@ def run_rl_training_pipeline(
     if not 0.0 <= gamma <= 1.0:
         raise ValueError("gamma must be in [0, 1]")
 
-    object_ids[0] if object_ids else "default"
+    env_xml_path = robot_xml_path
+    if object_ids:
+        from grasping_ai.simulation.scene import build_scene_xml
+        from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
+
+        object_dir = resolve_ycb_object_directory(ycb_root, object_ids[0])
+        object_xml_path = find_ycb_mjcf(object_dir)
+        env_xml_path = build_scene_xml(robot_xml_path, object_xml_path, None)
 
     from stable_baselines3 import PPO
 
     from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
 
-    env = MuJoCoGraspingEnv(robot_xml_path)
+    env = MuJoCoGraspingEnv(env_xml_path)
 
     obs_shape = env.observation_space.shape
     act_shape = env.action_space.shape
@@ -134,107 +138,14 @@ def run_rl_training_pipeline(
 
     legacy_policy.load_state_dict(legacy_state)
 
-    policy_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    checkpoint_dict: dict[str, Any] = {
-        "epoch": num_updates,
-        "model_state_dict": legacy_policy.state_dict(),
-    }
-    if seed is not None:
-        checkpoint_dict["seed"] = seed
-    torch.save(checkpoint_dict, policy_checkpoint_path)
-
-
-def build_rl_environment(
-    robot_xml_path: Path,
-    ycb_root: Path,
-    object_id: str,
-    observation_dim: int,
-    action_dim: int,
-) -> tuple[object, SimulationStep, ContactReporter]:
-    """Construct a closed-loop RL environment over a MuJoCo scene.
-
-    Args:
-        robot_xml_path: Path to the robot MJCF description.
-        ycb_root: Root directory of the YCB object set.
-        object_id: YCB object identifier used as the manipulation target.
-        observation_dim: Dimensionality of observations produced by the env.
-        action_dim: Dimensionality of actions accepted by the env.
-
-    Returns:
-        A tuple ``(env_state, step, contacts)`` providing a stepping interface
-        over the constructed RL environment.
-    """
-    from grasping_ai.simulation.mujoco_env import (
-        create_simulation,
-        load_mujoco_model,
+    from grasping_ai.models.rl_policy import save_rl_policy_checkpoint
+    save_rl_policy_checkpoint(
+        policy=legacy_policy,
+        policy_checkpoint_path=policy_checkpoint_path,
+        epoch=num_updates,
+        observation_dim=observation_dim,
+        action_dim=action_dim,
+        hidden_dim=hidden_dim,
+        num_layers=2,
+        seed=seed,
     )
-
-    model = load_mujoco_model(robot_xml_path)
-    state, step, contacts = create_simulation(model)
-    return state, step, contacts
-
-
-def collect_rl_rollout(
-    env_state: object,
-    policy_runner: object,
-    num_steps: int,
-) -> list[tuple[object, object, float, object, bool]]:
-    """Collect a rollout of environment transitions under the supplied policy.
-
-    Args:
-        env_state: Opaque environment state handle.
-        policy_runner: Callable returning an action given an observation.
-        num_steps: Number of environment steps to collect.
-
-    Returns:
-        A list of ``(obs, action, reward, next_obs, done)`` transition tuples.
-    """
-    from grasping_ai.simulation.mujoco_env import (
-        reset_simulation,
-    )
-
-    state_dict: dict[str, Any] = env_state  # type: ignore[assignment]
-    mj_model: Any = state_dict["model"]
-    mj_data: Any = state_dict["data"]
-
-    reset_simulation(env_state)
-
-    transitions: list[tuple[object, object, float, object, bool]] = []
-    for _ in range(num_steps):
-        qpos = np.array(mj_data.qpos, copy=True)
-        qvel = np.array(mj_data.qvel, copy=True)
-        obs = np.concatenate([qpos, qvel]).astype(np.float32)
-
-        runner_fn = policy_runner  # type: ignore[assignment]
-        action = runner_fn(obs) if callable(runner_fn) else np.zeros(mj_model.nu)
-        action = np.asarray(action, dtype=np.float32)
-
-        ctrl_dim = mj_model.nu
-        if action.shape[0] > ctrl_dim:
-            action = action[:ctrl_dim]
-        elif action.shape[0] < ctrl_dim:
-            padded = np.zeros(ctrl_dim, dtype=np.float32)
-            padded[: action.shape[0]] = action
-            action = padded
-
-        mj_data.ctrl[:] = action
-
-        import mujoco  # type: ignore[import-untyped]
-        mujoco.mj_step(mj_model, mj_data)
-
-        new_qpos = np.array(mj_data.qpos, copy=True)
-        new_qvel = np.array(mj_data.qvel, copy=True)
-        next_obs = np.concatenate([new_qpos, new_qvel]).astype(np.float32)
-
-        reward = -float(np.sum(action**2)) * 0.01
-        if np.isfinite(next_obs).all():
-            reward += 1.0
-        reward = float(np.clip(reward, -10.0, 10.0))
-
-        done = not np.isfinite(next_obs).all()
-        if done:
-            reset_simulation(env_state)
-
-        transitions.append((obs, action, reward, next_obs, done))
-
-    return transitions

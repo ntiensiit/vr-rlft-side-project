@@ -8,8 +8,14 @@ import pytest
 import torch
 
 import grasping_ai
+from grasping_ai.config.diffusion import (
+    DEFAULT_DIFFUSION_SCHEDULE,
+    DiffusionSchedule,
+    linear_beta_schedule,
+)
 from grasping_ai.inference.grasp_generator import (
     build_diffusion_grasp_generator,
+    build_flow_grasp_generator,
     generate_candidate_grasps,
     load_grasp_model_checkpoint,
 )
@@ -21,6 +27,10 @@ from grasping_ai.models.diffusion import (
 )
 from grasping_ai.models.equivariant_encoder import (
     build_equivariant_encoder,
+    compose_with_se3_frame,
+    compute_se3_frame,
+    encode_point_cloud,
+    pool_object_features,
 )
 from grasping_ai.pipelines.generate_grasps import build_generation_pipeline, write_generated_grasps
 from grasping_ai.pipelines.train import load_pretrained_encoder, run_training_pipeline
@@ -254,6 +264,35 @@ def test_generate_grasps_rejects_invalid_observation_shape():
             generate_candidate_grasps(generator, pc_invalid, num_grasps=5)
 
 
+def test_inference_grasps_follow_input_point_cloud_frame():
+    """Verify generated grasps are expressed in the input point-cloud frame."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        temp_path = Path(tmp_dir)
+        checkpoint_path = temp_path / "model.pt"
+
+        model = GraspGeneratorModel(feature_dim=8, hidden_dim=16, num_layers=2)
+        optimizer = build_adam_optimizer(model.parameters(), 0.01)
+        save_training_checkpoint(model, optimizer, 1, checkpoint_path)
+
+        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu")
+
+        rng = np.random.RandomState(0)
+        pc = rng.randn(100, 3).astype(np.float32)
+        translation = np.array([0.5, -0.3, 0.2], dtype=np.float32)
+        pc_translated = pc + translation
+
+        grasps = generate_candidate_grasps(generator, pc, num_grasps=10)
+        grasps_translated = generate_candidate_grasps(generator, pc_translated, num_grasps=10)
+
+        assert grasps.shape == (10, 4, 4)
+        assert grasps_translated.shape == (10, 4, 4)
+        # A normalization-based inference path would return identical grasps for a
+        # translated cloud. The corrected path feeds the raw point cloud, so the
+        # generated grasps respond to the frame of the input cloud.
+        assert not np.allclose(grasps, grasps_translated, atol=1e-6)
+
+
 def test_model_inference_is_repeatable_without_global_state():
     """Verify that multiple inference runs are identical under same seeded generator."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -432,4 +471,330 @@ def test_acquire_point_cloud_from_observation_errors():
         np.save(non_finite_file, np.array([[1.0, 2.0, np.nan]]))
         with pytest.raises(ValueError, match="contains non-finite values"):
             acquire_point_cloud_from_observation(non_finite_file)
+
+
+def test_default_schedule_matches_legacy_beta_literals():
+    """Verify the shared schedule reproduces the legacy linspace(1e-4, 0.02)."""
+    assert DEFAULT_DIFFUSION_SCHEDULE.beta_start == 1e-4
+    assert DEFAULT_DIFFUSION_SCHEDULE.beta_end == 0.02
+    assert DEFAULT_DIFFUSION_SCHEDULE.num_steps == 100
+    assert torch.allclose(
+        linear_beta_schedule(),
+        torch.linspace(1e-4, 0.02, 100),
+    )
+
+
+def test_custom_schedule_values():
+    """Verify a custom schedule drives the beta tensor."""
+    schedule = DiffusionSchedule(beta_start=1e-3, beta_end=0.1, num_steps=50)
+    beta = linear_beta_schedule(schedule)
+    assert beta.shape == (50,)
+    assert beta[0] == pytest.approx(1e-3)
+    assert beta[-1] == pytest.approx(0.1)
+
+
+def test_linear_beta_schedule_validation():
+    """Verify linear_beta_schedule validates its inputs."""
+    with pytest.raises(TypeError):
+        linear_beta_schedule("not-a-schedule")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="num_steps"):
+        linear_beta_schedule(DiffusionSchedule(num_steps=0))
+    with pytest.raises(ValueError, match="non-negative"):
+        linear_beta_schedule(DiffusionSchedule(beta_start=-0.01))
+
+
+def test_diffusion_sampler_accepts_schedule_overrides():
+    """Verify build_diffusion_sampler honors beta_start/beta_end overrides."""
+    sampler_default = build_diffusion_sampler(10)
+    sampler_custom = build_diffusion_sampler(10, beta_start=1e-3, beta_end=0.1)
+
+    score_model = build_score_network(4, 16, 2)
+    cond = torch.randn(1, 4)
+    rng_default = torch.Generator().manual_seed(7)
+    rng_custom = torch.Generator().manual_seed(7)
+
+    x = torch.randn(1, 9, generator=rng_default)
+    out_default = sampler_default(x.clone(), score_model, cond, rng_default)
+    out_custom = sampler_custom(x.clone(), score_model, cond, rng_custom)
+    assert not torch.allclose(out_default, out_custom)
+
+
+def test_default_sampler_unchanged_defaults():
+    """Verify the default sampler behavior matches the legacy schedule."""
+    sampler = build_diffusion_sampler(5)
+    score_model = build_score_network(4, 16, 2)
+    conditioning = torch.randn(2, 4)
+    rng = torch.Generator().manual_seed(11)
+
+    samples = sample_grasps_with_diffusion(sampler, score_model, conditioning, 9, 3, rng)
+    assert samples.shape == (2, 3, 9)
+    assert torch.isfinite(samples).all()
+
+
+def _make_checkpoint(tmp_path: Path) -> Path:
+    model = GraspGeneratorModel(feature_dim=8, hidden_dim=16, num_layers=2)
+    from grasping_ai.training.trainer import build_adam_optimizer, save_training_checkpoint
+
+    optimizer = build_adam_optimizer(model.parameters(), 0.01)
+    checkpoint_path = tmp_path / "model.pt"
+    save_training_checkpoint(model, optimizer, 1, checkpoint_path)
+    return checkpoint_path
+
+
+def test_generator_seed_is_configurable():
+    """Verify inference seeds are configurable and reproducible."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        checkpoint_path = _make_checkpoint(Path(tmp_dir))
+        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        pc = np.random.randn(60, 3).astype(np.float32)
+
+        gen_a = build_diffusion_grasp_generator(
+            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu", seed=1
+        )
+        gen_b = build_diffusion_grasp_generator(
+            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu", seed=2
+        )
+        gen_a2 = build_diffusion_grasp_generator(
+            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu", seed=1
+        )
+
+        grasps_a = generate_candidate_grasps(gen_a, pc, num_grasps=6)
+        grasps_b = generate_candidate_grasps(gen_b, pc, num_grasps=6)
+        grasps_a2 = generate_candidate_grasps(gen_a2, pc, num_grasps=6)
+
+        # Same seed -> identical output; different seed -> different output.
+        assert np.allclose(grasps_a, grasps_a2, atol=1e-6)
+        assert not np.allclose(grasps_a, grasps_b, atol=1e-6)
+
+
+def test_flow_generator_seed_is_configurable():
+    """Verify the flow generator seed override is accepted."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+
+        class FlowModelWrapper(torch.nn.Module):
+            def __init__(self, f_dim: int, h_dim: int, n_layers: int) -> None:
+                super().__init__()
+                self.feature_dim = f_dim
+                self.hidden_dim = h_dim
+                self.num_layers = n_layers
+                from grasping_ai.models.equivariant_encoder import (
+                    build_equivariant_encoder,
+                )
+                from grasping_ai.models.flow import build_flow_field
+
+                self.encoder = build_equivariant_encoder(f_dim, n_layers)
+                self.flow_field = build_flow_field(f_dim, h_dim, n_layers)
+
+        model = FlowModelWrapper(f_dim=8, h_dim=16, n_layers=2)
+        from grasping_ai.training.trainer import (
+            build_adam_optimizer,
+            save_training_checkpoint,
+        )
+
+        optimizer = build_adam_optimizer(model.parameters(), 0.01)
+        checkpoint_path = tmp_path / "flow_model.pt"
+        save_training_checkpoint(model, optimizer, 1, checkpoint_path)
+
+        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+
+        from grasping_ai.inference.grasp_generator import build_flow_grasp_generator
+
+        pc = np.random.randn(40, 3).astype(np.float32)
+        gen = build_flow_grasp_generator(
+            checkpoint, feature_dim=8, num_flow_steps=5, device="cpu", seed=3
+        )
+        grasps = generate_candidate_grasps(gen, pc, num_grasps=4)
+        assert grasps.shape == (4, 4, 4)
+
+
+def _random_rotation() -> torch.Tensor:
+    """Return a random SO(3) rotation matrix."""
+    a1 = torch.randn(3)
+    a2 = torch.randn(3)
+    b1 = a1 / a1.norm()
+    b2 = a2 - (a2 @ b1) * b1
+    b2 = b2 / b2.norm()
+    b3 = torch.cross(b1, b2, dim=-1)
+    return torch.stack([b1, b2, b3], dim=-1)
+
+
+def _make_encoder_and_cloud(
+    f_dim: int = 16, n_layers: int = 2, n_points: int = 200
+) -> tuple[torch.nn.Module, torch.Tensor]:
+    encoder = build_equivariant_encoder(f_dim, n_layers)
+    encoder.eval()
+    rng = torch.Generator().manual_seed(7)
+    cloud = torch.randn(n_points, 3, generator=rng)
+    cloud = cloud - cloud.mean(dim=0)
+    return encoder, cloud
+
+
+def test_frame_is_orthonormal():
+    """Verify compute_se3_frame returns orthonormal right-handed frames."""
+    _, cloud = _make_encoder_and_cloud()
+    frame, centroid = compute_se3_frame(cloud.unsqueeze(0))
+    r_matrix = frame[0]
+    identity = r_matrix.T @ r_matrix
+    assert torch.allclose(identity, torch.eye(3), atol=1e-5)
+    assert torch.allclose(torch.det(r_matrix), torch.tensor(1.0), atol=1e-5)
+    assert torch.allclose(centroid, cloud.mean(dim=0), atol=1e-6)
+
+
+def test_canonical_coordinates_are_se3_invariant():
+    """Verify canonical coords are unchanged under rotation and translation."""
+    _, cloud = _make_encoder_and_cloud()
+    r_rot = _random_rotation()
+    t = torch.tensor([0.7, -0.4, 0.2])
+    transformed = cloud @ r_rot + t
+
+    frame_a, cent_a = compute_se3_frame(cloud.unsqueeze(0))
+    frame_b, cent_b = compute_se3_frame(transformed.unsqueeze(0))
+    canon_a = (cloud.unsqueeze(0) - cent_a.unsqueeze(1)) @ frame_a
+    canon_b = (transformed.unsqueeze(0) - cent_b.unsqueeze(1)) @ frame_b
+    assert torch.allclose(canon_a, canon_b, atol=1e-4)
+
+
+def test_frame_transforms_covariantly():
+    """Verify the frame rotates with the input cloud."""
+    _, cloud = _make_encoder_and_cloud()
+    r_rot = _random_rotation()
+    t = torch.tensor([0.5, 0.25, -0.75])
+    transformed = cloud @ r_rot + t
+
+    frame_a, cent_a = compute_se3_frame(cloud.unsqueeze(0))
+    frame_b, cent_b = compute_se3_frame(transformed.unsqueeze(0))
+    applied = r_rot.T
+    assert torch.allclose(frame_b[0], applied @ frame_a[0], atol=1e-4)
+    assert torch.allclose(cent_b[0], applied @ cent_a[0] + t, atol=1e-4)
+
+
+def test_features_and_pooled_descriptor_are_invariant():
+    """Verify per-point features and pooled descriptor are SE(3)-invariant."""
+    encoder, cloud = _make_encoder_and_cloud()
+    r_rot = _random_rotation()
+    t = torch.tensor([-0.3, 1.2, 0.9])
+    transformed = cloud @ r_rot + t
+
+    with torch.no_grad():
+        feats_a = encode_point_cloud(encoder, cloud.unsqueeze(0))
+        feats_b = encode_point_cloud(encoder, transformed.unsqueeze(0))
+        desc_a = pool_object_features(feats_a)
+        desc_b = pool_object_features(feats_b)
+    assert torch.allclose(feats_a, feats_b, atol=1e-4)
+    assert torch.allclose(desc_a, desc_b, atol=1e-4)
+
+
+def test_compute_se3_frame_validation():
+    """Verify compute_se3_frame validates its inputs."""
+    with pytest.raises(TypeError, match=r"must be a torch\.Tensor"):
+        compute_se3_frame(np.zeros((10, 3)))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=r"shape \(B, N, 3\)"):
+        compute_se3_frame(torch.randn(10, 2))
+    with pytest.raises(ValueError, match=r"at least two points"):
+        compute_se3_frame(torch.randn(1, 1, 3))
+
+
+def test_compose_with_se3_frame_maps_canonical_to_input():
+    """Verify compose_with_se3_frame inverts the canonicalization."""
+    _, cloud = _make_encoder_and_cloud(n_points=300)
+    frame, centroid = compute_se3_frame(cloud.unsqueeze(0))
+
+    canonical_grasp = torch.eye(4).unsqueeze(0)
+    canonical_grasp[0, :3, 3] = torch.tensor([0.1, 0.2, 0.3])
+    canonical_grasp[0, :3, :3] = _random_rotation()
+
+    input_frame = compose_with_se3_frame(canonical_grasp, frame, centroid)
+    world = torch.eye(4)
+    world[:3, :3] = frame[0]
+    world[:3, 3] = centroid[0]
+    expected = world @ canonical_grasp @ torch.linalg.inv(world)
+    assert torch.allclose(input_frame, expected, atol=1e-5)
+
+
+def _build_checkpoint_generator(builder: str) -> tuple[object, Path]:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        temp_path = Path(tmp_dir)
+        checkpoint_path = temp_path / "model.pt"
+
+        if builder == "diffusion":
+            model = GraspGeneratorModel(feature_dim=8, hidden_dim=16, num_layers=2)
+        else:
+
+            class FlowModelWrapper(torch.nn.Module):
+                def __init__(self, f_dim: int, h_dim: int, n_layers: int) -> None:
+                    super().__init__()
+                    self.feature_dim = f_dim
+                    self.hidden_dim = h_dim
+                    self.num_layers = n_layers
+                    from grasping_ai.models.flow import build_flow_field
+
+                    self.encoder = build_equivariant_encoder(f_dim, n_layers)
+                    self.flow_field = build_flow_field(f_dim, h_dim, n_layers)
+
+            model = FlowModelWrapper(f_dim=8, h_dim=16, n_layers=2)
+        optimizer = build_adam_optimizer(model.parameters(), 0.01)
+        save_training_checkpoint(model, optimizer, 1, checkpoint_path)
+
+        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        if builder == "diffusion":
+            generator = build_diffusion_grasp_generator(
+                checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu"
+            )
+        else:
+            generator = build_flow_grasp_generator(
+                checkpoint, feature_dim=8, num_flow_steps=5, device="cpu"
+            )
+        return generator, checkpoint_path
+
+
+@pytest.mark.parametrize("builder", ["diffusion", "flow"])
+def test_generated_grasps_are_equivariant(builder: str):
+    """Verify generated grasps transform covariantly with the input cloud."""
+    generator, _ = _build_checkpoint_generator(builder)
+
+    rng = np.random.RandomState(3)
+    cloud = rng.randn(200, 3).astype(np.float32)
+    cloud = cloud - cloud.mean(axis=0)
+
+    r_rot = np.array(
+        [
+            [0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float32,
+    )
+    t = np.array([0.4, -0.5, 0.8], dtype=np.float32)
+    transformed = (cloud @ r_rot.T + t).astype(np.float32)
+
+    grasps = generate_candidate_grasps(generator, cloud, num_grasps=6)
+    grasps_transformed = generate_candidate_grasps(generator, transformed, num_grasps=6)
+
+    g_transform = np.eye(4, dtype=np.float32)
+    g_transform[:3, :3] = r_rot
+    g_transform[:3, 3] = t
+
+    expected = np.stack(
+        [g_transform @ grasp @ np.linalg.inv(g_transform) for grasp in grasps]
+    )
+    assert np.allclose(grasps_transformed, expected, atol=1e-3)
+
+
+@pytest.mark.parametrize("builder", ["diffusion", "flow"])
+def test_generated_grasps_follow_input_frame(builder: str):
+    """Verify grasps are expressed in the input point-cloud frame."""
+    generator, _ = _build_checkpoint_generator(builder)
+
+    rng = np.random.RandomState(11)
+    cloud = rng.randn(150, 3).astype(np.float32)
+    translation = np.array([1.0, -2.0, 0.5], dtype=np.float32)
+    translated = cloud + translation
+
+    grasps = generate_candidate_grasps(generator, cloud, num_grasps=6)
+    grasps_translated = generate_candidate_grasps(generator, translated, num_grasps=6)
+
+    assert grasps.shape == (6, 4, 4)
+    assert grasps_translated.shape == (6, 4, 4)
+    assert not np.allclose(grasps, grasps_translated, atol=1e-6)
 

@@ -1,4 +1,5 @@
 import json
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,10 @@ from grasping_ai.perception.pointcloud import (
     normalize_point_cloud,
     sample_point_cloud,
     voxel_downsample,
+)
+from grasping_ai.sensors.pointcloud_sensor import (
+    acquire_point_cloud_stream,
+    merge_point_clouds,
 )
 
 
@@ -588,4 +593,50 @@ def test_perception_edge_cases():
     ])
     normals = estimate_point_cloud_normals(identical_pts, neighborhood_size=4)
     assert np.allclose(normals, [0, 0, 1])
+
+
+def test_acquire_point_cloud_stream_yields_saved_clouds():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        paths = []
+        for i in range(3):
+            path = root / f"obs_{i}.npy"
+            np.save(path, np.random.randn(10 + i, 3).astype(np.float32))
+            paths.append(path)
+        clouds = list(acquire_point_cloud_stream(paths))
+        assert len(clouds) == 3
+        assert clouds[0].shape == (10, 3)
+        assert clouds[2].shape == (12, 3)
+
+
+def test_acquire_point_cloud_stream_rejects_invalid_input():
+    with pytest.raises(TypeError, match=r"list of pathlib\.Path"):
+        list(acquire_point_cloud_stream(["obs.npy"]))  # type: ignore[list-item]
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        missing = root / "missing.npy"
+        with pytest.raises(FileNotFoundError):
+            list(acquire_point_cloud_stream([missing]))
+
+
+def test_merge_point_clouds_concatenates():
+    a = np.random.randn(5, 3).astype(np.float32)
+    b = np.random.randn(7, 3).astype(np.float32)
+    merged = merge_point_clouds([a, b])
+    assert merged.shape == (12, 3)
+    assert np.allclose(merged[:5], a)
+    assert np.allclose(merged[5:], b)
+
+
+def test_merge_point_clouds_empty_list():
+    merged = merge_point_clouds([])
+    assert merged.shape == (0, 3)
+
+
+def test_merge_point_clouds_validation():
+    with pytest.raises(TypeError, match="list of numpy arrays"):
+        merge_point_clouds("not_a_list")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="shape \\(N, 3\\)"):
+        merge_point_clouds([np.random.randn(4, 2)])
 

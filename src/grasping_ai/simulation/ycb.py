@@ -98,6 +98,37 @@ def find_ycb_mesh_file(object_dir: Path) -> YcbObjectMesh:
     raise FileNotFoundError(f"No mesh file (.obj or .ply) found in '{object_dir}'")
 
 
+def find_ycb_mjcf(object_dir: Path) -> Path:
+    """Locate the MJCF XML description of a YCB object.
+
+    This is the single discovery pattern for object MJCF files used across
+    the grasp-simulation and RL-training pipelines.
+
+    Args:
+        object_dir: Directory of a single YCB object.
+
+    Returns:
+        Path to the object MJCF XML file inside ``object_dir``.
+
+    Raises:
+        TypeError: If ``object_dir`` is not a ``pathlib.Path``.
+        FileNotFoundError: If no XML file exists under ``object_dir``.
+    """
+    if not isinstance(object_dir, Path):
+        raise TypeError("object_dir must be a pathlib.Path instance")
+    if not object_dir.is_dir():
+        raise FileNotFoundError(f"YCB object directory '{object_dir}' does not exist")
+
+    for xml_path in object_dir.glob("*.xml"):
+        if xml_path.is_file():
+            return xml_path
+    for xml_path in object_dir.rglob("*.xml"):
+        if xml_path.is_file():
+            return xml_path
+
+    raise FileNotFoundError(f"No MJCF XML file found in '{object_dir}'")
+
+
 def ycb_object_exists(ycb_root: Path, object_name: str) -> bool:
     """Check whether a YCB object exists under the given root directory.
 

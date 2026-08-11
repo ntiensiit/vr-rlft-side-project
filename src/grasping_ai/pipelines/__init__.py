@@ -32,21 +32,13 @@ from grasping_ai.pipelines.train import (
     run_training_pipeline as run_training_pipeline,
 )
 from grasping_ai.pipelines.train_rl import (
-    build_rl_environment as build_rl_environment,
-)
-from grasping_ai.pipelines.train_rl import (
-    collect_rl_rollout as collect_rl_rollout,
-)
-from grasping_ai.pipelines.train_rl import (
     run_rl_training_pipeline as run_rl_training_pipeline,
 )
 
 __all__ = [
     "aggregate_evaluation_results",
     "build_generation_pipeline",
-    "build_rl_environment",
     "build_supervised_training_components",
-    "collect_rl_rollout",
     "evaluate_generated_grasps",
     "generate_grasps_for_dataset",
     "load_pretrained_encoder",

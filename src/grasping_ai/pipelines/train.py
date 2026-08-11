@@ -77,8 +77,20 @@ def run_training_pipeline(
             return np.concatenate([t, r1, r2])
 
         pc_t = torch.from_numpy(pc).float()
+        # Express grasp targets in the encoder's canonical object frame so that
+        # supervised targets match the canonical-frame outputs of the diffusion
+        # head; inference later maps canonical grasps back to the input frame.
+        from grasping_ai.models.equivariant_encoder import (
+            compute_se3_frame,
+            world_transform_from_frame,
+        )
+        frame, centroid = compute_se3_frame(pc_t.unsqueeze(0))
+        world = world_transform_from_frame(frame, centroid)[0]
+        world_inv = torch.linalg.inv(world)
         for t_matrix in grasp_poses:
-            t_vec = se3_to_vec(cast(np.ndarray, t_matrix))
+            t_tensor = torch.from_numpy(cast(np.ndarray, t_matrix)).float()
+            canonical = world_inv @ t_tensor @ world
+            t_vec = se3_to_vec(canonical.numpy())
             t_tensor = torch.from_numpy(t_vec).float()
             training_pairs.append((pc_t, t_tensor))
 
@@ -188,7 +200,9 @@ def build_supervised_training_components(
     return {"model": model, "optimizer": optimizer}
 
 
-def load_pretrained_encoder(checkpoint_path: Path, device: str) -> torch.Tensor:
+def load_pretrained_encoder(
+    checkpoint_path: Path, device: str,
+) -> dict[str, torch.Tensor]:
     """Load a pretrained equivariant encoder from a checkpoint.
 
     Args:
@@ -196,7 +210,8 @@ def load_pretrained_encoder(checkpoint_path: Path, device: str) -> torch.Tensor:
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
 
     Returns:
-        The loaded encoder parameters as a state-dict-like tensor container.
+        A mapping from parameter names to tensors describing the loaded
+        encoder state.
     """
     if not isinstance(checkpoint_path, Path):
         raise TypeError("checkpoint_path must be a pathlib.Path instance")
@@ -214,5 +229,4 @@ def load_pretrained_encoder(checkpoint_path: Path, device: str) -> torch.Tensor:
             encoder_state[k[len("encoder."):]] = v
         else:
             encoder_state[k] = v
-    from typing import cast
-    return cast(torch.Tensor, encoder_state)
+    return encoder_state

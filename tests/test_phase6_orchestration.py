@@ -76,6 +76,40 @@ def minimal_ycb_root(tmp_path):
     return tmp_path / "ycb"
 
 
+@pytest.fixture
+def minimal_ycb_root_differing_body_name(tmp_path):
+    obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
+    obj_dir.mkdir(parents=True)
+    xml_content = """
+    <mujoco model="mustard_bottle">
+        <worldbody>
+            <body name="original_body_name" pos="0 0 0.5">
+                <geom name="original_body_geom" type="box" size="0.05 0.05 0.05"/>
+            </body>
+        </worldbody>
+    </mujoco>
+    """
+    (obj_dir / "mustard_bottle.xml").write_text(xml_content, encoding="utf-8")
+    return tmp_path / "ycb"
+
+
+@pytest.fixture
+def minimal_ycb_root_at_height(tmp_path):
+    obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
+    obj_dir.mkdir(parents=True)
+    xml_content = """
+    <mujoco model="mustard_bottle">
+        <worldbody>
+            <body name="mustard_bottle" pos="0 0 0.5">
+                <geom name="mustard_bottle_geom" type="box" size="0.05 0.05 0.05"/>
+            </body>
+        </worldbody>
+    </mujoco>
+    """
+    (obj_dir / "mustard_bottle.xml").write_text(xml_content, encoding="utf-8")
+    return tmp_path / "ycb"
+
+
 def test_phase1_package_import_remains_stable():
     """Verify that grasping_ai is importable."""
     assert grasping_ai.__name__ == "grasping_ai"
@@ -241,3 +275,55 @@ def test_phase6_pipelines_do_not_leak_global_state(minimal_robot_xml, minimal_yc
     )
     assert np.allclose(outcome1["grasp_pose"], grasp1)
     assert np.allclose(outcome2["grasp_pose"], grasp2)
+
+
+def test_simulate_grasp_renames_object_body_to_object_identifier(
+    minimal_robot_xml, minimal_ycb_root_differing_body_name
+):
+    """Verify object body is renamed to the identifier so lookups succeed."""
+    grasp = np.eye(4)
+    grasp[:3, 3] = [0.0, 0.0, 0.4]
+    outcome = simulate_grasp(
+        grasp, "mustard_bottle", minimal_ycb_root_differing_body_name,
+        minimal_robot_xml, None, 5, np.zeros(1),
+    )
+    assert set(outcome.keys()) == {
+        "success", "initial_height", "final_height",
+        "contact_count", "object_velocity", "grasp_pose",
+    }
+    assert outcome["initial_height"] == pytest.approx(0.5)
+    assert outcome["final_height"] == pytest.approx(0.5)
+    assert np.allclose(outcome["grasp_pose"], grasp)
+
+
+def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(
+    minimal_robot_xml, minimal_ycb_root_at_height
+):
+    """Verify IK failure returns an unsuccessful outcome without simulating."""
+    grasp = np.eye(4)
+    grasp[:3, 3] = [0.0, 0.0, 1.0]
+    outcome = simulate_grasp(
+        grasp, "mustard_bottle", minimal_ycb_root_at_height,
+        minimal_robot_xml, None, 5, np.zeros(1),
+    )
+    assert outcome["success"] is False
+    assert outcome["initial_height"] == 0.0
+    assert outcome["final_height"] == 0.0
+    assert outcome["contact_count"] == 0.0
+    assert np.array_equal(outcome["object_velocity"], np.zeros(6))
+    assert np.allclose(outcome["grasp_pose"], grasp)
+
+
+def test_simulate_grasp_missing_object_body_reports_error(minimal_robot_xml, tmp_path):
+    """Verify a missing object body is reported as an error, not silently zeroed."""
+    obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
+    obj_dir.mkdir(parents=True)
+    xml_content = "<mujoco model='mustard_bottle'><worldbody/></mujoco>"
+    (obj_dir / "mustard_bottle.xml").write_text(xml_content, encoding="utf-8")
+    ycb_root = tmp_path / "ycb"
+    grasp = np.eye(4)
+    with pytest.raises(ValueError, match="No body element found"):
+        simulate_grasp(
+            grasp, "mustard_bottle", ycb_root,
+            minimal_robot_xml, None, 5, np.zeros(1),
+        )

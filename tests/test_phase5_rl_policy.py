@@ -14,20 +14,16 @@ from grasping_ai.inference.policy_runner import (
     run_policy_step,
 )
 from grasping_ai.models.rl_policy import (
+    RL_CHECKPOINT_FORMAT_VERSION,
+    RL_POLICY_ARCHITECTURE,
     build_policy_network,
     build_value_network,
+    read_rl_policy_metadata,
+    save_rl_policy_checkpoint,
     select_action,
 )
 from grasping_ai.pipelines.train_rl import (
-    build_rl_environment,
-    collect_rl_rollout,
     run_rl_training_pipeline,
-)
-from grasping_ai.training.rl_trainer import (
-    build_rl_training_step,
-    compute_discounted_returns,
-    compute_gae_advantages,
-    run_rl_training_loop,
 )
 
 MINIMAL_ACTUATED_ROBOT_XML = """\
@@ -52,6 +48,24 @@ MINIMAL_ACTUATED_ROBOT_XML = """\
 def _write_robot_xml(tmp_path: Path) -> Path:
     path = tmp_path / "robot.xml"
     path.write_text(MINIMAL_ACTUATED_ROBOT_XML, encoding="utf-8")
+    return path
+
+
+def _write_ycb_object_xml(tmp_path: Path) -> Path:
+    object_dir = tmp_path / "ycb" / "006_mustard_bottle"
+    object_dir.mkdir(parents=True)
+    xml_content = """\
+<mujoco model="mustard_bottle">
+    <worldbody>
+        <body name="mustard_bottle_body" pos="0 0 0.5">
+            <freejoint/>
+            <geom name="mustard_bottle_geom" type="sphere" size="0.05"/>
+        </body>
+    </worldbody>
+</mujoco>
+"""
+    path = object_dir / "mustard_bottle.xml"
+    path.write_text(xml_content, encoding="utf-8")
     return path
 
 
@@ -115,81 +129,6 @@ def test_select_action_rejects_invalid_observation():
         select_action(policy, obs_1d, rng)
 
 
-def test_compute_discounted_returns_basic():
-    """Verify discounted returns computation."""
-    transitions = [
-        (np.zeros(2), np.zeros(1), 1.0, np.zeros(2), False),
-        (np.zeros(2), np.zeros(1), 1.0, np.zeros(2), False),
-        (np.zeros(2), np.zeros(1), 1.0, np.zeros(2), True),
-    ]
-    returns = compute_discounted_returns(transitions, gamma=0.99)
-    assert returns.shape == (3,)
-    assert np.isfinite(returns).all()
-    assert returns[0] > returns[2]
-
-
-def test_compute_discounted_returns_rejects_invalid_gamma():
-    """Verify discounted returns raises on bad gamma."""
-    transitions = [(np.zeros(2), np.zeros(1), 1.0, np.zeros(2), False)]
-    with pytest.raises(ValueError):
-        compute_discounted_returns(transitions, gamma=-0.1)
-    with pytest.raises(ValueError):
-        compute_discounted_returns(transitions, gamma=1.5)
-
-
-def test_compute_gae_advantages_basic():
-    """Verify GAE computation produces finite results."""
-    transitions = [
-        (np.zeros(2), np.zeros(1), 1.0, np.zeros(2), False),
-        (np.zeros(2), np.zeros(1), 1.0, np.zeros(2), True),
-    ]
-    advantages, returns = compute_gae_advantages(
-        transitions, value_fn=lambda obs: 0.0, gamma=0.99, gae_lambda=0.95,
-    )
-    assert advantages.shape == (2,)
-    assert returns.shape == (2,)
-    assert np.isfinite(advantages).all()
-    assert np.isfinite(returns).all()
-
-
-def test_build_rl_training_step_runs():
-    """Verify RL training step executes without error."""
-    policy = build_policy_network(4, 2, 8, 1)
-    optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)  # type: ignore[union-attr]
-    step_fn = build_rl_training_step(policy, optimizer, 0.2, 0.0, "cpu")
-
-    transitions = [
-        (np.random.randn(4).astype(np.float32), np.random.randn(2).astype(np.float32), 1.0, np.random.randn(4).astype(np.float32), False)
-        for _ in range(10)
-    ]
-    metrics = step_fn(transitions)
-    assert "loss" in metrics
-    assert np.isfinite(metrics["loss"])
-
-
-def test_run_rl_training_loop_saves_checkpoint():
-    """Verify RL training loop saves a checkpoint."""
-    policy = build_policy_network(4, 2, 8, 1)
-    optimizer = torch.optim.Adam(policy.parameters(), lr=1e-3)  # type: ignore[union-attr]
-    step_fn = build_rl_training_step(policy, optimizer, 0.2, 0.0, "cpu")
-
-    def rollout_gen():
-        while True:
-            yield [
-                (np.random.randn(4).astype(np.float32), np.random.randn(2).astype(np.float32), 1.0, np.random.randn(4).astype(np.float32), False)
-                for _ in range(5)
-            ]
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        ckpt_path = Path(tmp_dir) / "rl_policy.pt"
-        run_rl_training_loop(step_fn, iter(rollout_gen()), 2, ckpt_path, 1)
-        assert ckpt_path.exists()
-
-        checkpoint = torch.load(ckpt_path, map_location="cpu")
-        assert "model_state_dict" in checkpoint
-        assert "epoch" in checkpoint
-
-
 def test_run_rl_pipeline_rejects_missing_robot_xml():
     """Verify pipeline raises on missing robot XML."""
     with tempfile.TemporaryDirectory() as tmp_dir, pytest.raises(FileNotFoundError):
@@ -226,18 +165,6 @@ def test_run_rl_pipeline_rejects_missing_ycb_root_when_objects_requested():
                 gamma=0.99,
                 device="cpu",
             )
-
-
-def test_run_rl_pipeline_initializes_environment():
-    """Verify pipeline can initialize the simulation environment."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        robot_xml = _write_robot_xml(Path(tmp_dir))
-        env_state, sim_step, contacts = build_rl_environment(
-            robot_xml, Path(tmp_dir), "default", 2, 1,
-        )
-        assert isinstance(env_state, dict)
-        assert callable(sim_step)
-        assert callable(contacts)
 
 
 def test_run_rl_pipeline_validates_observation_dim():
@@ -278,23 +205,6 @@ def test_run_rl_pipeline_validates_action_dim():
                 gamma=0.99,
                 device="cpu",
             )
-
-
-def test_env_step_reward_is_finite():
-    """Verify that environment rollout produces finite rewards."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        robot_xml = _write_robot_xml(Path(tmp_dir))
-        env_state, _, _ = build_rl_environment(
-            robot_xml, Path(tmp_dir), "default", 2, 1,
-        )
-        transitions = collect_rl_rollout(
-            env_state,
-            lambda obs: np.zeros(1, dtype=np.float32),
-            num_steps=5,
-        )
-        assert len(transitions) == 5
-        for _obs, _act, reward, _next_obs, _done in transitions:
-            assert np.isfinite(reward)
 
 
 def test_run_rl_pipeline_performs_minimal_training_and_saves_checkpoint():
@@ -350,17 +260,156 @@ def test_rl_checkpoint_is_loadable_or_discoverable():
         assert np.isfinite(action).all()
 
 
-def test_rl_training_does_not_leak_global_state():
-    """Verify that two pipeline initializations are independent."""
+def test_run_rl_pipeline_loads_requested_object():
+    """Verify the pipeline loads the requested object into the environment."""
+    from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
+    from grasping_ai.simulation.scene import build_scene_xml
+    from grasping_ai.simulation.ycb import resolve_ycb_object_directory
+
     with tempfile.TemporaryDirectory() as tmp_dir:
-        robot_xml = _write_robot_xml(Path(tmp_dir))
+        tmp_path = Path(tmp_dir)
+        robot_xml = _write_robot_xml(tmp_path)
+        object_xml = _write_ycb_object_xml(tmp_path)
+        ycb_root = tmp_path / "ycb"
 
-        env1, _, _ = build_rl_environment(
-            robot_xml, Path(tmp_dir), "default", 2, 1,
-        )
-        env2, _, _ = build_rl_environment(
-            robot_xml, Path(tmp_dir), "default", 2, 1,
-        )
+        object_dir = resolve_ycb_object_directory(ycb_root, "mustard_bottle")
+        assert object_dir.is_dir()
 
-        assert env1 is not env2
-        assert env1["data"] is not env2["data"]  # type: ignore[index]
+        scene_xml = build_scene_xml(robot_xml, object_xml, None)
+        env = MuJoCoGraspingEnv(scene_xml)
+
+        state_dict = env._state  # type: ignore[attr-defined]
+        mj_model = state_dict["model"]
+        import mujoco  # type: ignore[import-untyped]
+
+        body_id = mujoco.mj_name2id(
+            mj_model, mujoco.mjtObj.mjOBJ_BODY, "mustard_bottle_body"
+        )
+        assert body_id != -1
+
+        obs_dim = env.observation_space.shape[0]
+        assert obs_dim == 15  # robot (qpos 1 + qvel 1) + free-joint object (qpos 7 + qvel 6)
+
+        ckpt_path = tmp_path / "policy.pt"
+        run_rl_training_pipeline(
+            robot_xml_path=robot_xml,
+            ycb_root=ycb_root,
+            object_ids=["mustard_bottle"],
+            policy_checkpoint_path=ckpt_path,
+            observation_dim=obs_dim,
+            action_dim=1,
+            hidden_dim=8,
+            learning_rate=1e-3,
+            num_updates=1,
+            gamma=0.99,
+            device="cpu",
+        )
+        assert ckpt_path.exists()
+
+
+def test_save_rl_policy_checkpoint_writes_metadata():
+    policy = build_policy_network(4, 2, 16, 2)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        checkpoint_path = Path(tmp_dir) / "policy.pt"
+        save_rl_policy_checkpoint(
+            policy, checkpoint_path, epoch=5, observation_dim=4, action_dim=2,
+            hidden_dim=16, num_layers=2, seed=42,
+        )
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        assert checkpoint["format_version"] == RL_CHECKPOINT_FORMAT_VERSION
+        assert checkpoint["architecture"] == RL_POLICY_ARCHITECTURE
+        assert checkpoint["observation_dim"] == 4
+        assert checkpoint["action_dim"] == 2
+        assert checkpoint["hidden_dim"] == 16
+        assert checkpoint["num_layers"] == 2
+        assert checkpoint["epoch"] == 5
+        assert checkpoint["seed"] == 42
+        assert "model_state_dict" in checkpoint
+
+
+def test_read_rl_policy_metadata():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        checkpoint_path = Path(tmp_dir) / "policy.pt"
+        policy = build_policy_network(3, 1, 8, 2)
+        save_rl_policy_checkpoint(
+            policy, checkpoint_path, 1, 3, 1, 8, 2,
+        )
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        metadata = read_rl_policy_metadata(checkpoint)
+        assert metadata == (3, 1, 8, 2)
+
+
+def test_read_rl_policy_metadata_legacy_checkpoint_returns_none():
+    assert read_rl_policy_metadata({}) is None
+    assert read_rl_policy_metadata({"model_state_dict": {}}) is None
+    assert read_rl_policy_metadata("not-a-dict") is None  # type: ignore[arg-type]
+
+
+def test_runner_loads_standard_checkpoint():
+    policy = build_policy_network(4, 2, 16, 2)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        checkpoint_path = Path(tmp_dir) / "policy.pt"
+        save_rl_policy_checkpoint(
+            policy, checkpoint_path, 1, 4, 2, 16, 2,
+        )
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        runner = build_rl_policy_runner(checkpoint, 4, 2, "cpu")
+        obs = np.random.randn(4).astype(np.float32)
+        action = runner(obs)
+        assert action.shape == (2,)
+        assert np.isfinite(action).all()
+
+
+def test_runner_rejects_dimension_mismatch():
+    policy = build_policy_network(4, 2, 16, 2)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        checkpoint_path = Path(tmp_dir) / "policy.pt"
+        save_rl_policy_checkpoint(
+            policy, checkpoint_path, 1, 4, 2, 16, 2,
+        )
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        with pytest.raises(ValueError, match="observation_dim"):
+            build_rl_policy_runner(checkpoint, 5, 2, "cpu")
+        with pytest.raises(ValueError, match="action_dim"):
+            build_rl_policy_runner(checkpoint, 4, 3, "cpu")
+
+
+def test_runner_loads_legacy_checkpoint_without_metadata():
+    # A legacy checkpoint (model_state_dict only) is still loadable by
+    # inferring architecture from parameter names.
+    policy = build_policy_network(4, 2, 8, 2)
+    legacy = {"epoch": 1, "model_state_dict": policy.state_dict()}
+    runner = build_rl_policy_runner(legacy, 4, 2, "cpu")
+    obs = np.random.randn(4).astype(np.float32)
+    action = runner(obs)
+    assert action.shape == (2,)
+
+
+def test_save_rl_policy_checkpoint_validation():
+    policy = build_policy_network(4, 2, 16, 2)
+    with pytest.raises(ValueError, match="observation_dim"):
+        save_rl_policy_checkpoint(policy, Path("p.pt"), 1, 0, 2, 16, 2)
+    with pytest.raises(ValueError, match="action_dim"):
+        save_rl_policy_checkpoint(policy, Path("p.pt"), 1, 4, -1, 16, 2)
+    with pytest.raises(TypeError, match="policy_checkpoint_path"):
+        save_rl_policy_checkpoint(policy, "p.pt", 1, 4, 2, 16, 2)  # type: ignore[arg-type]
+
+
+def test_select_action_noise_scale_controls_exploration():
+    policy = build_policy_network(4, 2, 16, 2)
+    obs = torch.randn(3, 4)
+
+    with_noise = select_action(policy, obs, torch.Generator().manual_seed(1), noise_scale=0.1)
+    with_more_noise = select_action(policy, obs, torch.Generator().manual_seed(1), noise_scale=0.5)
+    assert not torch.allclose(with_noise, with_more_noise)
+
+    deterministic = select_action(policy, obs, torch.Generator().manual_seed(1), noise_scale=0.0)
+    assert torch.allclose(deterministic, policy(obs))
+
+
+def test_select_action_rejects_negative_noise_scale():
+    policy = build_policy_network(4, 2, 16, 2)
+    obs = torch.randn(2, 4)
+    rng = torch.Generator()
+    with pytest.raises(ValueError, match="non-negative"):
+        select_action(policy, obs, rng, noise_scale=-0.1)

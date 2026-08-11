@@ -152,8 +152,16 @@ def generate_analytical_grasps(
     num_grasps: int,
     gripper_width: float,
     rng: np.random.Generator,
+    allow_relaxed: bool = False,
+    relaxed_antipodal_dot: float = 0.0,
 ) -> np.ndarray:
     """Generate analytical antipodal grasps from a point cloud with normals.
+
+    Data policy: by default (``allow_relaxed=False``) only geometrically
+    constrained antipodal grasps are produced, so no unconstrained grasps can
+    be saved. When the strict antipodal search yields no grasps and
+    ``allow_relaxed=True``, a relaxed search is used that still requires the
+    contact normals to face each other beyond ``relaxed_antipodal_dot``.
 
     Args:
         points: Point cloud of shape ``(N, 3)``.
@@ -161,6 +169,10 @@ def generate_analytical_grasps(
         num_grasps: Maximum number of grasps to generate.
         gripper_width: Maximum allowed distance between contact points.
         rng: Random generator.
+        allow_relaxed: Whether to permit the relaxed antipodal fallback when
+            the strict search produces no grasps.
+        relaxed_antipodal_dot: Cosine threshold on ``dot(n_i, -n_j)`` used by
+            the relaxed fallback. Values must lie in ``[-1, 1]``.
 
     Returns:
         Array of grasp poses of shape ``(K, 4, 4)`` where K <= num_grasps.
@@ -175,6 +187,10 @@ def generate_analytical_grasps(
         raise TypeError("rng must be a numpy random Generator")
     if num_grasps <= 0:
         raise ValueError("num_grasps must be positive")
+    if not isinstance(allow_relaxed, bool):
+        raise TypeError("allow_relaxed must be a boolean")
+    if not -1.0 <= relaxed_antipodal_dot <= 1.0:
+        raise ValueError("relaxed_antipodal_dot must be in [-1, 1]")
 
     import scipy.spatial  # type: ignore[import-untyped]
 
@@ -243,8 +259,10 @@ def generate_analytical_grasps(
                     valid_grasps.append(pose)
                     break
 
-    # Fallback if no valid grasps found: relax constraints
-    if not valid_grasps:
+    # Fallback if no valid grasps found: relax constraints only when explicitly
+    # allowed. The relaxed search still requires normals to face each other
+    # beyond relaxed_antipodal_dot so unconstrained grasps are never saved.
+    if not valid_grasps and allow_relaxed:
         for _ in range(attempts):
             if len(valid_grasps) >= num_grasps:
                 break
@@ -271,7 +289,7 @@ def generate_analytical_grasps(
                 d = d / dist
 
                 # Relaxed antipodal condition
-                if np.dot(n_i, -n_j) > -1.1:
+                if np.dot(n_i, -n_j) > relaxed_antipodal_dot:
                     z_axis = d
                     avg_normal = 0.5 * (n_i + n_j)
                     x_axis = np.cross(z_axis, avg_normal)

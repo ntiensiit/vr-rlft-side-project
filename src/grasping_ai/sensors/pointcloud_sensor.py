@@ -41,8 +41,17 @@ def acquire_point_cloud_stream(observation_paths: list[Path]) -> Iterator[np.nda
 
     Yields:
         Point clouds as ``(N, 3)`` numpy arrays.
+
+    Raises:
+        TypeError: If ``observation_paths`` is not a list of ``pathlib.Path``
+            instances.
     """
-    raise NotImplementedError
+    if not isinstance(observation_paths, list) or not all(
+        isinstance(path, Path) for path in observation_paths
+    ):
+        raise TypeError("observation_paths must be a list of pathlib.Path instances")
+    for path in observation_paths:
+        yield acquire_point_cloud_from_observation(path)
 
 
 def merge_point_clouds(clouds: list[np.ndarray]) -> np.ndarray:
@@ -53,8 +62,21 @@ def merge_point_clouds(clouds: list[np.ndarray]) -> np.ndarray:
 
     Returns:
         A combined point cloud with shape ``(sum(N_i), 3)``.
+
+    Raises:
+        TypeError: If ``clouds`` is not a list of numpy arrays.
+        ValueError: If any cloud is not a 2D array with three columns.
     """
-    raise NotImplementedError
+    if not isinstance(clouds, list) or not all(
+        isinstance(cloud, np.ndarray) for cloud in clouds
+    ):
+        raise TypeError("clouds must be a list of numpy arrays")
+    for cloud in clouds:
+        if cloud.ndim != 2 or cloud.shape[1] != 3:
+            raise ValueError("each cloud must have shape (N, 3)")
+    if not clouds:
+        return np.empty((0, 3), dtype=np.float32)
+    return np.concatenate(clouds, axis=0).astype(np.float32)
 
 
 def sample_point_cloud_from_mesh(

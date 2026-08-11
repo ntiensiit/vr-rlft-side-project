@@ -8,6 +8,8 @@ __pycache__/
 htmlcov/
 data/interim/tmp*_scene.xml
 data/interim/tmp*_my_object.xml
+data/interim/tmp*_*.xml
+MUJOCO_LOG.TXT
 *.egg-info/
 build/
 dist/

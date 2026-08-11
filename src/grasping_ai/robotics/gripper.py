@@ -51,6 +51,12 @@ def load_gripper_model(gripper_description_path: str) -> dict[str, object]:
 def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[GripperCommand], None]:
     """Build a callable gripper controller that issues open/close commands.
 
+    The controller writes through the authoritative actuator-control path
+    (``set_actuator_controls``), the same path used by the Gymnasium
+    environment and the grasp-simulation pipeline. The gripper model must be
+    bound to simulation data via the ``"model"`` and ``"data"`` keys before
+    the controller is invoked.
+
     Args:
         gripper_model: Gripper model returned by ``load_gripper_model``.
 
@@ -60,6 +66,8 @@ def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[Grip
     """
     if not isinstance(gripper_model, dict) or "model" not in gripper_model:
         raise TypeError("gripper_model must be a dictionary returned by load_gripper_model")
+
+    from grasping_ai.simulation.mujoco_env import set_actuator_controls
 
     def controller(command: GripperCommand) -> None:
         if not isinstance(command, np.ndarray):
@@ -79,14 +87,7 @@ def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[Grip
                 f"command shape {command.shape} does not match gripper actuators ({expected_nu},)"
             )
 
-        active_model = model
-        active_data = data
-
-        actuator_names: Any = gripper_model["actuator_names"]
-        for name, val in zip(actuator_names, command, strict=False):
-            act_id = mujoco.mj_name2id(active_model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
-            if act_id != -1:
-                active_data.ctrl[act_id] = val
+        set_actuator_controls({"model": model, "data": data}, command)
 
     return controller
 

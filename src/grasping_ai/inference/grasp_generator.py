@@ -70,6 +70,7 @@ def build_diffusion_grasp_generator(
     feature_dim: int,
     num_diffusion_steps: int,
     device: str,
+    seed: int = 42,
 ) -> GraspPoseGenerator:
     """Create a callable that generates grasps using a diffusion model.
 
@@ -78,6 +79,8 @@ def build_diffusion_grasp_generator(
         feature_dim: Conditioning feature dimension expected by the score model.
         num_diffusion_steps: Number of denoising steps for the sampler.
         device: Device identifier on which inference runs.
+        seed: Random seed used to draw initial diffusion noise. Sampling is
+            reproducible for a fixed seed.
 
     Returns:
         A function that takes a point cloud ``(N, 3)`` and returns a set of
@@ -98,21 +101,22 @@ def build_diffusion_grasp_generator(
         if point_cloud.ndim != 2 or point_cloud.shape[1] != 3:
             raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
 
-        from grasping_ai.perception.pointcloud import normalize_point_cloud
-        pc_norm = normalize_point_cloud(point_cloud)
-        pc_tensor = torch.from_numpy(pc_norm).float().to(device).unsqueeze(0)
+        pc_tensor = torch.from_numpy(point_cloud).float().to(device).unsqueeze(0)
 
         with torch.no_grad():
             from grasping_ai.models.equivariant_encoder import (
+                compose_with_se3_frame,
+                compute_se3_frame,
                 encode_point_cloud,
                 pool_object_features,
             )
+            frame, centroid = compute_se3_frame(pc_tensor)
             features = encode_point_cloud(model.encoder, pc_tensor)
             cond = pool_object_features(features)
 
             from grasping_ai.models.diffusion import sample_grasps_with_diffusion
             rng = torch.Generator(device=device)
-            rng.manual_seed(42)
+            rng.manual_seed(seed)
 
             samples = sample_grasps_with_diffusion(
                 sampler=sampler,
@@ -124,7 +128,10 @@ def build_diffusion_grasp_generator(
             )
 
             samples_flat = samples.view(-1, 9)
-            transforms = vec_to_se3(samples_flat)
+            canonical = vec_to_se3(samples_flat)
+            transforms = compose_with_se3_frame(
+                canonical, frame, centroid
+            )
 
         return transforms.cpu().numpy()
 
@@ -136,6 +143,7 @@ def build_flow_grasp_generator(
     feature_dim: int,
     num_flow_steps: int,
     device: str,
+    seed: int = 42,
 ) -> GraspPoseGenerator:
     """Create a callable that generates grasps using a flow model.
 
@@ -144,6 +152,8 @@ def build_flow_grasp_generator(
         feature_dim: Conditioning feature dimension expected by the flow field.
         num_flow_steps: Number of integration steps for the flow sampler.
         device: Device identifier on which inference runs.
+        seed: Random seed used to draw initial flow samples. Sampling is
+            reproducible for a fixed seed.
 
     Returns:
         A function that takes a point cloud ``(N, 3)`` and returns a set of
@@ -175,20 +185,21 @@ def build_flow_grasp_generator(
         if point_cloud.ndim != 2 or point_cloud.shape[1] != 3:
             raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
 
-        from grasping_ai.perception.pointcloud import normalize_point_cloud
-        pc_norm = normalize_point_cloud(point_cloud)
-        pc_tensor = torch.from_numpy(pc_norm).float().to(device).unsqueeze(0)
+        pc_tensor = torch.from_numpy(point_cloud).float().to(device).unsqueeze(0)
 
         with torch.no_grad():
             from grasping_ai.models.equivariant_encoder import (
+                compose_with_se3_frame,
+                compute_se3_frame,
                 encode_point_cloud,
                 pool_object_features,
             )
+            frame, centroid = compute_se3_frame(pc_tensor)
             features = encode_point_cloud(model.encoder, pc_tensor)
             cond = pool_object_features(features)
 
             rng = torch.Generator(device=device)
-            rng.manual_seed(42)
+            rng.manual_seed(seed)
 
             samples = sample_grasps_with_flow(
                 integrator=integrator,
@@ -200,7 +211,10 @@ def build_flow_grasp_generator(
             )
 
             samples_flat = samples.view(-1, 9)
-            transforms = vec_to_se3(samples_flat)
+            canonical = vec_to_se3(samples_flat)
+            transforms = compose_with_se3_frame(
+                canonical, frame, centroid
+            )
 
         return transforms.cpu().numpy()
 

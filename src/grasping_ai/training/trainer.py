@@ -57,11 +57,15 @@ def build_training_step(
         x_0 = targets.to(device_obj)
         batch_size_val = x_0.shape[0]
 
-        num_steps = 100
+        from grasping_ai.config.diffusion import (
+            DEFAULT_DIFFUSION_SCHEDULE,
+            linear_beta_schedule,
+        )
+        num_steps = DEFAULT_DIFFUSION_SCHEDULE.num_steps
         t = torch.randint(0, num_steps, (batch_size_val,), device=device_obj, generator=generator)
         noise = torch.randn(x_0.shape, dtype=x_0.dtype, device=device_obj, generator=generator)
 
-        beta = torch.linspace(1e-4, 0.02, num_steps, device=device_obj)
+        beta = linear_beta_schedule().to(device_obj)
         alpha = 1.0 - beta
         alpha_bar = torch.cumprod(alpha, dim=0)
 
