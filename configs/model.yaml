@@ -1,0 +1,11 @@
+model_type: diffusion
+feature_dim: 128
+hidden_dim: 256
+num_layers: 4
+grasp_dim: 7
+num_diffusion_steps: 100
+num_flow_steps: 100
+rl_observation_dim: 0
+rl_action_dim: 0
+rl_hidden_dim: 256
+rl_num_layers: 2

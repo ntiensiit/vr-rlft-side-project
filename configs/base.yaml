@@ -1,0 +1,4 @@
+seed: 0
+device: cuda
+output_dir: artifacts
+experiment_name: default

@@ -1,0 +1,9 @@
+dataset_root: data/processed
+ycb_root: data/raw/ycb
+object_ids:
+  - 003_cracker_box
+  - 004_sugar_box
+  - 006_mustard_bottle
+train_split: train
+val_split: val
+test_split: test

@@ -1,0 +1,6 @@
+robot_description_path: deploy/robot.xml
+gripper_description_path: deploy/gripper.xml
+gripper_close_command: []
+gripper_open_command: []
+ik_max_iterations: 100
+ik_tolerance: 0.001
