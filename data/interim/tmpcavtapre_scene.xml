@@ -1,0 +1,4 @@
+<mujoco model="assembled_scene">
+    <include file="C:/Users/usr0/AppData/Local/Temp/pytest-of-usr0/pytest-73/test_scene_building_and_steppi0/robot.xml"/>
+    <include file="C:/Users/usr0/AppData/Local/Temp/pytest-of-usr0/pytest-73/test_scene_building_and_steppi0/object.xml"/>
+</mujoco>
