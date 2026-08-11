@@ -1,7 +1,7 @@
 target-version = "py312"
 line-length = 100
 src = ["src", "tests"]
-extend-exclude = [".venv", "build", "dist"]
+extend-exclude = [".venv", "build", "dist", "notebooks"]
 
 [lint]
 select = [
