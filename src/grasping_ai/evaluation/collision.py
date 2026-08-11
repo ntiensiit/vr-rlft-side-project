@@ -89,3 +89,81 @@ def filter_collision_free_grasps(checker: CollisionChecker, grasp_poses: np.ndar
     if not free_grasps:
         return np.empty((0, 4, 4))
     return np.stack(free_grasps, axis=0)
+
+
+def generate_analytical_contacts(
+    object_point_cloud: np.ndarray,
+    gripper_point_cloud: np.ndarray,
+    grasp_pose: np.ndarray,
+    contact_clearance: float,
+) -> list[dict[str, np.ndarray]]:
+    """Generate analytical contact records between a gripper and an object.
+
+    Transforms the gripper points using the grasp pose, identifies points
+    within the contact clearance of the object point cloud, and computes
+    contact positions and inward normals.
+
+    Args:
+        object_point_cloud: Point cloud of the object with shape ``(N, 3)``.
+        gripper_point_cloud: Point cloud of the gripper with shape ``(M, 3)``.
+        grasp_pose: Grasp pose represented as a ``(4, 4)`` transformation.
+        contact_clearance: Maximum allowed distance for a contact to be detected.
+
+    Returns:
+        A list of contact records. Each record is a dictionary mapping ``"position"``
+        to a ``(3,)`` position array and ``"normal"`` to an inward unit normal.
+    """
+    if (
+        not isinstance(object_point_cloud, np.ndarray)
+        or object_point_cloud.ndim != 2
+        or object_point_cloud.shape[1] != 3
+    ):
+        raise ValueError("object_point_cloud must have shape (N, 3)")
+    if (
+        not isinstance(gripper_point_cloud, np.ndarray)
+        or gripper_point_cloud.ndim != 2
+        or gripper_point_cloud.shape[1] != 3
+    ):
+        raise ValueError("gripper_point_cloud must have shape (M, 3)")
+    if not isinstance(grasp_pose, np.ndarray) or grasp_pose.shape != (4, 4):
+        raise ValueError("grasp_pose must have shape (4, 4)")
+    if not np.isfinite(object_point_cloud).all():
+        raise ValueError("object_point_cloud must contain only finite values")
+    if not np.isfinite(gripper_point_cloud).all():
+        raise ValueError("gripper_point_cloud must contain only finite values")
+    if not np.isfinite(grasp_pose).all():
+        raise ValueError("grasp_pose must contain only finite values")
+    if contact_clearance < 0 or not np.isfinite(contact_clearance):
+        raise ValueError("contact_clearance must be non-negative and finite")
+
+    if object_point_cloud.shape[0] == 0 or gripper_point_cloud.shape[0] == 0:
+        return []
+
+    rot = grasp_pose[:3, :3]
+    trans = grasp_pose[:3, 3]
+    transformed_gripper = gripper_point_cloud @ rot.T + trans
+
+    tree = KDTree(object_point_cloud)
+    dists, idxs = tree.query(transformed_gripper)
+
+    contacts = []
+    # Using absolute tolerance to avoid edge issues with floating point
+    for i, dist in enumerate(dists):
+        if dist <= contact_clearance + 1e-8:
+            obj_pt = object_point_cloud[idxs[i]]
+            grip_pt = transformed_gripper[i]
+
+            diff = obj_pt - grip_pt
+            diff_norm = np.linalg.norm(diff)
+            if diff_norm > 1e-8:
+                normal = diff / diff_norm
+            else:
+                normal = np.array([0.0, 0.0, 1.0])
+
+            contacts.append({
+                "position": obj_pt,
+                "normal": normal,
+            })
+
+    return contacts
+

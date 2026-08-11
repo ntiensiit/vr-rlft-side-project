@@ -4,6 +4,7 @@ from typing import cast
 
 import numpy as np
 from scipy.optimize import linprog  # type: ignore[import-untyped]
+from scipy.spatial import ConvexHull  # type: ignore[import-untyped]
 
 ContactSet = list[dict[str, np.ndarray]]
 ForceClosureJudge = Callable[[ContactSet], bool]
@@ -185,3 +186,86 @@ def compute_grasp_wrench_matrix(
         return np.zeros((6, 0))
 
     return np.stack(wrenches, axis=1)
+
+
+def compute_grasp_quality(
+    contact_set: ContactSet, friction_coefficient: float
+) -> float:
+    """Compute the standardized scalar grasp-quality metric for a contact set.
+
+    Normalizes the grasp wrench matrix and measures the minimum distance from
+    the origin to the boundary of the convex hull of normalized wrenches.
+    Falls back to a linear programming-based margin if convex hull construction fails.
+
+    Args:
+        contact_set: Contact records describing the grasp.
+        friction_coefficient: Friction coefficient used by force-closure analysis.
+
+    Returns:
+        A non-negative float representing the margin, or 0.0 if not force-closed.
+    """
+    if friction_coefficient < 0:
+        raise ValueError("friction_coefficient must be non-negative")
+
+    if not contact_set:
+        return 0.0
+
+    g_mat = compute_grasp_wrench_matrix(contact_set, friction_coefficient)
+    if g_mat.shape[1] < 6 or np.linalg.matrix_rank(g_mat) < 6:
+        return 0.0
+
+    # Normalize column vectors of g_mat by maximum finite column norm
+    col_norms = np.linalg.norm(g_mat, axis=0)
+    max_norm = np.max(col_norms)
+    if max_norm > 1e-8:
+        g_mat_normalized = g_mat / max_norm
+    else:
+        g_mat_normalized = g_mat
+
+    # Try convex hull in 6D
+    if g_mat_normalized.shape[1] >= 7:
+        try:
+            hull = ConvexHull(g_mat_normalized.T)
+            # check if origin is inside the hull
+            if np.all(hull.equations[:, -1] <= 1e-9):
+                # distance is -offset / norm(normal). Since normal has norm 1:
+                return float(np.min(-hull.equations[:, -1]))
+        except Exception:
+            pass
+
+    # Fallback to LP formulation (similar to Ferrari-Canny sum-of-forces margin)
+    m = g_mat_normalized.shape[1]
+    c = np.zeros(m + 1)
+    c[-1] = -1.0  # Maximize t (minimize -t)
+
+    a_eq = np.zeros((7, m + 1))
+    a_eq[:6, :m] = g_mat_normalized
+    a_eq[6, :m] = 1.0
+    b_eq = np.zeros(7)
+    b_eq[6] = 1.0
+
+    a_ub = np.zeros((m, m + 1))
+    a_ub[:, :m] = -np.eye(m)
+    a_ub[:, -1] = 1.0
+    b_ub = np.zeros(m)
+
+    bounds = [(0.0, None) for _ in range(m)] + [(None, None)]
+
+    try:
+        res = linprog(
+            c,
+            A_ub=a_ub,
+            b_ub=b_ub,
+            A_eq=a_eq,
+            b_eq=b_eq,
+            bounds=bounds,
+            method="highs",
+        )
+        if res.success:
+            t_val = res.x[-1]
+            return max(0.0, float(t_val))
+    except Exception:
+        pass
+
+    return 0.0
+

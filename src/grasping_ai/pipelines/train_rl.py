@@ -113,7 +113,10 @@ def run_rl_training_pipeline(
 
     from grasping_ai.models.rl_policy import build_policy_network
 
-    legacy_policy = cast(torch.nn.Module, build_policy_network(observation_dim, action_dim, hidden_dim, 2))
+    legacy_policy = cast(
+        torch.nn.Module,
+        build_policy_network(observation_dim, action_dim, hidden_dim, 2),
+    )
     sb3_policy = sb3_model.policy
     sb3_pi = sb3_policy.mlp_extractor.policy_net
 

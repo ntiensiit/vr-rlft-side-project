@@ -7,8 +7,14 @@ from grasping_ai.evaluation.collision import (
 from grasping_ai.evaluation.collision import (
     filter_collision_free_grasps as filter_collision_free_grasps,
 )
+from grasping_ai.evaluation.collision import (
+    generate_analytical_contacts as generate_analytical_contacts,
+)
 from grasping_ai.evaluation.force_closure import (
     build_force_closure_judge as build_force_closure_judge,
+)
+from grasping_ai.evaluation.force_closure import (
+    compute_grasp_quality as compute_grasp_quality,
 )
 from grasping_ai.evaluation.force_closure import (
     compute_grasp_wrench_matrix as compute_grasp_wrench_matrix,
@@ -42,10 +48,12 @@ __all__ = [
     "build_lift_outcome_judge",
     "build_stability_judge",
     "check_collision",
+    "compute_grasp_quality",
     "compute_grasp_wrench_matrix",
     "evaluate_force_closure",
     "evaluate_lift_success",
     "evaluate_stability",
     "filter_collision_free_grasps",
+    "generate_analytical_contacts",
     "load_contact_set",
 ]
