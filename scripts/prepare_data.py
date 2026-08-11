@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 
@@ -81,7 +82,7 @@ def generate_synthetic_dataset(
             }
 
             output_file = output_dir / f"{name}.npy"
-            np.save(output_file, sample)
+            np.save(output_file, cast(Any, sample))
 
         except Exception as e:
             print(f"Failed to generate synthetic data for '{name}': {e}")

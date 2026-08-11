@@ -1,4 +1,0 @@
-<mujoco model="assembled_scene">
-    <include file="C:/Users/usr0/AppData/Local/Temp/pytest-of-usr0/pytest-100/test_dynamic_object_attachment0/robot.xml"/>
-    <include file="D:/Code/Vin/VinRobotics/vr-rlft-side-project/data/interim/tmpaeti9l11_my_object.xml"/>
-</mujoco>

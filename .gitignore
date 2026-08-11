@@ -6,6 +6,8 @@ __pycache__/
 .mypy_cache/
 .coverage
 htmlcov/
+data/interim/tmp*_scene.xml
+data/interim/tmp*_my_object.xml
 *.egg-info/
 build/
 dist/
