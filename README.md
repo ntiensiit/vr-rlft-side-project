@@ -70,5 +70,6 @@ Key implemented features:
 - **Phase 6**: Orchestration & Evaluation (Force-closure judging, stability/collision checking, end-to-end simulation pipelines)
 - **Phase 7**: Synthetic Data (Analytical antipodal grasping, ground truth grasp generation)
 - **Phase 8**: Experiment Tracking and Reproducibility (TensorBoard logging, deterministic seeding)
+- **Phase 9**: Standardized Gymnasium RL Environment (Gymnasium wrappers, SB3 integration, policy export)
 
 All public interfaces, data flows, and module dependencies correspond to the architecture designed in `docs/PROJECT.md` and are supported by an exhaustive test suite with >80% coverage.

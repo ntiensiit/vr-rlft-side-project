@@ -1,4 +1,7 @@
 from grasping_ai.simulation.mujoco_env import (
+    MuJoCoGraspingEnv as MuJoCoGraspingEnv,
+)
+from grasping_ai.simulation.mujoco_env import (
     create_simulation as create_simulation,
 )
 from grasping_ai.simulation.mujoco_env import (
@@ -42,6 +45,7 @@ from grasping_ai.simulation.ycb import (
 )
 
 __all__ = [
+    "MuJoCoGraspingEnv",
     "attach_object_to_scene",
     "build_scene_xml",
     "collect_contacts",

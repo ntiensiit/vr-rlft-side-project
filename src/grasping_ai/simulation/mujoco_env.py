@@ -2,6 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
+import gymnasium as gym
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
 
@@ -184,3 +185,161 @@ def read_body_pose(state: object, body_name: str) -> np.ndarray:
     pose[:3, :3] = data.xmat[body_id].reshape(3, 3)
     pose[:3, 3] = data.xpos[body_id]
     return pose
+
+
+class MuJoCoGraspingEnv(gym.Env):
+    """Gymnasium-compatible MuJoCo environment for RL policy training.
+
+    Wraps the existing functional MuJoCo simulation primitives
+    (``load_mujoco_model``, ``create_simulation``, ``reset_simulation``)
+    into a standardized Gymnasium environment with explicit observation
+    and action spaces.
+
+    Observations are the concatenation of MuJoCo ``qpos`` and ``qvel``
+    vectors. Actions map directly to MuJoCo actuator controls. The reward
+    preserves the legacy behavior: negative quadratic action cost plus a
+    survival bonus when the observation is finite, clipped to a finite range.
+
+    Args:
+        robot_xml_path: Path to the robot MJCF XML description.
+    """
+
+    def __init__(self, robot_xml_path: Path) -> None:
+        """Initialize the environment from a robot MJCF file.
+
+        Args:
+            robot_xml_path: Path to the robot MJCF XML description.
+
+        Raises:
+            FileNotFoundError: If the robot XML file does not exist.
+            ValueError: If the MuJoCo model has zero actuators.
+        """
+        super().__init__()
+
+        model_handle = load_mujoco_model(robot_xml_path)
+        self._state, self._step_fn, self._contacts_fn = create_simulation(
+            model_handle
+        )
+
+        state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
+        mj_model: Any = state_dict["model"]
+
+        nq: int = mj_model.nq
+        nv: int = mj_model.nv
+        nu: int = mj_model.nu
+
+        if nu == 0:
+            raise ValueError(
+                "MuJoCo model has zero actuators; "
+                "the RL environment requires a non-empty action space"
+            )
+
+        obs_size = nq + nv
+        self.observation_space = gym.spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(obs_size,),
+            dtype=np.float32,
+        )
+
+        act_low = np.full(nu, -1.0, dtype=np.float32)
+        act_high = np.full(nu, 1.0, dtype=np.float32)
+        if hasattr(mj_model, "actuator_ctrlrange"):
+            ctrl_range = np.array(mj_model.actuator_ctrlrange, copy=True)
+            if ctrl_range.shape == (nu, 2):
+                for i in range(nu):
+                    lo, hi = ctrl_range[i]
+                    if np.isfinite(lo) and np.isfinite(hi):
+                        act_low[i] = float(lo)
+                        act_high[i] = float(hi)
+
+        self.action_space = gym.spaces.Box(
+            low=act_low,
+            high=act_high,
+            shape=(nu,),
+            dtype=np.float32,
+        )
+
+    def reset(
+        self,
+        *,
+        seed: int | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        """Reset the simulation to its initial state.
+
+        Args:
+            seed: Optional random seed for Gymnasium seeding.
+            options: Optional configuration dictionary (unused).
+
+        Returns:
+            A tuple ``(observation, info)`` where ``observation`` is the
+            initial state vector and ``info`` is an empty dictionary.
+        """
+        super().reset(seed=seed, options=options)
+        reset_simulation(self._state)
+        return self._get_observation(), {}
+
+    def step(
+        self, action: np.ndarray
+    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+        """Advance the simulation by one step.
+
+        Args:
+            action: Action vector applied to MuJoCo actuator controls.
+
+        Returns:
+            A Gymnasium step tuple ``(observation, reward, terminated,
+            truncated, info)``.
+
+        Raises:
+            ValueError: If the action contains non-finite values.
+        """
+        action = np.asarray(action, dtype=np.float32).flatten()
+
+        if not np.isfinite(action).all():
+            raise ValueError("Action must contain only finite values")
+
+        state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
+        mj_model: Any = state_dict["model"]
+        mj_data: Any = state_dict["data"]
+        nu: int = mj_model.nu
+
+        if action.shape[0] > nu:
+            action = action[:nu]
+        elif action.shape[0] < nu:
+            padded = np.zeros(nu, dtype=np.float32)
+            padded[: action.shape[0]] = action
+            action = padded
+
+        mj_data.ctrl[:] = action
+        mujoco.mj_step(mj_model, mj_data)
+
+        obs = self._get_observation()
+
+        reward = -float(np.sum(action ** 2)) * 0.01
+        if np.isfinite(obs).all():
+            reward += 1.0
+        reward = float(np.clip(reward, -10.0, 10.0))
+
+        terminated = not np.isfinite(obs).all()
+        truncated = False
+
+        if terminated:
+            reset_simulation(self._state)
+            obs = self._get_observation()
+
+        return obs, reward, terminated, truncated, {}
+
+    def _get_observation(self) -> np.ndarray:
+        """Read and concatenate qpos and qvel into a float32 observation.
+
+        Returns:
+            Observation vector of shape ``(nq + nv,)``.
+        """
+        state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
+        mj_data: Any = state_dict["data"]
+        qpos = np.array(mj_data.qpos, copy=True)
+        qvel = np.array(mj_data.qvel, copy=True)
+        return np.concatenate([qpos, qvel]).astype(np.float32)
+

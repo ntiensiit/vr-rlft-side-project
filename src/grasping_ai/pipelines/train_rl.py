@@ -64,89 +64,81 @@ def run_rl_training_pipeline(
     if not 0.0 <= gamma <= 1.0:
         raise ValueError("gamma must be in [0, 1]")
 
-    object_id = object_ids[0] if object_ids else "default"
+    object_ids[0] if object_ids else "default"
 
-    env_state, _sim_step, _contacts = build_rl_environment(
-        robot_xml_path, ycb_root, object_id, observation_dim, action_dim,
-    )
+    from stable_baselines3 import PPO
 
-    state_dict: dict[str, Any] = env_state  # type: ignore[assignment]
-    mj_model: Any = state_dict["model"]
-    env_obs_dim = mj_model.nq + mj_model.nv
-    env_act_dim = mj_model.nu
+    from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
 
-    if observation_dim != env_obs_dim:
+    env = MuJoCoGraspingEnv(robot_xml_path)
+
+    obs_shape = env.observation_space.shape
+    act_shape = env.action_space.shape
+    if obs_shape is None or act_shape is None:
+        raise ValueError("Environment space shapes cannot be None")
+
+    if observation_dim != obs_shape[0]:
         raise ValueError(
             f"observation_dim ({observation_dim}) does not match "
-            f"environment observation dimension ({env_obs_dim})"
+            f"environment observation dimension ({obs_shape[0]})"
         )
-    if action_dim != env_act_dim:
+    if action_dim != act_shape[0]:
         raise ValueError(
             f"action_dim ({action_dim}) does not match "
-            f"environment action dimension ({env_act_dim})"
+            f"environment action dimension ({act_shape[0]})"
         )
 
+    policy_kwargs = {
+        "net_arch": {"pi": [hidden_dim, hidden_dim], "vf": [hidden_dim, hidden_dim]},
+        "activation_fn": torch.nn.Tanh,
+    }
+
+    sb3_model = PPO(
+        "MlpPolicy",
+        env,
+        learning_rate=learning_rate,
+        n_steps=64,
+        batch_size=64,
+        n_epochs=1,
+        gamma=gamma,
+        device=device,
+        seed=seed,
+        policy_kwargs=policy_kwargs,
+        tensorboard_log=str(experiment_log_dir) if experiment_log_dir else None,
+        verbose=1,
+    )
+
+    total_timesteps = num_updates * 64
+    sb3_model.learn(total_timesteps=total_timesteps)
+
     from grasping_ai.models.rl_policy import build_policy_network
-    from grasping_ai.training.rl_trainer import (
-        build_rl_training_step,
-        run_rl_training_loop,
-    )
 
-    if seed is not None:
-        torch.manual_seed(seed)
+    legacy_policy = cast(torch.nn.Module, build_policy_network(observation_dim, action_dim, hidden_dim, 2))
+    sb3_policy = sb3_model.policy
+    sb3_pi = sb3_policy.mlp_extractor.policy_net
 
-    policy = build_policy_network(observation_dim, action_dim, hidden_dim, 2)
-    policy_module = cast(torch.nn.Module, policy)
-    policy_module.to(torch.device(device))
-    optimizer = torch.optim.Adam(
-        policy_module.parameters(), lr=learning_rate
-    )
+    layer0 = cast(torch.nn.Linear, sb3_pi[0])
+    layer2 = cast(torch.nn.Linear, sb3_pi[2])
+    action_net = cast(torch.nn.Linear, sb3_policy.action_net)
 
-    update_step = build_rl_training_step(
-        policy_module, optimizer, clip_ratio=0.2, entropy_coefficient=0.0,
-        device=device, gamma=gamma,
-    )
+    legacy_state = legacy_policy.state_dict()
+    legacy_state["0.weight"] = layer0.weight.data.clone()
+    legacy_state["0.bias"] = layer0.bias.data.clone()
+    legacy_state["2.weight"] = layer2.weight.data.clone()
+    legacy_state["2.bias"] = layer2.bias.data.clone()
+    legacy_state["4.weight"] = action_net.weight.data.clone()
+    legacy_state["4.bias"] = action_net.bias.data.clone()
 
-    def rollout_generator():
-        """Yield rollouts by stepping the simulation environment."""
-        while True:
-            rollout = collect_rl_rollout(
-                env_state, lambda obs: policy(  # type: ignore[misc]
-                    torch.from_numpy(obs).float().unsqueeze(0).to(device)
-                ).detach().squeeze(0).cpu().numpy(),
-                num_steps=64,
-            )
-            yield rollout
-
-    rollout_iter = iter(rollout_generator())
+    legacy_policy.load_state_dict(legacy_state)
 
     policy_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-
-    metadata = {
-        "robot_xml_path": str(robot_xml_path),
-        "ycb_root": str(ycb_root),
-        "object_id": object_id,
-        "policy_checkpoint_path": str(policy_checkpoint_path),
-        "observation_dim": observation_dim,
-        "action_dim": action_dim,
-        "hidden_dim": hidden_dim,
-        "learning_rate": learning_rate,
-        "num_updates": num_updates,
-        "gamma": gamma,
-        "device": device,
-        "rollout_step_count": 64,
-        "clip_ratio": 0.2,
-        "entropy_coefficient": 0.0,
+    checkpoint_dict: dict[str, Any] = {
+        "epoch": num_updates,
+        "model_state_dict": legacy_policy.state_dict(),
     }
     if seed is not None:
-        metadata["seed"] = seed
-
-    run_rl_training_loop(
-        update_step, rollout_iter, num_updates,
-        policy_checkpoint_path, log_every=10,
-        experiment_log_dir=experiment_log_dir,
-        metadata=metadata, seed=seed,
-    )
+        checkpoint_dict["seed"] = seed
+    torch.save(checkpoint_dict, policy_checkpoint_path)
 
 
 def build_rl_environment(
