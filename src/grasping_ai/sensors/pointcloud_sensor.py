@@ -70,4 +70,61 @@ def sample_point_cloud_from_mesh(
     Returns:
         A point cloud with shape ``(num_samples, 3)``.
     """
-    raise NotImplementedError
+    if not isinstance(mesh_path, Path):
+        raise TypeError("mesh_path must be a pathlib.Path instance")
+    if not mesh_path.exists():
+        raise FileNotFoundError(f"Mesh file '{mesh_path}' does not exist")
+    if not isinstance(num_samples, int) or num_samples <= 0:
+        raise ValueError("num_samples must be a positive integer")
+    if not isinstance(rng, np.random.Generator):
+        raise TypeError("rng must be a numpy random Generator")
+
+    import open3d as o3d  # type: ignore[import-untyped]
+
+    mesh = o3d.io.read_triangle_mesh(str(mesh_path))
+    if mesh.is_empty():
+        raise ValueError(f"Mesh file '{mesh_path}' is empty or invalid")
+
+    vertices = np.asarray(mesh.vertices)
+    triangles = np.asarray(mesh.triangles)
+
+    if len(triangles) == 0:
+        raise ValueError("Mesh has no triangles to sample from")
+
+    v0 = vertices[triangles[:, 0]]
+    v1 = vertices[triangles[:, 1]]
+    v2 = vertices[triangles[:, 2]]
+
+    # Compute triangle areas using cross products
+    cross_prod = np.cross(v1 - v0, v2 - v0)
+    areas = 0.5 * np.linalg.norm(cross_prod, axis=1)
+
+    total_area = np.sum(areas)
+    if total_area <= 0:
+        probabilities = np.ones(len(triangles)) / len(triangles)
+    else:
+        probabilities = areas / total_area
+
+    # Sample triangle indices
+    sampled_indices = rng.choice(len(triangles), size=num_samples, p=probabilities)
+
+    # Sample barycentric coordinates
+    r1 = rng.random(num_samples)
+    r2 = rng.random(num_samples)
+    sqrt_r1 = np.sqrt(r1)
+
+    u = 1.0 - sqrt_r1
+    v = sqrt_r1 * (1.0 - r2)
+    w = sqrt_r1 * r2
+
+    p0 = v0[sampled_indices]
+    p1 = v1[sampled_indices]
+    p2 = v2[sampled_indices]
+
+    sampled_points = (
+        u[:, np.newaxis] * p0 +
+        v[:, np.newaxis] * p1 +
+        w[:, np.newaxis] * p2
+    )
+
+    return sampled_points.astype(np.float32)

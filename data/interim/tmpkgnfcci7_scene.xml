@@ -1,0 +1,4 @@
+<mujoco model="assembled_scene">
+    <include file="C:/Users/usr0/AppData/Local/Temp/pytest-of-usr0/pytest-90/test_phase6_pipelines_do_not_l0/robot.xml"/>
+    <include file="C:/Users/usr0/AppData/Local/Temp/pytest-of-usr0/pytest-90/test_phase6_pipelines_do_not_l0/ycb/006_mustard_bottle/mustard_bottle.xml"/>
+</mujoco>

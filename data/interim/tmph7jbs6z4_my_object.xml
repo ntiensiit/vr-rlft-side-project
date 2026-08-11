@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="minimal_object">
+        <worldbody>
+            <body name="my_object" pos="0.5 0 0.5">
+                <geom name="object_geom" type="sphere" size="0.05" />
+            </body>
+        </worldbody>
+    </mujoco>

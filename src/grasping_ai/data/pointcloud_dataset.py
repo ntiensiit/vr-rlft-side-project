@@ -144,3 +144,161 @@ def resolve_ycb_object_id(ycb_root: Path, object_name: str) -> Path:
                 break
 
     return mesh_path if mesh_path is not None else target_dir
+
+
+def generate_analytical_grasps(
+    points: np.ndarray,
+    normals: np.ndarray,
+    num_grasps: int,
+    gripper_width: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Generate analytical antipodal grasps from a point cloud with normals.
+
+    Args:
+        points: Point cloud of shape ``(N, 3)``.
+        normals: Point cloud normals of shape ``(N, 3)``.
+        num_grasps: Maximum number of grasps to generate.
+        gripper_width: Maximum allowed distance between contact points.
+        rng: Random generator.
+
+    Returns:
+        Array of grasp poses of shape ``(K, 4, 4)`` where K <= num_grasps.
+    """
+    if not isinstance(points, np.ndarray) or points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("points must be of shape (N, 3)")
+    if not isinstance(normals, np.ndarray) or normals.ndim != 2 or normals.shape[1] != 3:
+        raise ValueError("normals must be of shape (N, 3)")
+    if points.shape[0] != normals.shape[0]:
+        raise ValueError("points and normals must have the same length")
+    if not isinstance(rng, np.random.Generator):
+        raise TypeError("rng must be a numpy random Generator")
+    if num_grasps <= 0:
+        raise ValueError("num_grasps must be positive")
+
+    import scipy.spatial  # type: ignore[import-untyped]
+
+    tree = scipy.spatial.KDTree(points)
+    valid_grasps: list[np.ndarray] = []
+    n = points.shape[0]
+
+    attempts = num_grasps * 20
+    for _ in range(attempts):
+        if len(valid_grasps) >= num_grasps:
+            break
+
+        i = int(rng.choice(n))
+        p_i = points[i]
+        n_i = normals[i]
+
+        # Find neighbors within gripper_width
+        neighbors = tree.query_ball_point(p_i, r=gripper_width)
+        if not neighbors:
+            continue
+
+        # Shuffle neighbors using rng
+        rng.shuffle(neighbors)
+
+        for j in neighbors:
+            if j == i:
+                continue
+            p_j = points[j]
+            n_j = normals[j]
+
+            d = p_j - p_i
+            dist = np.linalg.norm(d)
+            if dist < 1e-4:
+                continue
+            d = d / dist
+
+            # Antipodal condition: normals face each other, and action line aligns with normals
+            if (
+                np.dot(n_i, -n_j) > 0.5
+                and np.dot(n_i, d) > 0.5
+                and np.dot(n_j, -d) > 0.5
+            ):
+                z_axis = d
+                avg_normal = 0.5 * (n_i + n_j)
+                x_axis = np.cross(z_axis, avg_normal)
+                x_norm = np.linalg.norm(x_axis)
+                if x_norm < 1e-4:
+                    ref = np.array([1.0, 0.0, 0.0])
+                    if np.abs(np.dot(ref, z_axis)) > 0.9:
+                        ref = np.array([0.0, 1.0, 0.0])
+                    x_axis = np.cross(z_axis, ref)
+                    x_norm = np.linalg.norm(x_axis)
+                x_axis = x_axis / x_norm
+                y_axis = np.cross(z_axis, x_axis)
+                y_axis = y_axis / np.linalg.norm(y_axis)
+
+                pose = np.eye(4)
+                pose[:3, 0] = x_axis
+                pose[:3, 1] = y_axis
+                pose[:3, 2] = z_axis
+                pose[:3, 3] = 0.5 * (p_i + p_j)
+
+                # Ensure determinant is +1 within tolerance
+                det = np.linalg.det(pose[:3, :3])
+                if np.abs(det - 1.0) < 1e-4:
+                    valid_grasps.append(pose)
+                    break
+
+    # Fallback if no valid grasps found: relax constraints
+    if not valid_grasps:
+        for _ in range(attempts):
+            if len(valid_grasps) >= num_grasps:
+                break
+
+            i = int(rng.choice(n))
+            p_i = points[i]
+            n_i = normals[i]
+
+            neighbors = tree.query_ball_point(p_i, r=gripper_width)
+            if not neighbors:
+                continue
+
+            rng.shuffle(neighbors)
+            for j in neighbors:
+                if j == i:
+                    continue
+                p_j = points[j]
+                n_j = normals[j]
+
+                d = p_j - p_i
+                dist = np.linalg.norm(d)
+                if dist < 1e-4:
+                    continue
+                d = d / dist
+
+                # Relaxed antipodal condition
+                if np.dot(n_i, -n_j) > -1.1:
+                    z_axis = d
+                    avg_normal = 0.5 * (n_i + n_j)
+                    x_axis = np.cross(z_axis, avg_normal)
+                    x_norm = np.linalg.norm(x_axis)
+                    if x_norm < 1e-4:
+                        ref = np.array([1.0, 0.0, 0.0])
+                        if np.abs(np.dot(ref, z_axis)) > 0.9:
+                            ref = np.array([0.0, 1.0, 0.0])
+                        x_axis = np.cross(z_axis, ref)
+                        x_norm = np.linalg.norm(x_axis)
+                    x_axis = x_axis / x_norm
+                    y_axis = np.cross(z_axis, x_axis)
+                    y_axis = y_axis / np.linalg.norm(y_axis)
+
+                    pose = np.eye(4)
+                    pose[:3, 0] = x_axis
+                    pose[:3, 1] = y_axis
+                    pose[:3, 2] = z_axis
+                    pose[:3, 3] = 0.5 * (p_i + p_j)
+
+                    det = np.linalg.det(pose[:3, :3])
+                    if np.abs(det - 1.0) < 1e-4:
+                        valid_grasps.append(pose)
+                        break
+
+    if not valid_grasps:
+        return np.empty((0, 4, 4), dtype=np.float32)
+
+    return np.stack(valid_grasps, axis=0).astype(np.float32)
+
