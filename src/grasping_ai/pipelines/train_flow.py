@@ -11,13 +11,10 @@ from grasping_ai.data.pointcloud_dataset import (
     load_grasp_sample,
 )
 from grasping_ai.models.equivariant_encoder import (
-    build_equivariant_encoder,
     compute_se3_frame,
-    encode_point_cloud,
-    pool_object_features,
     world_transform_from_frame,
 )
-from grasping_ai.models.flow import build_flow_field
+from grasping_ai.models.flow import FlowGeneratorModel
 from grasping_ai.training.losses import build_flow_matching_loss
 from grasping_ai.training.trainer import (
     build_adam_optimizer,
@@ -33,7 +30,7 @@ def build_flow_training_components(
     learning_rate: float,
     device: str,
 ) -> dict[str, object]:
-    """Construct the flow model and optimizer used by flow-based training.
+    """Construct the flow model and a single joint optimizer for it.
 
     Args:
         feature_dim: Conditioning feature dimension from the encoder.
@@ -43,17 +40,19 @@ def build_flow_training_components(
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
 
     Returns:
-        A dictionary containing the flow ``"model"``, the ``"optimizer"`` and
-        the ``"flow_field"`` callable produced by ``models.flow``.
+        A dictionary containing the combined ``"model"`` (encoder + flow
+        field on a single ``FlowGeneratorModel``), the same value as
+        ``"flow_field"`` for backward compatibility, and the ``"optimizer"``
+        that updates both jointly.
     """
-    flow_field = cast(torch.nn.Module, build_flow_field(feature_dim, hidden_dim, num_layers))
-    flow_field.to(device)
-    optimizer = build_adam_optimizer(flow_field.parameters(), learning_rate)
-    return {"model": flow_field, "flow_field": flow_field, "optimizer": optimizer}
+    model = cast(torch.nn.Module, FlowGeneratorModel(feature_dim, hidden_dim, num_layers))
+    model.to(device)
+    optimizer = build_adam_optimizer(model.parameters(), learning_rate)
+    return {"model": model, "flow_field": model, "optimizer": optimizer}
 
 
 def build_flow_training_step(
-    flow_field: torch.nn.Module,
+    model: FlowGeneratorModel,
     loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     optimizer: torch.optim.Optimizer,
     device: str,
@@ -61,15 +60,20 @@ def build_flow_training_step(
 ) -> Callable[[torch.Tensor, torch.Tensor], dict[str, float]]:
     """Build a callable training step closure for a flow-matching model.
 
+    The closure updates both the encoder and the flow field jointly so the
+    checkpoint preserves the exact encoder state used during training.
+
     Args:
-        flow_field: ``FlowFieldNet`` instance being trained.
-        loss_fn: Loss function returned by ``training.losses.build_flow_matching_loss``.
+        model: ``FlowGeneratorModel`` instance being trained (encoder + flow
+            field are jointly updated).
+        loss_fn: Loss function returned by
+            ``training.losses.build_flow_matching_loss``.
         optimizer: Optimizer returned by ``build_adam_optimizer``.
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
         seed: Optional random seed for reproducible interpolation sampling.
 
     Returns:
-        A callable that consumes ``(conditioning, targets)`` and returns a
+        A callable that consumes ``(point_clouds, targets)`` and returns a
         dictionary of training metrics for the step.
     """
     device_obj = torch.device(device)
@@ -78,12 +82,12 @@ def build_flow_training_step(
         generator = torch.Generator(device=device_obj).manual_seed(seed)
 
     def step(
-        conditioning: torch.Tensor, targets: torch.Tensor
+        point_clouds: torch.Tensor, targets: torch.Tensor
     ) -> dict[str, float]:
-        flow_field.train()
+        model.train()
         optimizer.zero_grad()
 
-        cond = conditioning.to(device_obj)
+        pcs = point_clouds.to(device_obj)
         x_1 = targets.to(device_obj)
         batch_size_val = x_1.shape[0]
 
@@ -103,7 +107,8 @@ def build_flow_training_step(
         x_t = (1.0 - t_view) * x_0 + t_view * x_1
         target_velocity = x_1 - x_0
 
-        predicted_velocity = flow_field(x_t, cond)
+        cond = model.condition(pcs)
+        predicted_velocity = model.flow_field(x_t, cond)
         loss = loss_fn(predicted_velocity, target_velocity)
 
         loss.backward()
@@ -111,7 +116,7 @@ def build_flow_training_step(
 
         return {"loss": float(loss.item())}
 
-    step.model = flow_field  # type: ignore[attr-defined]
+    step.model = model  # type: ignore[attr-defined]
     step.optimizer = optimizer  # type: ignore[attr-defined]
     return step
 
@@ -163,7 +168,7 @@ def _flow_dataset_pairs(
 
 
 class _FlowTrainingDataloader:
-    """Iterable dataloader that emits ``(cond, targets)`` batches per epoch."""
+    """Iterable dataloader that emits ``(pcs, targets)`` batches per epoch."""
 
     def __init__(
         self,
@@ -176,7 +181,6 @@ class _FlowTrainingDataloader:
         self.batch_size = batch_size
         self.device = device
         self.seed = seed
-        self.encoder: torch.nn.Module | None = None
 
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         num_samples = len(self.pairs)
@@ -192,18 +196,7 @@ class _FlowTrainingDataloader:
             targets = torch.stack(
                 [self.pairs[idx][1] for idx in batch_indices]
             ).to(self.device)
-
-            if self.encoder is None:
-                raise RuntimeError(
-                    "Flow dataloader requires encoder set via set_encoder()"
-                )
-            features = encode_point_cloud(self.encoder, pcs)
-            cond = pool_object_features(features)
-
-            yield cond, targets
-
-    def set_encoder(self, encoder: torch.nn.Module) -> None:
-        self.encoder = encoder
+            yield pcs, targets
 
 
 def run_flow_training_pipeline(
@@ -224,6 +217,12 @@ def run_flow_training_pipeline(
     Mirrors ``run_training_pipeline`` but uses a continuous-time flow-matching
     objective on the canonical-frame 9D grasp vectors instead of the discrete
     diffusion score-matching loss.
+
+    The encoder and flow field are trained jointly on a single
+    ``FlowGeneratorModel`` and saved together by the checkpoint writer, so
+    the train/inference model contract is explicit: ``state_dict()``
+    contains both ``encoder.*`` and ``flow_field.*`` keys, and
+    ``load_flow_model_checkpoint`` reconstructs the same model architecture.
 
     Args:
         dataset_root: Root directory of the grasp-pose dataset.
@@ -251,19 +250,15 @@ def run_flow_training_pipeline(
     components = build_flow_training_components(
         feature_dim, hidden_dim, num_layers, learning_rate, device
     )
-    flow_field = components["model"]
-    optimizer = components["optimizer"]
-
-    encoder = cast(torch.nn.Module, build_equivariant_encoder(feature_dim, 2))
-    encoder.to(device)
+    model = cast(FlowGeneratorModel, components["model"])
 
     pairs = _flow_dataset_pairs(dataset_root)
 
-    loss_fn = build_flow_matching_loss(cast(Callable[..., torch.Tensor], flow_field))
+    loss_fn = build_flow_matching_loss(model.flow_field)
     training_step = build_flow_training_step(
-        cast(torch.nn.Module, flow_field),
+        model,
         loss_fn,
-        cast(torch.optim.Optimizer, optimizer),
+        cast(torch.optim.Optimizer, components["optimizer"]),
         device,
         seed=seed,
     )
@@ -271,8 +266,6 @@ def run_flow_training_pipeline(
     dataloader: Iterable[tuple[torch.Tensor, torch.Tensor]] = _FlowTrainingDataloader(
         pairs, batch_size, device, seed
     )
-    if isinstance(dataloader, _FlowTrainingDataloader):
-        dataloader.set_encoder(encoder)
 
     metadata = {
         "pipeline": "flow",
@@ -301,9 +294,51 @@ def run_flow_training_pipeline(
     )
 
     save_training_checkpoint(
-        cast(torch.nn.Module, flow_field),
-        cast(torch.optim.Optimizer, optimizer),
+        cast(torch.nn.Module, model),
+        cast(torch.optim.Optimizer, components["optimizer"]),
         num_epochs,
         checkpoint_path,
         seed=seed,
     )
+
+
+def load_flow_model_checkpoint(
+    checkpoint_path: Path,
+    feature_dim: int,
+    hidden_dim: int,
+    num_layers: int,
+    device: str,
+) -> FlowGeneratorModel:
+    """Reconstruct a ``FlowGeneratorModel`` from a joint train/inference checkpoint.
+
+    Loads the combined ``state_dict`` (encoder + flow field) into a freshly
+    constructed ``FlowGeneratorModel`` so the encoder state matches the
+    encoder actually used during training.
+
+    Args:
+        checkpoint_path: Path to the flow checkpoint written by
+            ``run_flow_training_pipeline``.
+        feature_dim: Conditioning feature dimension used at training time.
+        hidden_dim: Hidden width used at training time.
+        num_layers: Number of hidden layers used at training time.
+        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
+
+    Returns:
+        A ``FlowGeneratorModel`` in evaluation mode on the requested device.
+    """
+    if not isinstance(checkpoint_path, Path):
+        raise TypeError("checkpoint_path must be a pathlib.Path instance")
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(
+            f"Checkpoint file not found: {checkpoint_path}"
+        )
+
+    model = cast(
+        FlowGeneratorModel,
+        FlowGeneratorModel(feature_dim, hidden_dim, num_layers),
+    )
+    state_dict = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(state_dict["model_state_dict"])
+    model.to(torch.device(device))
+    model.eval()
+    return model

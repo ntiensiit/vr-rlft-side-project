@@ -1,22 +1,21 @@
 """Phase 4 — flow-matching training pipeline regression test."""
 import os
+import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
+import torch
 
 
-def test_run_flow_training_pipeline_produces_checkpoint(tmp_path):
-    """End-to-end flow training writes a checkpoint and lowers the loss."""
-    from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
-
+def _make_dataset(tmp_path: Path, *, n_grasps: int, seed: int) -> Path:
     dataset_root = tmp_path / "dataset"
     dataset_root.mkdir()
-    rng = np.random.default_rng(0)
+    rng = np.random.default_rng(seed)
     pc = rng.standard_normal((64, 3)).astype(np.float32)
-    grasps = np.tile(np.eye(4, dtype=np.float32)[None], (4, 1, 1))
-    grasps[:, :3, 3] = rng.standard_normal((4, 3)).astype(np.float32) * 0.1
+    grasps = np.tile(np.eye(4, dtype=np.float32)[None], (n_grasps, 1, 1))
+    grasps[:, :3, 3] = rng.standard_normal((n_grasps, 3)).astype(np.float32) * 0.1
     np.save(
         dataset_root / "flow_obj.npy",
         {
@@ -27,7 +26,116 @@ def test_run_flow_training_pipeline_produces_checkpoint(tmp_path):
         },
         allow_pickle=True,
     )
+    return dataset_root
 
+
+def test_flow_checkpoint_persists_encoder_and_flow_field(tmp_path):
+    """The flow checkpoint must contain both encoder and flow_field state.
+
+    Regression for the train/inference model contract: the encoder used at
+    training time must be saved as part of the flow checkpoint so inference
+    can reproduce the same conditioning signal.
+    """
+    from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
+
+    dataset_root = _make_dataset(tmp_path, n_grasps=4, seed=0)
+    checkpoint = tmp_path / "flow_model.pt"
+    run_flow_training_pipeline(
+        dataset_root=dataset_root,
+        checkpoint_path=checkpoint,
+        feature_dim=16,
+        hidden_dim=16,
+        num_layers=2,
+        learning_rate=0.001,
+        num_epochs=1,
+        batch_size=2,
+        device="cpu",
+        seed=0,
+    )
+    state_dict = torch.load(checkpoint, map_location="cpu")
+    keys = list(state_dict["model_state_dict"].keys())
+    assert any(k.startswith("encoder.") for k in keys), (
+        f"flow checkpoint missing encoder keys: {keys}"
+    )
+    assert any(k.startswith("flow_field.") for k in keys), (
+        f"flow checkpoint missing flow_field keys: {keys}"
+    )
+
+
+def test_load_flow_model_checkpoint_reproduces_trained_state(tmp_path):
+    """``load_flow_model_checkpoint`` restores the encoder used at training."""
+    from grasping_ai.pipelines.train_flow import (
+        load_flow_model_checkpoint,
+        run_flow_training_pipeline,
+    )
+
+    dataset_root = _make_dataset(tmp_path, n_grasps=4, seed=1)
+    checkpoint = tmp_path / "flow_repro.pt"
+    run_flow_training_pipeline(
+        dataset_root=dataset_root,
+        checkpoint_path=checkpoint,
+        feature_dim=16,
+        hidden_dim=16,
+        num_layers=2,
+        learning_rate=0.001,
+        num_epochs=1,
+        batch_size=2,
+        device="cpu",
+        seed=1,
+    )
+
+    model = load_flow_model_checkpoint(
+        checkpoint, feature_dim=16, hidden_dim=16, num_layers=2, device="cpu"
+    )
+    expected = torch.load(checkpoint, map_location="cpu")["model_state_dict"]
+    for key in expected:
+        assert torch.allclose(
+            model.state_dict()[key], expected[key]
+        ), f"mismatch at {key}"
+
+
+def test_flow_training_optimizes_encoder_and_flow_field(tmp_path):
+    """Both the encoder and flow field parameters change after a training step."""
+    from grasping_ai.pipelines.train_flow import build_flow_training_components
+
+    components = build_flow_training_components(
+        feature_dim=8, hidden_dim=8, num_layers=2, learning_rate=0.01, device="cpu"
+    )
+    model = components["model"]
+    optimizer = components["optimizer"]
+
+    initial_encoder_norm = sum(
+        p.norm().item() for p in model.encoder.parameters()
+    )
+    initial_flow_norm = sum(
+        p.norm().item() for p in model.flow_field.parameters()
+    )
+
+    pcs = torch.randn(4, 16, 3)
+    targets = torch.randn(4, 9)
+    cond = model.condition(pcs)
+    pred = model.flow_field(targets, cond)
+    loss = pred.pow(2).mean()
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    updated_encoder_norm = sum(
+        p.norm().item() for p in model.encoder.parameters()
+    )
+    updated_flow_norm = sum(
+        p.norm().item() for p in model.flow_field.parameters()
+    )
+
+    assert updated_encoder_norm != pytest.approx(initial_encoder_norm)
+    assert updated_flow_norm != pytest.approx(initial_flow_norm)
+
+
+def test_run_flow_training_pipeline_produces_checkpoint(tmp_path):
+    """End-to-end flow training writes a checkpoint."""
+    from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
+
+    dataset_root = _make_dataset(tmp_path, n_grasps=4, seed=0)
     checkpoint = tmp_path / "flow_model.pt"
     run_flow_training_pipeline(
         dataset_root=dataset_root,
@@ -64,22 +172,7 @@ def test_run_flow_training_pipeline_rejects_missing_dataset_root(tmp_path):
 
 def test_flow_training_cli(tmp_path):
     """``scripts/train_flow.py`` runs end-to-end via subprocess."""
-    dataset_root = tmp_path / "dataset"
-    dataset_root.mkdir()
-    rng = np.random.default_rng(1)
-    pc = rng.standard_normal((32, 3)).astype(np.float32)
-    grasps = np.tile(np.eye(4, dtype=np.float32)[None], (2, 1, 1))
-    np.save(
-        dataset_root / "cli_obj.npy",
-        {
-            "point_cloud": pc,
-            "grasp_poses": grasps,
-            "scores": None,
-            "object_id": "cli_obj",
-        },
-        allow_pickle=True,
-    )
-
+    dataset_root = _make_dataset(tmp_path, n_grasps=2, seed=1)
     checkpoint = tmp_path / "flow_cli.pt"
     cmd = [
         sys.executable,
@@ -96,7 +189,6 @@ def test_flow_training_cli(tmp_path):
         "--seed", "0",
     ]
     env = {**os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")}
-    import subprocess
 
     subprocess.run(
         cmd, env=env, capture_output=True, text=True, check=True

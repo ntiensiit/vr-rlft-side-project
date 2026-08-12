@@ -1022,3 +1022,16 @@ Force-closure and simulation evaluation
 Reinforcement learning adds a closed-loop learning component in which a policy interacts with the simulated environment and learns from rewards. Its exact role in the final architecture remains to be determined.
 
 The repository architecture intentionally separates data, perception, models, training, inference, robotics, sensors, simulation, evaluation, configuration, and orchestration. This keeps the initial system simple while preserving clear boundaries for future expansion.
+
+## 28. Architecture Decision Records
+
+Significant design decisions for the project are recorded under docs/adr/
+as lightweight ADR documents. Each ADR captures the context, decision,
+rationale, and consequences of a single choice, following the conventions in
+docs/adr/README.md.
+
+Current ADRs:
+
+- [ADR-0001: Phase 4 representation — canonicalization vs. nontrivial equivariance](adr/001-phase4-canonicalization-vs-equivariant.md)
+- [ADR-0002: Flow-matching training — required deliverable vs. optional extension](adr/002-flow-training-optional-vs-required.md)
+- [ADR-0003: Flow model checkpoint contract — jointly train encoder + flow field](adr/003-flow-checkpoint-joint-encoder.md)

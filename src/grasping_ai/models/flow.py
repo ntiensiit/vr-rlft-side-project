@@ -26,6 +26,50 @@ class FlowFieldNet(torch.nn.Module):
         return self.mlp(inputs)
 
 
+class FlowGeneratorModel(torch.nn.Module):
+    """Complete generative model holding encoder and flow field.
+
+    Owning both the encoder and the flow field on the same ``nn.Module``
+    ensures that:
+
+    * a single optimizer updates both jointly;
+    * a single ``state_dict`` covers the encoder parameters used at
+      training time and the flow-field parameters;
+    * inference can reconstruct the exact model by loading the combined
+      checkpoint without separately reinitializing or reloading an encoder.
+
+    This makes the train/inference model contract explicit and avoids the
+    train/inference inconsistency that arises when the encoder is built
+    and optimized separately from the flow field.
+    """
+
+    def __init__(self, feature_dim: int, hidden_dim: int, num_layers: int) -> None:
+        super().__init__()
+        self.feature_dim = feature_dim
+        self.hidden_dim = hidden_dim
+        self.num_layers = num_layers
+        from grasping_ai.models.equivariant_encoder import build_equivariant_encoder
+
+        self.encoder = build_equivariant_encoder(feature_dim, num_layers)
+        self.flow_field = FlowFieldNet(feature_dim, hidden_dim, num_layers)
+
+    def forward(self, x: torch.Tensor, conditioning: torch.Tensor) -> torch.Tensor:
+        """Forward pass forwarding to the flow field."""
+        return self.flow_field(x, conditioning)
+
+    def condition(
+        self, point_clouds: torch.Tensor
+    ) -> torch.Tensor:
+        """Encode a batch of point clouds into pooled conditioning features."""
+        from grasping_ai.models.equivariant_encoder import (
+            encode_point_cloud,
+            pool_object_features,
+        )
+
+        features = encode_point_cloud(self.encoder, point_clouds)
+        return pool_object_features(features)
+
+
 def build_flow_field(feature_dim: int, hidden_dim: int, num_layers: int) -> FlowField:
     """Construct a continuous flow field for grasp-pose generation.
 

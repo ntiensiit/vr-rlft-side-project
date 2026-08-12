@@ -17,6 +17,9 @@ from grasping_ai.models.equivariant_encoder import (
     pool_object_features as pool_object_features,
 )
 from grasping_ai.models.flow import (
+    FlowGeneratorModel as FlowGeneratorModel,
+)
+from grasping_ai.models.flow import (
     build_flow_field as build_flow_field,
 )
 from grasping_ai.models.flow import (
@@ -36,6 +39,7 @@ from grasping_ai.models.rl_policy import (
 )
 
 __all__ = [
+    "FlowGeneratorModel",
     "build_diffusion_sampler",
     "build_equivariant_encoder",
     "build_flow_field",
