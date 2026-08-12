@@ -115,7 +115,7 @@ Verified: <YYYY-MM-DD>
 
 Then change the checklist item to `[x]`.
 
-**Latest run (2026-08-13):** commit `3947f1f47d1db1f1324e8157777506e281ac2e19`, workflow run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31624253900 — Ruff PASS, Mypy PASS, Pytest FAIL (exit 2). Likely missing Linux system libraries for Open3D; `.github/workflows/ci.yml` updated with apt packages and `uv sync --group dev`.
+**Latest run (2026-08-13):** commit `3947f1f` run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31624253900 — Ruff PASS, Mypy PASS, Pytest FAIL (exit 2). Commit `a677b97` run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31626125280 — same pytest failure after apt packages; follow-up adds Open3D import-order guard and Mesa/EGL deps.
 
 ---
 
