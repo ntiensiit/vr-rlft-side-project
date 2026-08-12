@@ -84,13 +84,15 @@ def evaluate_generated_grasps(
         force_closure = evaluate_force_closure(fc_judge, contacts)
         grasp_quality = compute_grasp_quality(contacts, friction_coefficient)
 
-        # Grasp is successful if it is collision-free and force-closed
-        lift_success = bool(collision_free and force_closure)
+        # Analytical grasp success is the conjunction of collision-freeness and
+        # force-closure. This is NOT a physical lift signal: the MuJoCo
+        # simulation pipeline reports simulated lift success separately.
+        grasp_success = bool(collision_free and force_closure)
 
         eval_dict: GraspEvaluation = {
             "collision_free": collision_free,
             "force_closure": force_closure,
-            "lift_success": lift_success,
+            "grasp_success": grasp_success,
             "grasp_quality": float(grasp_quality),
         }
         evaluations.append(eval_dict)
@@ -115,7 +117,7 @@ def aggregate_evaluation_results(
     total_grasps = 0
     collision_free_count = 0
     force_closure_count = 0
-    lift_success_count = 0
+    grasp_success_count = 0
     qualities = []
 
     for results in per_object_results.values():
@@ -125,8 +127,8 @@ def aggregate_evaluation_results(
                 collision_free_count += 1
             if res.get("force_closure"):
                 force_closure_count += 1
-            if res.get("lift_success"):
-                lift_success_count += 1
+            if res.get("grasp_success"):
+                grasp_success_count += 1
 
             q_val = res.get("grasp_quality")
             if q_val is not None:
@@ -152,7 +154,7 @@ def aggregate_evaluation_results(
         max_q = 0.0
 
     return {
-        "success_rate": float(lift_success_count / total_grasps),
+        "success_rate": float(grasp_success_count / total_grasps),
         "collision_free_rate": float(collision_free_count / total_grasps),
         "force_closure_rate": float(force_closure_count / total_grasps),
         "mean_grasp_quality": mean_q,

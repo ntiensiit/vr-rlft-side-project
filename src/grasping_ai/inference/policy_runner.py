@@ -36,6 +36,8 @@ def build_rl_policy_runner(
     observation_dim: int,
     action_dim: int,
     device: str,
+    action_low: np.ndarray | None = None,
+    action_high: np.ndarray | None = None,
 ) -> PolicyActionSampler:
     """Build a callable that maps observations to robot actions via an RL policy.
 
@@ -44,10 +46,15 @@ def build_rl_policy_runner(
         observation_dim: Dimensionality of the observation vector.
         action_dim: Dimensionality of the action vector.
         device: Device identifier on which inference runs.
+        action_low: Optional per-dimension lower bound used to clip returned
+            actions. ``None`` disables clipping.
+        action_high: Optional per-dimension upper bound used to clip returned
+            actions. ``None`` disables clipping.
 
     Returns:
         A function that takes an observation as a numpy array and returns an
-        action as a numpy array.
+        action as a numpy array clipped to ``[action_low, action_high]`` when
+        both bounds are supplied.
     """
     from grasping_ai.models.rl_policy import build_policy_network, read_rl_policy_metadata
 
@@ -84,8 +91,19 @@ def build_rl_policy_runner(
         policy.to(torch.device(device))
         policy.eval()
 
+    clip_low = None if action_low is None else np.asarray(action_low, dtype=np.float64)
+    clip_high = None if action_high is None else np.asarray(action_high, dtype=np.float64)
+    if clip_low is not None and clip_low.shape != (action_dim,):
+        raise ValueError(
+            f"action_low must have shape ({action_dim},), got {clip_low.shape}"
+        )
+    if clip_high is not None and clip_high.shape != (action_dim,):
+        raise ValueError(
+            f"action_high must have shape ({action_dim},), got {clip_high.shape}"
+        )
+
     def runner(observation: np.ndarray) -> np.ndarray:
-        """Map a single observation to an action."""
+        """Map a single observation to an action clipped to the actuator bounds."""
         if not isinstance(observation, np.ndarray):
             raise TypeError("observation must be a numpy array")
         if observation.ndim != 1 or observation.shape[0] != observation_dim:
@@ -102,7 +120,10 @@ def build_rl_policy_runner(
         )
         with torch.no_grad():
             action_tensor = policy(obs_tensor)
-        return action_tensor.squeeze(0).cpu().numpy()
+        action = action_tensor.squeeze(0).cpu().numpy()
+        if clip_low is not None and clip_high is not None:
+            return np.clip(action, clip_low, clip_high)
+        return action
 
     return runner
 

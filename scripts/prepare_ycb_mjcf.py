@@ -1,19 +1,6 @@
 import argparse
 from pathlib import Path
 
-MJCF_TEMPLATE = """\
-<mujoco model="{object_id}">
-    <compiler angle="radian"/>
-    <asset><mesh name="{object_id}_mesh" file="{mesh_path}"/></asset>
-    <worldbody>
-        <body name="{object_id}" pos="0 0 0.05">
-            <freejoint/>
-            <geom name="{object_id}_geom" type="mesh" mesh="{object_id}_mesh"/>
-        </body>
-    </worldbody>
-</mujoco>
-"""
-
 
 def convert_ycb_to_mjcf(ycb_root: Path, output_root: Path) -> list[Path]:
     """Write MJCF object wrappers referencing the real YCB mesh meshes.
@@ -23,6 +10,13 @@ def convert_ycb_to_mjcf(ycb_root: Path, output_root: Path) -> list[Path]:
     the real mesh file. The wrappers are consumed by the grasp-simulation and
     RL-training pipelines through the normal ``resolve_ycb_object_directory``
     and ``find_ycb_mjcf`` discovery path.
+
+    Mesh references use the mesh's absolute path via MuJoCo's ``meshdir``
+    because MuJoCo resolves ``<include>``d-file meshdir relative to the
+    including scene rather than the included file, which prevents reliable
+    relocatable relative paths. The wrappers are therefore regenerable from
+    source (``python scripts/prepare_ycb_mjcf.py``) for any fresh checkout
+    rather than being relocatable as-is.
 
     Args:
         ycb_root: Root directory of the raw YCB object set.
@@ -45,14 +39,23 @@ def convert_ycb_to_mjcf(ycb_root: Path, output_root: Path) -> list[Path]:
     for object_id in list_ycb_objects(ycb_root):
         object_dir = ycb_root / object_id
         mesh = find_ycb_mesh_file(object_dir)
-        mesh_path = mesh.resolve().as_posix()
         object_out_dir = output_root / object_id
         object_out_dir.mkdir(parents=True, exist_ok=True)
         wrapper_path = object_out_dir / "object.xml"
-        wrapper_path.write_text(
-            MJCF_TEMPLATE.format(object_id=object_id, mesh_path=mesh_path),
-            encoding="utf-8",
+        mesh_dir = mesh.parent.resolve().as_posix()
+        wrapper_text = (
+            f'<mujoco model="{object_id}">\n'
+            '    <compiler angle="radian"/>\n'
+            f'    <asset><mesh name="{object_id}_mesh" file="{mesh_dir}/{mesh.name}"/></asset>\n'
+            '    <worldbody>\n'
+            f'        <body name="{object_id}" pos="0 0 0.05">\n'
+            '            <freejoint/>\n'
+            f'            <geom name="{object_id}_geom" type="mesh" mesh="{object_id}_mesh"/>\n'
+            "        </body>\n"
+            "    </worldbody>\n"
+            "</mujoco>\n"
         )
+        wrapper_path.write_text(wrapper_text, encoding="utf-8")
         generated.append(wrapper_path)
     return sorted(generated)
 

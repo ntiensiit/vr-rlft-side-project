@@ -38,3 +38,8 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: end-to-end / artifact-chain tests that exercise full pipelines and may take tens of seconds; skip with ``-m 'not slow'``",
+]

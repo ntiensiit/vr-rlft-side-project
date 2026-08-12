@@ -151,7 +151,7 @@ def test_evaluate_generated_grasps_analytical():
     for res in evals:
         assert "collision_free" in res
         assert "force_closure" in res
-        assert "lift_success" in res
+        assert "grasp_success" in res
         assert "grasp_quality" in res
         # Wait, since the rank will be < 6 (only 1 contact point), force_closure should be False
         assert not res["force_closure"]
@@ -161,8 +161,8 @@ def test_evaluate_generated_grasps_analytical():
 def test_aggregate_evaluation_results():
     per_obj = {
         "bottle": [
-            {"collision_free": True, "force_closure": True, "lift_success": True, "grasp_quality": 0.5},
-            {"collision_free": True, "force_closure": False, "lift_success": False, "grasp_quality": 0.0},
+            {"collision_free": True, "force_closure": True, "grasp_success": True, "grasp_quality": 0.5},
+            {"collision_free": True, "force_closure": False, "grasp_success": False, "grasp_quality": 0.0},
         ]
     }
 

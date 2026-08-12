@@ -22,14 +22,18 @@
   * `configs/robot.yaml`: Configuration related to the robot, gripper, and inverse kinematics (IK).
   * `configs/simulation.yaml`: Configuration for physics simulation time-step and simulation steps.
 * `scripts/`: Contains Python scripts for running various tasks:
-  * `scripts/prepare_data.py`: Discovers and indexes the dataset records.
+  * `scripts/prepare_data.py`: Discovers dataset records and (with `--mode synthetic`) generates synthetic grasp datasets from YCB meshes.
+  * `scripts/prepare_ycb_mjcf.py`: Writes thin MuJoCo object wrappers for objects whose shipped description is OpenRAVE KinBody XML.
+  * `scripts/prepare_observations.py`: Samples per-object observation point clouds and a simple gripper cloud for inference/evaluation.
+  * `scripts/extract_object_grasps.py`: Extracts a single object's grasp poses from the dict-format generated-grasps file.
   * `scripts/train.py`: Trains the grasp-pose generation model using supervised learning.
-  * `scripts/train_rl.py`: Trains the grasping policy using reinforcement learning (RL).
+  * `scripts/train_rl.py`: Trains the grasping policy using Stable-Baselines3 PPO against the Gymnasium-compatible MuJoCo environment.
   * `scripts/generate_grasps.py`: Generates grasp poses from object point clouds.
   * `scripts/run_simulation.py`: Executes generated grasps in a MuJoCo simulation environment.
-  * `scripts/evaluate.py`: Evaluates the generated grasp poses.
+  * `scripts/evaluate.py`: Evaluates the generated grasp poses (analytical: collision-free + force-closure ⇒ `grasp_success`).
+  * `scripts/run_artifacts.py`: End-to-end reproducible artifact chain (MJCF YCB → synthetic data → training → grasp generation → MuJoCo → evaluation → RL → policy inference); writes `artifacts/manifest.json`.
 * `src/grasping_ai/`: Main source code directory containing functional modules.
-* `deploy/`: Contains robot and gripper description XML files (`deploy/robot.xml` and `deploy/gripper.xml`) for the MuJoCo simulation.
+* `deploy/`: Contains the robot MJCF description (`deploy/robot.xml`) used by the simulation and RL-training pipelines. The gripper is integrated into the same MJCF; there is no separate `deploy/gripper.xml`.
 
 ## 3. Environment Setup
 
@@ -103,20 +107,25 @@ python scripts/train.py --dataset-root <path_to_processed_dataset> --checkpoint 
   * `--device`: Device identifier (`cuda` or `cpu`).
 
 ### 5.3 Training the RL Grasping Policy (RL Training)
+
+The RL pipeline uses Stable-Baselines3 PPO against the Gymnasium-compatible `MuJoCoGraspingEnv`. Observation and action dimensions depend on the composed MuJoCo scene (robot + YCB object), so they must match the environment's actual space. With the shipped `deploy/robot.xml` and one object attached, the pipeline expects `observation-dim=21` and `action-dim=4`; other robots/YCB combinations require recomputation.
+
 ```bash
-python scripts/train_rl.py --robot-xml deploy/robot.xml --ycb-root data/raw/ycb --object-ids 003_cracker_box --policy-checkpoint <path_to_save_policy_checkpoint> --observation-dim 64 --action-dim 7 --hidden-dim 256 --learning-rate 0.0003 --num-updates 1000 --gamma 0.99 --device cuda
+python scripts/train_rl.py --robot-xml deploy/robot.xml --ycb-root data/processed/ycb_mjcf --object-ids 003_cracker_box --policy-checkpoint <path_to_save_policy_checkpoint> --observation-dim 21 --action-dim 4 --hidden-dim 256 --learning-rate 0.0003 --num-updates 1000 --gamma 0.99 --device cuda
 ```
 * Arguments:
   * `--robot-xml`: Path to the robot MJCF description used in training.
-  * `--ycb-root`: Root directory of the YCB object set.
-  * `--object-ids`: YCB object identifiers used during training rollouts (space-separated).
+  * `--ycb-root`: Root directory of the YCB object set (use `data/processed/ycb_mjcf` for the generated MuJoCo wrappers).
+  * `--object-ids`: YCB object identifiers used during training rollouts (space-separated). The environment tracks a single object body, so at most one identifier must be supplied; the pipeline raises `ValueError` otherwise.
   * `--policy-checkpoint`: Destination path for the trained policy checkpoint.
-  * `--observation-dim`: Dimensionality of the policy observation vector.
-  * `--action-dim`: Dimensionality of the policy action vector.
+  * `--observation-dim`: Dimensionality of the policy observation vector (must match the Gymnasium environment's `observation_space`).
+  * `--action-dim`: Dimensionality of the policy action vector (must match the Gymnasium environment's `action_space`).
   * `--hidden-dim`: Hidden width of the policy and value networks.
   * `--learning-rate`: Learning rate for the policy optimizer.
   * `--num-updates`: Number of policy update steps to perform.
   * `--gamma`: Discount factor for return computation.
+  * `--seed`: Optional random seed for reproducible policy initialization.
+  * `--experiment-log-dir`: Optional path to write TensorBoard experiment events.
   * `--device`: Device identifier (`cuda` or `cpu`).
 
 ### 5.4 Generating Grasps (Grasp Generation)
@@ -189,14 +198,24 @@ The project stores reference experiment settings as YAML files in the `configs/`
   * `lift_height_threshold`: Minimum lift height for grasp success (Default: `0.05`).
 * Robot Config (`robot.yaml`):
   * `robot_description_path`: Robot XML file path (Default: `deploy/robot.xml`).
-  * `gripper_description_path`: Gripper XML file path (Default: `deploy/gripper.xml`).
+  * `gripper_close_command`: Default empty list (gripper fingers are integrated into `deploy/robot.xml`; there is no separate `deploy/gripper.xml`).
+  * `ik_max_iterations`: Default `100`.
+  * `ik_tolerance`: Default `0.001`.
 * Simulation Config (`simulation.yaml`):
   * `simulation_dt`: Physics simulation time-step delta (Default: `0.002`).
   * `num_simulation_steps`: Number of steps per grasp evaluation (Default: `500`).
 
 ## 7. Typical Workflow
 
-Here is a complete workflow from environment setup to grasp evaluation:
+The project ships a reproducible end-to-end artifact runner that exercises the complete supervised and RL chains against the real YCB assets in a single command:
+
+```bash
+python scripts/run_artifacts.py
+```
+
+It writes a manifest of the executed commands and the retained artifacts to `artifacts/manifest.json`. The generated artifacts themselves (checkpoints, processed dataset, reports, MJCF wrappers) are excluded from version control by `.gitignore` and are produced from source on demand by this script.
+
+For manual execution, the equivalent step sequence is:
 
 1. **Setup and activate environment**:
 ```bash
@@ -205,29 +224,45 @@ source .venv/bin/activate
 uv sync
 ```
 
-2. **Index raw dataset**:
+2. **Build MJCF wrappers for YCB objects** (the shipped YCB descriptions are OpenRAVE KinBody, not MuJoCo):
 ```bash
-python scripts/prepare_data.py --dataset-root data/raw/grasp_data --output-index data/processed/index.json
+python scripts/prepare_ycb_mjcf.py --ycb-root data/raw/ycb --output-root data/processed/ycb_mjcf
 ```
 
-3. **Train the grasp pose generation model**:
+3. **Generate synthetic dataset and index**:
 ```bash
-python scripts/train.py --dataset-root data/processed --checkpoint artifacts/checkpoints/diffusion_model.pt --feature-dim 128 --hidden-dim 256 --num-layers 4 --learning-rate 0.0001 --num-epochs 50 --batch-size 32 --device cuda
+python scripts/prepare_data.py --mode synthetic --ycb-root data/raw/ycb --dataset-root data/processed --output-index data/processed/index.json --num-samples 256 --num-grasps 8 --gripper-width 0.08 --seed 42
 ```
 
-4. **Generate candidate grasp poses from observations**:
+4. **Sample per-object observation point clouds**:
 ```bash
-python scripts/generate_grasps.py --checkpoint artifacts/checkpoints/diffusion_model.pt --observations data/processed/obs_0.npy --output artifacts/exports/generated_grasps.npy --feature-dim 128 --num-diffusion-steps 100 --num-grasps 10 --device cuda
+python scripts/prepare_observations.py --ycb-root data/raw/ycb --output-dir data/observations --num-samples 256 --seed 7
 ```
 
-5. **Run grasp execution simulation in MuJoCo**:
+5. **Train the grasp pose generation model**:
 ```bash
-python scripts/run_simulation.py --grasps artifacts/exports/generated_grasps.npy --object-id 003_cracker_box --ycb-root data/raw/ycb --robot-xml deploy/robot.xml --output artifacts/reports/simulation_outcomes.json --num-simulation-steps 500 --gripper-close-command 1.0 1.0
+python scripts/train.py --dataset-root data/processed --checkpoint artifacts/checkpoints/grasp_generation.pt --feature-dim 32 --hidden-dim 32 --num-layers 2 --learning-rate 0.001 --num-epochs 3 --batch-size 2 --device cpu --seed 42
 ```
 
-6. **Evaluate grasp qualities and generate report**:
+6. **Generate candidate grasp poses from observations**:
 ```bash
-python scripts/evaluate.py --grasps artifacts/exports/generated_grasps.npy --object-id 003_cracker_box --object-point-cloud data/processed/object_pc.npy --gripper-point-cloud data/processed/gripper_pc.npy --report artifacts/reports/evaluation_report.json --friction-coefficient 0.5 --lift-height-threshold 0.05
+python scripts/generate_grasps.py --checkpoint artifacts/checkpoints/grasp_generation.pt --observations data/observations/003_cracker_box.npy data/observations/004_sugar_box.npy data/observations/006_mustard_bottle.npy --output artifacts/exports/generated_grasps.npy --feature-dim 32 --num-diffusion-steps 5 --num-grasps 8 --device cpu
+```
+
+7. **Run grasp execution simulation in MuJoCo** (requires per-object pose arrays — see `scripts/extract_object_grasps.py`):
+```bash
+python scripts/extract_object_grasps.py --input artifacts/exports/generated_grasps.npy --output artifacts/exports/grasp_poses_cracker.npy --key object_0
+python scripts/run_simulation.py --grasps artifacts/exports/grasp_poses_cracker.npy --object-id 003_cracker_box --ycb-root data/processed/ycb_mjcf --robot-xml deploy/robot.xml --output artifacts/reports/simulation_cracker.json --num-simulation-steps 50 --gripper-close-command 0.02 0.02
+```
+
+8. **Evaluate grasp qualities and generate report** (offline analytical: collision-free + force-closure ⇒ `grasp_success`):
+```bash
+python scripts/evaluate.py --grasps artifacts/exports/generated_grasps.npy --object-id object_1 --object-point-cloud data/observations/004_sugar_box.npy --gripper-point-cloud data/observations/gripper.npy --report artifacts/reports/evaluation_report.json --friction-coefficient 0.5 --lift-height-threshold 0.05
+```
+
+9. **Train the RL grasping policy via Stable-Baselines3 PPO**:
+```bash
+python scripts/train_rl.py --robot-xml deploy/robot.xml --ycb-root data/processed/ycb_mjcf --object-ids 003_cracker_box --policy-checkpoint artifacts/checkpoints/rl_policy.pt --observation-dim 21 --action-dim 4 --hidden-dim 32 --learning-rate 0.0003 --num-updates 10 --gamma 0.99 --device cpu --seed 42
 ```
 
 ## 8. Troubleshooting
