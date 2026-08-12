@@ -112,7 +112,11 @@ def simulate_grasp(
     if dt <= 0 or not np.isfinite(dt):
         dt = 0.002
 
-    from grasping_ai.robotics.gripper import load_gripper_model, make_close_command
+    from grasping_ai.robotics.gripper import (
+        load_gripper_model,
+        make_close_command,
+        make_open_command,
+    )
     from grasping_ai.robotics.kinematics import build_forward_kinematics
     from grasping_ai.simulation.scene import step_scene
 
@@ -120,22 +124,35 @@ def simulate_grasp(
     gripper_model["model"] = mj_model
     gripper_model["data"] = mj_data
     nu_robot = cast(int, mj_model.nu)
-    ctrl_cmd = make_close_command(gripper_model).astype(np.float64)
-    if nu_robot < ctrl_cmd.shape[0]:
-        ctrl_cmd = ctrl_cmd[:nu_robot]
-    elif nu_robot > ctrl_cmd.shape[0]:
-        padded = np.zeros(nu_robot, dtype=np.float64)
-        padded[: ctrl_cmd.shape[0]] = ctrl_cmd
-        ctrl_cmd = padded
+
+    def _fit_actuator_command(raw_cmd: np.ndarray) -> np.ndarray:
+        ctrl_cmd = raw_cmd.astype(np.float64)
+        if nu_robot < ctrl_cmd.shape[0]:
+            return ctrl_cmd[:nu_robot]
+        if nu_robot > ctrl_cmd.shape[0]:
+            padded = np.zeros(nu_robot, dtype=np.float64)
+            padded[: ctrl_cmd.shape[0]] = ctrl_cmd
+            return padded
+        return ctrl_cmd
+
+    open_cmd = _fit_actuator_command(make_open_command(gripper_model))
+    close_cmd = _fit_actuator_command(make_close_command(gripper_model))
     close_len = gripper_close_command.shape[0]
     if close_len > 0:
         overlay_len = min(close_len, nu_robot)
-        ctrl_cmd[:overlay_len] = gripper_close_command[:overlay_len]
+        close_cmd[:overlay_len] = gripper_close_command[:overlay_len]
 
-    def _advance_physics(step_dt: float) -> None:
-        scene.step(ctrl_cmd, step_dt)
+    pre_grasp_steps = min(10, max(1, num_simulation_steps // 4))
+    close_steps = max(1, num_simulation_steps - pre_grasp_steps)
 
-    step_scene(_advance_physics, dt, num_simulation_steps)
+    def _advance_open(step_dt: float) -> None:
+        scene.step(open_cmd, step_dt)
+
+    def _advance_close(step_dt: float) -> None:
+        scene.step(close_cmd, step_dt)
+
+    step_scene(_advance_open, dt, pre_grasp_steps)
+    step_scene(_advance_close, dt, close_steps)
 
     fk_solver = build_forward_kinematics(robot_model)
     achieved_pose = fk_solver(q_target)

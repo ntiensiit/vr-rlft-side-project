@@ -1,10 +1,8 @@
-from collections.abc import Callable
-
 import numpy as np
-import pytransform3d.transformations as pt
+
+from grasping_ai.perception.geometry import apply_transform, invert_transform
 
 RigidTransform = np.ndarray
-FrameConversion = Callable[[np.ndarray, np.ndarray], np.ndarray]
 
 
 def transform_between_frames(
@@ -26,11 +24,9 @@ def transform_between_frames(
         raise TypeError("point_in_source must be a numpy array")
 
     if point_in_source.shape == (3,):
-        pt_hom = pt.vectors_to_points(point_in_source.reshape(1, 3))
-        return pt.transform(source_to_target, pt_hom)[0, :3]
+        return apply_transform(point_in_source.reshape(1, 3), source_to_target)[0]
     if len(point_in_source.shape) == 2 and point_in_source.shape[1] == 3:
-        pts_hom = pt.vectors_to_points(point_in_source)
-        return pt.transform(source_to_target, pts_hom)[:, :3]
+        return apply_transform(point_in_source, source_to_target)
     raise ValueError("point_in_source must have shape (3,) or (N, 3)")
 
 
@@ -93,4 +89,4 @@ def invert_rigid_transform(transform: RigidTransform) -> RigidTransform:
     """
     if not isinstance(transform, np.ndarray) or transform.shape != (4, 4):
         raise ValueError("transform must be a (4, 4) numpy array")
-    return pt.invert_transform(transform)
+    return invert_transform(transform)

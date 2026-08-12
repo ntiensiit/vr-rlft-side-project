@@ -5,6 +5,7 @@ from grasping_ai.training.losses import (
 )
 from grasping_ai.training.trainer import (
     build_adam_optimizer,
+    build_supervised_training_step,
     build_training_step,
     load_training_checkpoint,
     run_training_loop,
@@ -16,6 +17,7 @@ __all__ = [
     "build_diffusion_score_loss",
     "build_flow_matching_loss",
     "build_grasp_pose_regression_loss",
+    "build_supervised_training_step",
     "build_training_step",
     "load_training_checkpoint",
     "run_training_loop",

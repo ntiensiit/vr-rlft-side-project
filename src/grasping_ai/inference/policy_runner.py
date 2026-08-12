@@ -22,13 +22,6 @@ def load_rl_policy_checkpoint(
     Returns:
         A mapping from parameter names to tensors representing the policy.
     """
-    if not isinstance(checkpoint_path, Path):
-        raise TypeError("checkpoint_path must be a pathlib.Path instance")
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(
-            f"Checkpoint file not found: {checkpoint_path}"
-        )
-
     checkpoint = load_torch_checkpoint(checkpoint_path, device)
     return cast(dict[str, torch.Tensor], checkpoint)
 

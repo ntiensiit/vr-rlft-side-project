@@ -1,6 +1,11 @@
 from collections.abc import Callable
+from pathlib import Path
+from typing import Any, cast
 
 import torch
+
+from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 
 FlowField = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 FlowIntegrator = Callable[[FlowField, torch.Tensor, torch.Tensor], torch.Tensor]
@@ -131,19 +136,53 @@ def sample_grasps_with_flow(
     Returns:
         A tensor of sampled grasp poses with shape ``(B, num_samples, grasp_dim)``.
     """
-    if conditioning.ndim != 2:
-        raise ValueError(f"conditioning must have shape (B, F), got {conditioning.shape}")
-    if num_samples <= 0:
-        raise ValueError("num_samples must be a positive integer")
-    if not isinstance(rng, torch.Generator):
-        raise TypeError("rng must be a torch.Generator instance")
+    return batch_conditioned_grasp_samples(
+        conditioning,
+        grasp_dim,
+        num_samples,
+        rng,
+        lambda initial_states, cond_flat: integrator(flow_field, initial_states, cond_flat),
+    )
 
-    b_size, f_size = conditioning.shape
-    device = conditioning.device
-    dtype = conditioning.dtype
 
-    n_total = b_size * num_samples
-    cond_flat = conditioning.unsqueeze(1).repeat(1, num_samples, 1).view(n_total, f_size)
-    x0 = torch.randn(n_total, grasp_dim, generator=rng, device=device, dtype=dtype)
-    samples_flat = integrator(flow_field, x0, cond_flat)
-    return samples_flat.view(b_size, num_samples, grasp_dim)
+def load_flow_model_from_state(
+    checkpoint: dict[str, object],
+    feature_dim: int,
+    hidden_dim: int,
+    num_layers: int,
+    device: str,
+) -> FlowGeneratorModel:
+    """Reconstruct a ``FlowGeneratorModel`` from an in-memory checkpoint dict."""
+    model = FlowGeneratorModel(feature_dim, hidden_dim, num_layers)
+    state_dict = checkpoint["model_state_dict"]
+    if not isinstance(state_dict, dict):
+        raise TypeError("checkpoint['model_state_dict'] must be a dictionary")
+    model.load_state_dict(cast(dict[str, Any], state_dict))
+    model.to(torch.device(device))
+    model.eval()
+    return model
+
+
+def load_flow_model_checkpoint(
+    checkpoint_path: Path,
+    feature_dim: int,
+    hidden_dim: int,
+    num_layers: int,
+    device: str,
+) -> FlowGeneratorModel:
+    """Reconstruct a ``FlowGeneratorModel`` from a joint train/inference checkpoint.
+
+    Args:
+        checkpoint_path: Path to the flow checkpoint written by flow training.
+        feature_dim: Conditioning feature dimension used at training time.
+        hidden_dim: Hidden width used at training time.
+        num_layers: Number of hidden layers used at training time.
+        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
+
+    Returns:
+        A ``FlowGeneratorModel`` in evaluation mode on the requested device.
+    """
+    checkpoint = load_torch_checkpoint(checkpoint_path, device)
+    return load_flow_model_from_state(
+        checkpoint, feature_dim, hidden_dim, num_layers, device
+    )

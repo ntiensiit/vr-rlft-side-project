@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from grasping_ai.inference.grasp_generator import (
-    build_diffusion_grasp_generator,
-    load_grasp_model_checkpoint,
+from grasping_ai.inference.grasp_generator import load_grasp_model_checkpoint
+from grasping_ai.inference.grasp_inference_runtime import (
+    build_grasp_generator_from_checkpoint,
 )
 from grasping_ai.pipelines.generate_grasps import (
     generate_grasps_for_dataset,
@@ -19,25 +19,18 @@ def generate_grasps_main(
     num_diffusion_steps: int,
     num_grasps: int,
     device: str,
+    seed: int = 42,
 ) -> None:
-    """Load a diffusion grasp model and generate grasps for a set of objects.
-
-    Args:
-        checkpoint_path: Path to the trained diffusion model checkpoint.
-        observation_paths: Paths to per-object sensor observations.
-        output_path: Destination path for the generated-grasp output file.
-        feature_dim: Conditioning feature dimension expected by the model.
-        num_diffusion_steps: Number of denoising steps used at inference.
-        num_grasps: Number of candidate grasps to generate per object.
-        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
-    """
+    """Load a diffusion grasp model and generate grasps for a set of objects."""
     checkpoint = load_grasp_model_checkpoint(checkpoint_path, device)
-    generator = build_diffusion_grasp_generator(
-        checkpoint, feature_dim, num_diffusion_steps, device
+    generator = build_grasp_generator_from_checkpoint(
+        "diffusion", checkpoint, feature_dim, num_diffusion_steps, device, seed
     )
     point_clouds = list(acquire_point_cloud_stream(observation_paths))
     grasps = generate_grasps_for_dataset(point_clouds, generator, num_grasps)
-    write_generated_grasps(output_path, {f"object_{i}": grasp for i, grasp in enumerate(grasps)})
+    write_generated_grasps(
+        output_path, {f"object_{i}": grasp for i, grasp in enumerate(grasps)}
+    )
 
 
 if __name__ == "__main__":
@@ -51,6 +44,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-diffusion-steps", type=int, required=True)
     parser.add_argument("--num-grasps", type=int, required=True)
     parser.add_argument("--device", type=str, required=True)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     generate_grasps_main(
         args.checkpoint,
@@ -60,4 +54,5 @@ if __name__ == "__main__":
         args.num_diffusion_steps,
         args.num_grasps,
         args.device,
+        args.seed,
     )

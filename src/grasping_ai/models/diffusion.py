@@ -2,6 +2,8 @@ from collections.abc import Callable
 
 import torch
 
+from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
+
 DiffusionScoreModel = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
 DiffusionSampler = Callable[
     [torch.Tensor, Callable[..., torch.Tensor], torch.Tensor, torch.Generator | None],
@@ -170,19 +172,10 @@ def sample_grasps_with_diffusion(
     Returns:
         A tensor of sampled grasp poses with shape ``(B, num_samples, grasp_dim)``.
     """
-    if conditioning.ndim != 2:
-        raise ValueError(f"conditioning must have shape (B, F), got {conditioning.shape}")
-    if num_samples <= 0:
-        raise ValueError("num_samples must be a positive integer")
-    if not isinstance(rng, torch.Generator):
-        raise TypeError("rng must be a torch.Generator instance")
-
-    b_size, f_size = conditioning.shape
-    device = conditioning.device
-    dtype = conditioning.dtype
-
-    n_total = b_size * num_samples
-    cond_flat = conditioning.unsqueeze(1).repeat(1, num_samples, 1).view(n_total, f_size)
-    noise = torch.randn(n_total, grasp_dim, generator=rng, device=device, dtype=dtype)
-    samples_flat = sampler(noise, score_model, cond_flat, rng)
-    return samples_flat.view(b_size, num_samples, grasp_dim)
+    return batch_conditioned_grasp_samples(
+        conditioning,
+        grasp_dim,
+        num_samples,
+        rng,
+        lambda noise, cond_flat: sampler(noise, score_model, cond_flat, rng),
+    )

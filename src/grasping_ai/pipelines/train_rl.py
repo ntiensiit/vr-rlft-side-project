@@ -133,15 +133,11 @@ def run_rl_training_pipeline(
     total_timesteps = num_updates * 64
     sb3_model.learn(total_timesteps=total_timesteps)
 
-    from grasping_ai.models.rl_policy import build_policy_network, build_value_network
+    from grasping_ai.models.rl_policy import build_policy_network
 
     legacy_policy = cast(
         torch.nn.Module,
         build_policy_network(observation_dim, action_dim, hidden_dim, 2),
-    )
-    value_network = cast(
-        torch.nn.Module,
-        build_value_network(observation_dim, hidden_dim, 2),
     )
     sb3_policy = sb3_model.policy
     sb3_pi = sb3_policy.mlp_extractor.policy_net
@@ -149,10 +145,6 @@ def run_rl_training_pipeline(
     layer0 = cast(torch.nn.Linear, sb3_pi[0])
     layer2 = cast(torch.nn.Linear, sb3_pi[2])
     action_net = cast(torch.nn.Linear, sb3_policy.action_net)
-    sb3_vf = sb3_policy.mlp_extractor.value_net
-    vf_layer0 = cast(torch.nn.Linear, sb3_vf[0])
-    vf_layer2 = cast(torch.nn.Linear, sb3_vf[2])
-    vf_out = cast(torch.nn.Linear, sb3_policy.value_net)
 
     legacy_state = legacy_policy.state_dict()
     legacy_state["0.weight"] = layer0.weight.data.clone()
@@ -161,15 +153,6 @@ def run_rl_training_pipeline(
     legacy_state["2.bias"] = layer2.bias.data.clone()
     legacy_state["4.weight"] = action_net.weight.data.clone()
     legacy_state["4.bias"] = action_net.bias.data.clone()
-
-    value_state = value_network.state_dict()
-    value_state["0.weight"] = vf_layer0.weight.data.clone()
-    value_state["0.bias"] = vf_layer0.bias.data.clone()
-    value_state["2.weight"] = vf_layer2.weight.data.clone()
-    value_state["2.bias"] = vf_layer2.bias.data.clone()
-    value_state["4.weight"] = vf_out.weight.data.clone()
-    value_state["4.bias"] = vf_out.bias.data.clone()
-    value_network.load_state_dict(value_state)
 
     legacy_policy.load_state_dict(legacy_state)
 

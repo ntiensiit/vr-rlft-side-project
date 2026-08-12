@@ -100,7 +100,7 @@ replaced; see [ADR-0001](adr/001-phase4-canonicalization-vs-equivariant.md) and
 
 The active grasp representation is 9D = 3 translation components + the
 first two columns of the rotation matrix (a 6D rotation subset), as
-produced by `se3_to_vec` in `src/grasping_ai/pipelines/train.py`. This
+produced by `se3_to_vec` in `src/grasping_ai/data/grasp_vector.py`. This
 replaces an older 7D convention (3 translation + 4 quaternion) that no
 code path uses; `configs/model.yaml::grasp_dim` is set to 9.
 

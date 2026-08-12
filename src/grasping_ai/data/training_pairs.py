@@ -5,13 +5,29 @@ import numpy as np
 import torch
 
 from grasping_ai.data.grasp_vector import se3_to_vec
-from grasping_ai.data.pointcloud_dataset import discover_dataset_files, load_grasp_sample
+from grasping_ai.data.pointcloud_dataset import (
+    discover_dataset_files,
+    iterate_grasp_dataset,
+    load_grasp_sample,
+)
 from grasping_ai.models.equivariant_encoder import compute_se3_frame, world_transform_from_frame
 from grasping_ai.robotics.transforms import invert_rigid_transform
 
 
+def validate_grasp_dataset(dataset_root: Path) -> int:
+    """Validate that a dataset root yields readable grasp samples."""
+    if not isinstance(dataset_root, Path):
+        raise TypeError("dataset_root must be a pathlib.Path instance")
+    count = sum(1 for _ in iterate_grasp_dataset(dataset_root))
+    if count == 0:
+        raise ValueError(f"Dataset at {dataset_root} contains no valid grasp samples")
+    return count
+
+
 def build_supervised_training_pairs(
     dataset_root: Path,
+    augment: bool = False,
+    seed: int | None = None,
 ) -> list[tuple[torch.Tensor, torch.Tensor]]:
     """Load grasp dataset records as canonical-frame ``(point_cloud, grasp_9d)`` pairs.
 
@@ -21,6 +37,8 @@ def build_supervised_training_pairs(
 
     Args:
         dataset_root: Root directory of the grasp-pose dataset.
+        augment: When ``True``, apply SO(3)/translation jitter to each sample.
+        seed: Optional seed controlling augmentation randomness.
 
     Returns:
         List of ``(point_cloud, grasp_vector)`` tensor pairs.
@@ -32,13 +50,34 @@ def build_supervised_training_pairs(
     if not records:
         raise ValueError("Dataset is empty")
 
+    augment_rng = np.random.default_rng(seed) if augment else None
+
     pairs: list[tuple[torch.Tensor, torch.Tensor]] = []
     for record in records:
         sample = load_grasp_sample(record)
         pc = sample["point_cloud"]
         grasp_poses = sample["grasp_poses"]
-        if grasp_poses is None or len(grasp_poses) == 0:
+        if not isinstance(pc, np.ndarray):
+            raise TypeError(f"Record {record} point cloud must be a numpy array")
+        if not isinstance(grasp_poses, np.ndarray):
+            raise TypeError(f"Record {record} grasp poses must be a numpy array")
+        if len(grasp_poses) == 0:
             raise ValueError(f"Record {record} has no target grasp poses")
+
+        if augment_rng is not None:
+            from grasping_ai.data.transforms import (
+                compose_transforms,
+                make_random_rotation_jitter,
+                make_translation_jitter,
+            )
+
+            sample_transform = compose_transforms(
+                make_random_rotation_jitter(augment_rng),
+                make_translation_jitter(augment_rng, scale=0.01),
+            )
+            pc, grasp_poses, _ = sample_transform(pc, grasp_poses, None)
+            if grasp_poses is None:
+                raise ValueError(f"Augmentation removed grasp poses for {record}")
 
         pc_t = torch.from_numpy(pc).float()
         frame, centroid = compute_se3_frame(pc_t.unsqueeze(0))

@@ -22,7 +22,6 @@ from grasping_ai.inference.grasp_generator import (
 from grasping_ai.models.diffusion import (
     GraspGeneratorModel,
     build_diffusion_sampler,
-    build_score_network,
     sample_grasps_with_diffusion,
 )
 from grasping_ai.models.equivariant_encoder import (
@@ -32,7 +31,8 @@ from grasping_ai.models.equivariant_encoder import (
     encode_point_cloud,
     pool_object_features,
 )
-from grasping_ai.pipelines.generate_grasps import build_generation_pipeline, write_generated_grasps
+from grasping_ai.models.flow import FlowGeneratorModel
+from grasping_ai.pipelines.generate_grasps import write_generated_grasps
 from grasping_ai.pipelines.train import load_pretrained_encoder, run_training_pipeline
 from grasping_ai.training.losses import build_diffusion_score_loss, build_grasp_pose_regression_loss
 from grasping_ai.training.trainer import (
@@ -58,7 +58,7 @@ def test_generative_model_forward_shape():
     feature_dim = 16
     hidden_dim = 32
     num_layers = 2
-    score_model = build_score_network(feature_dim, hidden_dim, num_layers)
+    score_model = GraspGeneratorModel(feature_dim, hidden_dim, num_layers).score_net
 
     batch_size_val = 4
     x = torch.randn(batch_size_val, 9)
@@ -72,7 +72,7 @@ def test_generative_model_forward_shape():
 def test_generative_model_rejects_invalid_point_cloud_shape():
     """Verify sample_grasps_with_diffusion shape checks."""
     sampler = build_diffusion_sampler(10)
-    score_model = build_score_network(16, 32, 2)
+    score_model = GraspGeneratorModel(16, 32, 2).score_net
     conditioning = torch.randn(4, 5, 16)  # Invalid ndim == 3 (expected 2)
     rng = torch.Generator()
 
@@ -83,7 +83,7 @@ def test_generative_model_rejects_invalid_point_cloud_shape():
 def test_generative_model_rejects_non_finite_input():
     """Verify sample_grasps_with_diffusion generator input checks."""
     sampler = build_diffusion_sampler(10)
-    score_model = build_score_network(16, 32, 2)
+    score_model = GraspGeneratorModel(16, 32, 2).score_net
     conditioning = torch.randn(4, 16)
 
     with pytest.raises(TypeError, match=r"rng must be a torch\.Generator"):
@@ -435,17 +435,7 @@ def test_flow_integrator_shape():
 
 def test_flow_grasp_generator_inference():
     """Verify that flow grasp generator correctly generates SE(3) candidate shapes."""
-    class FlowModelWrapper(torch.nn.Module):
-        def __init__(self, f_dim: int, h_dim: int, n_layers: int) -> None:
-            super().__init__()
-            self.feature_dim = f_dim
-            self.hidden_dim = h_dim
-            self.num_layers = n_layers
-            from grasping_ai.models.flow import build_flow_field
-            self.encoder = build_equivariant_encoder(f_dim, n_layers)
-            self.flow_field = build_flow_field(f_dim, h_dim, n_layers)
-
-    model = FlowModelWrapper(f_dim=8, h_dim=16, n_layers=2)
+    model = FlowGeneratorModel(feature_dim=8, hidden_dim=16, num_layers=2)
     optimizer = build_adam_optimizer(model.parameters(), 0.01)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -477,7 +467,7 @@ def test_generation_pipeline_and_writing():
         generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=2, device="cpu")
 
         pc = np.random.randn(30, 3).astype(np.float32)
-        grasps = build_generation_pipeline(pc, generator, 3)
+        grasps = generate_candidate_grasps(generator, pc, 3)
         assert grasps.shape == (3, 4, 4)
 
         # Test writing
@@ -579,7 +569,7 @@ def test_diffusion_sampler_accepts_schedule_overrides():
     sampler_default = build_diffusion_sampler(10)
     sampler_custom = build_diffusion_sampler(10, beta_start=1e-3, beta_end=0.1)
 
-    score_model = build_score_network(4, 16, 2)
+    score_model = GraspGeneratorModel(4, 16, 2).score_net
     cond = torch.randn(1, 4)
     rng_default = torch.Generator().manual_seed(7)
     rng_custom = torch.Generator().manual_seed(7)
@@ -593,7 +583,7 @@ def test_diffusion_sampler_accepts_schedule_overrides():
 def test_default_sampler_unchanged_defaults():
     """Verify the default sampler behavior matches the legacy schedule."""
     sampler = build_diffusion_sampler(5)
-    score_model = build_score_network(4, 16, 2)
+    score_model = GraspGeneratorModel(4, 16, 2).score_net
     conditioning = torch.randn(2, 4)
     rng = torch.Generator().manual_seed(11)
 
@@ -643,21 +633,7 @@ def test_flow_generator_seed_is_configurable():
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
 
-        class FlowModelWrapper(torch.nn.Module):
-            def __init__(self, f_dim: int, h_dim: int, n_layers: int) -> None:
-                super().__init__()
-                self.feature_dim = f_dim
-                self.hidden_dim = h_dim
-                self.num_layers = n_layers
-                from grasping_ai.models.equivariant_encoder import (
-                    build_equivariant_encoder,
-                )
-                from grasping_ai.models.flow import build_flow_field
-
-                self.encoder = build_equivariant_encoder(f_dim, n_layers)
-                self.flow_field = build_flow_field(f_dim, h_dim, n_layers)
-
-        model = FlowModelWrapper(f_dim=8, h_dim=16, n_layers=2)
+        model = FlowGeneratorModel(feature_dim=8, hidden_dim=16, num_layers=2)
         from grasping_ai.training.trainer import (
             build_adam_optimizer,
             save_training_checkpoint,
@@ -791,19 +767,7 @@ def _build_checkpoint_generator(builder: str) -> tuple[object, Path]:
         if builder == "diffusion":
             model = GraspGeneratorModel(feature_dim=8, hidden_dim=16, num_layers=2)
         else:
-
-            class FlowModelWrapper(torch.nn.Module):
-                def __init__(self, f_dim: int, h_dim: int, n_layers: int) -> None:
-                    super().__init__()
-                    self.feature_dim = f_dim
-                    self.hidden_dim = h_dim
-                    self.num_layers = n_layers
-                    from grasping_ai.models.flow import build_flow_field
-
-                    self.encoder = build_equivariant_encoder(f_dim, n_layers)
-                    self.flow_field = build_flow_field(f_dim, h_dim, n_layers)
-
-            model = FlowModelWrapper(f_dim=8, h_dim=16, n_layers=2)
+            model = FlowGeneratorModel(feature_dim=8, hidden_dim=16, num_layers=2)
         optimizer = build_adam_optimizer(model.parameters(), 0.01)
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 

@@ -7,8 +7,8 @@ and evaluates them offline (analytical) and online (MuJoCo).
 
 | Path | Training entry point           | Inference entry point                  |
 | ---- | ------------------------------ | -------------------------------------- |
-| Diffusion score matching | `scripts/train.py`     | `scripts/generate_grasps.py`            |
-| Flow matching            | `scripts/train_flow.py` | `scripts/generate_grasps.py` (flow)    |
+| Diffusion score matching | `scripts/train.py`     | `scripts/generate_grasps.py` or `scripts/run_grasp_inference.py --method diffusion` |
+| Flow matching            | `scripts/train_flow.py` | `scripts/run_grasp_inference.py --method flow` |
 
 ## Evaluation paths
 

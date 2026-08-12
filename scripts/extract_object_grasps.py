@@ -1,7 +1,10 @@
 import argparse
 from pathlib import Path
 
-import numpy as np
+from grasping_ai.pipelines.generate_grasps import (
+    load_generated_grasps,
+    write_generated_grasps_array,
+)
 
 
 def main() -> None:
@@ -10,8 +13,8 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--key", type=str, default="object_0")
     args = parser.parse_args()
-    data = np.load(args.input, allow_pickle=True).item()
-    np.save(args.output, data[args.key])
+    grasps = load_generated_grasps(args.input, object_key=args.key)
+    write_generated_grasps_array(args.output, grasps)
 
 
 if __name__ == "__main__":

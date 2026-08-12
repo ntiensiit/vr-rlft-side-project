@@ -5,13 +5,15 @@ Open implementation and research tasks for the grasping-ai side project.
 Verify gate after each code change:
 `uv run pytest -q`, `uv run ruff check src tests scripts`, `uv run mypy src`.
 
-Last verification (2026-08-12): 219 passed, 86.82% coverage, ruff clean, mypy clean on 45 source files.
+Last verification (2026-08-13): 226 passed, 85.74% coverage, ruff clean, mypy clean on 48 source files.
 
-**Runtime workflow integration is complete** (2026-08-12). See [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
+Completed wiring and refactor work is recorded in [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md) and [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
 
 ## Cross-cutting verification
 
 - [ ] Current commit's CI status: pending first push-time CI run.
+
+---
 
 ## Research validation (no source changes required)
 

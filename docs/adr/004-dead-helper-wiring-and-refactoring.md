@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-08-12).
+Accepted (2026-08-12). Updated 2026-08-13 — code audit complete; see follow-up section.
 
 ## Context
 
@@ -41,8 +41,8 @@ behavior change; no tests weakened or removed.
 
 | Area | Helpers wired |
 | --- | --- |
-| Simulation | `step_scene`, `load_gripper_model`, `make_close_command`, `build_forward_kinematics` → `pipelines/simulate_grasp.py` |
-| Generation | `build_generation_pipeline` → `pipelines/generate_grasps.py` |
+| Simulation | `step_scene`, `load_gripper_model`, `make_open_command`, `make_close_command`, `build_forward_kinematics` → `pipelines/simulate_grasp.py` |
+| Generation | `generate_candidate_grasps` → `pipelines/generate_grasps.py`, `scripts/generate_grasps.py` |
 | Evaluation | `filter_collision_free_grasps`, `load_contact_set`, `compute_grasp_wrench_matrix`, `aggregate_grasp_success_rate` → `pipelines/evaluate.py`, `scripts/evaluate.py`, `run_workflow.py` |
 | Training | `load_pretrained_encoder`, `invert_rigid_transform`, `build_grasp_pose_regression_loss` → `pipelines/train.py`, `pipelines/train_flow.py` |
 | Perception/data | `sample_point_cloud`, `farthest_point_sampling`, `voxel_downsample` → `scripts/prepare_data.py`; `merge_point_clouds`, `normalize_point_cloud` → `scripts/prepare_observations.py`; transform helpers → `data/transforms.py`; `invert_transform` → `models/equivariant_encoder.py` |
@@ -54,12 +54,16 @@ behavior change; no tests weakened or removed.
 | Extraction | Module |
 | --- | --- |
 | `se3_to_vec`, `vec_to_se3` | `data/grasp_vector.py` |
-| `build_supervised_training_pairs` | `data/training_pairs.py` |
+| `build_supervised_training_pairs`, `validate_grasp_dataset` | `data/training_pairs.py` |
 | `prepare_point_cloud_tensor`, `encode_grasp_conditioning`, `sample_to_world_frame` | `inference/grasp_sampling.py` |
-| `load_torch_checkpoint`, `read_model_checkpoint_metadata` | `training/checkpoint_io.py` |
+| `load_torch_checkpoint`, `read_model_checkpoint_metadata`, `checkpoint_scalar_int`, `checkpoint_dict_int` | `training/checkpoint_io.py` |
+| `SupervisedTrainingDataloader`, `ConditionedTrainingDataloader` | `pipelines/supervised_training.py` |
+| `build_supervised_training_step` | `training/trainer.py` |
+| `build_grasp_sampling_batch` | `models/grasp_sampling_batch.py` |
 
 Callers updated: `pipelines/train.py`, `pipelines/train_flow.py`,
-`inference/grasp_generator.py`, `training/trainer.py`, `inference/policy_runner.py`.
+`inference/grasp_generator.py`, `training/trainer.py`, `inference/policy_runner.py`,
+`models/diffusion.py`, `models/flow.py`.
 
 ### Refactor cleanup
 
@@ -68,9 +72,30 @@ Callers updated: `pipelines/train.py`, `pipelines/train_flow.py`,
 - **Scene XML output:** `build_scene_xml`, `attach_object_to_scene`, and
   `MuJoCoScene` accept optional `output_dir` / `scene_output_dir`; default is
   `$TMPDIR/grasping_ai_scenes` instead of repo-relative `data/interim`.
-- **`__init__.py` re-exports:** consolidated; removed test-only public exports
-  `build_gripper_controller` and `make_open_command` from `robotics/__init__.py`
-  (helpers remain in `robotics/gripper.py`).
+- **`__init__.py` re-exports:** consolidated; test-only factories demoted
+  (`build_score_network`, augmentation/dataset iterator from package roots).
+- **SE(3) helpers:** `invert_rigid_transform` delegates to `invert_transform`;
+  `transform_between_frames` delegates to `apply_transform`.
+- **Removed dead surface:** `FrameConversion` alias, `flow_field` compat dict key,
+  metadata-only regression baseline in `pipelines/train.py`, redundant final
+  checkpoint write in `train_flow.py`, obsolete notebooks (see
+  `notebooks/archive/README.md`).
+
+### 2026-08-13 follow-up (code audit completion)
+
+Wire remaining test-only helpers into production rather than delete (per original
+policy):
+
+| Helper / flag | Production caller |
+| --- | --- |
+| `make_open_command` | `pipelines/simulate_grasp.py` (pre-grasp open phase) |
+| Augmentation transforms | `build_supervised_training_pairs(augment=True)` + `--augment` on train CLIs |
+| `iterate_grasp_dataset` | `validate_grasp_dataset()` in diffusion/flow pipelines |
+| `load_training_checkpoint` | `--resume` on `scripts/train.py` / `scripts/train_flow.py` |
+
+Flow inference unified on `FlowGeneratorModel` via `load_flow_model_from_state`
+(`models/flow.py`). All 30 code-audit checklist items closed; open work is CI
+first-run and research validation only (`CHECKLIST.md`).
 
 ### Dependency retention and wiring
 
@@ -103,18 +128,16 @@ Do **not** remove `theseus` or demote `pytransform3d` to dev-only.
 - New helpers should follow the same pattern: wire into a production caller or
   document why they remain test-only.
 
-## Verification state (2026-08-12)
-
-Three-stage distinction:
+## Verification state (2026-08-13)
 
 | Stage | Status |
 | --- | --- |
-| Software pipeline correctness | **Verified** — `scripts/run_artifacts.py` end-to-end on a clean tree; `tests/test_artifact_chain.py` (slow). |
-| Learning pipeline execution | **Verified mechanically** — training, checkpoints, inference execute; flow joint-encoder contract verified structurally (`tests/test_phase4_flow_training.py`). |
-| Robotics / research outcome | **Not verified** — recorded run had 8/8 IK failures and 0/0 physical grasp successes (2-DOF robot reachability + undertrained diffusion). Research-stage, not a pipeline defect. |
+| Software pipeline correctness | **Verified** — `scripts/run_artifacts.py` end-to-end; `tests/test_artifact_chain.py` (slow). |
+| Learning pipeline execution | **Verified mechanically** — training, checkpoints, inference, resume, augmentation paths execute. |
+| Robotics / research outcome | **Not verified** — 2-DOF robot reachability and undertrained diffusion remain research-stage limits. |
 
 Gate: `uv run pytest -q`, `uv run ruff check src tests scripts`, `uv run mypy src`
-— 219 passed, ~87% coverage (2026-08-12).
+— 226 passed, 85.74% coverage (2026-08-13).
 
 ## Follow-up review triggers
 

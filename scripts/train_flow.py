@@ -16,22 +16,10 @@ def train_flow_main(
     seed: int | None = None,
     experiment_log_dir: Path | None = None,
     pretrained_encoder_path: Path | None = None,
+    resume_checkpoint_path: Path | None = None,
+    augment: bool = False,
 ) -> None:
-    """Run the flow-matching grasp-generation training pipeline.
-
-    Args:
-        dataset_root: Root directory of the grasp-pose dataset.
-        checkpoint_path: Destination path for the trained flow checkpoint.
-        feature_dim: Conditioning feature dimension from the encoder.
-        hidden_dim: Width of the flow-field hidden layers.
-        num_layers: Number of hidden layers in the flow field.
-        learning_rate: Learning rate for the Adam optimizer.
-        num_epochs: Number of training epochs to perform.
-        batch_size: Training batch size.
-        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
-        seed: Optional random seed for reproducible training.
-        experiment_log_dir: Optional path to write TensorBoard experiment events.
-    """
+    """Run the flow-matching grasp-generation training pipeline."""
     run_flow_training_pipeline(
         dataset_root=dataset_root,
         checkpoint_path=checkpoint_path,
@@ -45,6 +33,8 @@ def train_flow_main(
         seed=seed,
         experiment_log_dir=experiment_log_dir,
         pretrained_encoder_path=pretrained_encoder_path,
+        resume_checkpoint_path=resume_checkpoint_path,
+        augment=augment,
     )
 
 
@@ -66,6 +56,17 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--experiment-log-dir", type=Path, default=None)
     parser.add_argument("--pretrained-encoder", type=Path, default=None)
+    parser.add_argument(
+        "--resume",
+        type=Path,
+        default=None,
+        help="Optional checkpoint to resume model and optimizer state from",
+    )
+    parser.add_argument(
+        "--augment",
+        action="store_true",
+        help="Apply SO(3)/translation jitter during supervised pair construction",
+    )
     args = parser.parse_args()
     train_flow_main(
         args.dataset_root,
@@ -80,4 +81,6 @@ if __name__ == "__main__":
         args.seed,
         args.experiment_log_dir,
         args.pretrained_encoder,
+        args.resume,
+        args.augment,
     )

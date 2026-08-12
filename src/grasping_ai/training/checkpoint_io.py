@@ -36,7 +36,7 @@ def load_torch_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
     return checkpoint
 
 
-def _checkpoint_scalar_int(value: object) -> int:
+def checkpoint_scalar_int(value: object) -> int:
     """Coerce a checkpoint scalar value to ``int``."""
     if isinstance(value, torch.Tensor):
         return int(value.item())
@@ -47,6 +47,14 @@ def _checkpoint_scalar_int(value: object) -> int:
     if isinstance(value, float):
         return int(value)
     raise TypeError(f"Expected numeric checkpoint scalar, got {type(value)!r}")
+
+
+def checkpoint_dict_int(checkpoint: dict[str, object], key: str) -> int:
+    """Read and coerce an integer field from a checkpoint dictionary."""
+    return checkpoint_scalar_int(checkpoint[key])
+
+
+_checkpoint_scalar_int = checkpoint_scalar_int
 
 
 def _infer_checkpoint_kind(checkpoint: dict[str, Any]) -> str:
@@ -94,7 +102,7 @@ def read_model_checkpoint_metadata(
 
     for key in ("feature_dim", "hidden_dim", "num_layers", "epoch", "seed"):
         if key in checkpoint:
-            metadata[key] = _checkpoint_scalar_int(checkpoint[key])
+            metadata[key] = checkpoint_scalar_int(checkpoint[key])
 
     from grasping_ai.models.rl_policy import read_rl_policy_metadata
 

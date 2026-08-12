@@ -10,12 +10,16 @@ from grasping_ai.inference.grasp_sampling import (
     prepare_point_cloud_tensor,
     sample_to_world_frame,
 )
-from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+from grasping_ai.models.flow import load_flow_model_from_state
+from grasping_ai.training.checkpoint_io import (
+    checkpoint_dict_int,
+    load_torch_checkpoint,
+)
 
 GraspPoseGenerator = Callable[[np.ndarray, int], np.ndarray]
 
 
-def load_grasp_model_checkpoint(checkpoint_path: Path, device: str) -> dict[str, torch.Tensor]:
+def load_grasp_model_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
     """Load a grasp-generation model checkpoint from disk.
 
     Args:
@@ -23,27 +27,13 @@ def load_grasp_model_checkpoint(checkpoint_path: Path, device: str) -> dict[str,
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
 
     Returns:
-        A mapping from parameter names to tensors representing the trained
-        grasp-generation model.
+        Deserialized checkpoint dictionary for grasp-generation models.
     """
-    if not isinstance(checkpoint_path, Path):
-        raise TypeError("checkpoint_path must be a pathlib.Path instance")
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
-    checkpoint = load_torch_checkpoint(checkpoint_path, device)
-    return cast(dict[str, torch.Tensor], checkpoint)
-
-
-def _ckpt_int(checkpoint: dict[str, Any], key: str) -> int:
-    """Extract an integer value from a checkpoint dict."""
-    val = checkpoint[key]
-    if isinstance(val, torch.Tensor):
-        return int(val.item())
-    return int(val)
+    return load_torch_checkpoint(checkpoint_path, device)
 
 
 def build_diffusion_grasp_generator(
-    checkpoint: dict[str, torch.Tensor],
+    checkpoint: dict[str, Any],
     feature_dim: int,
     num_diffusion_steps: int,
     device: str,
@@ -63,8 +53,8 @@ def build_diffusion_grasp_generator(
         A function that takes a point cloud ``(N, 3)`` and returns a set of
         candidate grasp poses as a numpy array.
     """
-    hidden_dim = _ckpt_int(checkpoint, "hidden_dim")
-    num_layers = _ckpt_int(checkpoint, "num_layers")
+    hidden_dim = checkpoint_dict_int(checkpoint, "hidden_dim")
+    num_layers = checkpoint_dict_int(checkpoint, "num_layers")
 
     from grasping_ai.models.diffusion import GraspGeneratorModel, build_diffusion_sampler
     model = GraspGeneratorModel(feature_dim, hidden_dim, num_layers)
@@ -101,7 +91,7 @@ def build_diffusion_grasp_generator(
 
 
 def build_flow_grasp_generator(
-    checkpoint: dict[str, torch.Tensor],
+    checkpoint: dict[str, Any],
     feature_dim: int,
     num_flow_steps: int,
     device: str,
@@ -121,24 +111,12 @@ def build_flow_grasp_generator(
         A function that takes a point cloud ``(N, 3)`` and returns a set of
         candidate grasp poses as a numpy array.
     """
-    hidden_dim = _ckpt_int(checkpoint, "hidden_dim")
-    num_layers = _ckpt_int(checkpoint, "num_layers")
+    hidden_dim = checkpoint_dict_int(checkpoint, "hidden_dim")
+    num_layers = checkpoint_dict_int(checkpoint, "num_layers")
 
-    class FlowModelWrapper(torch.nn.Module):
-        def __init__(self, f_dim: int, h_dim: int, n_layers: int) -> None:
-            super().__init__()
-            self.feature_dim = f_dim
-            self.hidden_dim = h_dim
-            self.num_layers = n_layers
-            from grasping_ai.models.equivariant_encoder import build_equivariant_encoder
-            from grasping_ai.models.flow import build_flow_field
-            self.encoder = build_equivariant_encoder(f_dim, n_layers)
-            self.flow_field = build_flow_field(f_dim, h_dim, n_layers)
-
-    model = FlowModelWrapper(feature_dim, hidden_dim, num_layers)
-    model.load_state_dict(cast(dict[str, Any], checkpoint["model_state_dict"]))
-    model.to(device)
-    model.eval()
+    model = load_flow_model_from_state(
+        checkpoint, feature_dim, hidden_dim, num_layers, device
+    )
 
     from grasping_ai.models.flow import build_flow_integrator, sample_grasps_with_flow
     integrator = build_flow_integrator(num_flow_steps)

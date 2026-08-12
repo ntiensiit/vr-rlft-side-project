@@ -7,6 +7,7 @@ from grasping_ai.pipelines.evaluate import (
     evaluate_generated_grasps,
     write_evaluation_report,
 )
+from grasping_ai.pipelines.generate_grasps import load_generated_grasps
 
 
 def evaluate_main(
@@ -23,45 +24,8 @@ def evaluate_main(
     contact_path: Path | None = None,
     filter_collisions: bool = False,
 ) -> None:
-    """Evaluate a set of generated grasps and write a report to disk.
-
-    Args:
-        grasps_path: Path to the generated grasp poses file.
-        object_id: Identifier of the object whose grasps are being evaluated.
-        object_point_cloud_path: Path to the object point cloud file.
-        gripper_point_cloud_path: Path to the gripper point cloud file.
-        report_path: Destination path for the evaluation report.
-        friction_coefficient: Friction coefficient used in force-closure checks.
-        lift_height_threshold: Height threshold used for lift-success checks.
-        contact_clearance: Clearance threshold for analytical contact detection.
-        wrench_regularization: Regularization strength for force-closure judge.
-        experiment_log_dir: Optional path to write TensorBoard experiment events.
-    """
-    loaded_data = np.load(grasps_path, allow_pickle=True)
-    if isinstance(loaded_data, np.ndarray) and loaded_data.dtype == object:
-        loaded = loaded_data.item()
-    else:
-        loaded = loaded_data
-
-    if isinstance(loaded, dict):
-        if object_id in loaded:
-            grasps = loaded[object_id]
-        elif len(loaded) == 1:
-            grasps = next(iter(loaded.values()))
-        else:
-            raise ValueError(
-                f"Object ID '{object_id}' not found in grasp dictionary keys: {list(loaded.keys())}"
-            )
-    else:
-        grasps = loaded
-
-    if isinstance(grasps, np.ndarray):
-        if grasps.ndim == 4 and grasps.shape[0] == 1:
-            grasps = grasps[0]
-        elif grasps.ndim == 4 and grasps.shape[0] > 1:
-            raise ValueError(
-                "Batched grasp array with batch size > 1 is not supported by evaluate script"
-            )
+    """Evaluate a set of generated grasps and write a report to disk."""
+    grasps = load_generated_grasps(grasps_path, object_key=object_id)
 
     object_point_cloud = np.load(object_point_cloud_path)
     gripper_point_cloud = np.load(gripper_point_cloud_path)
@@ -117,4 +81,3 @@ if __name__ == "__main__":
         args.contact_path,
         args.filter_collisions,
     )
-

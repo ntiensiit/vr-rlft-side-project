@@ -1,18 +1,21 @@
-import random
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import cast
 
 import torch
 
-from grasping_ai.data.training_pairs import build_supervised_training_pairs
-from grasping_ai.models.flow import FlowGeneratorModel
-from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+from grasping_ai.data.training_pairs import (
+    build_supervised_training_pairs,
+    validate_grasp_dataset,
+)
+from grasping_ai.models.flow import FlowGeneratorModel, load_flow_model_checkpoint
+from grasping_ai.pipelines.supervised_training import SupervisedTrainingDataloader
 from grasping_ai.training.losses import build_flow_matching_loss
 from grasping_ai.training.trainer import (
     build_adam_optimizer,
+    build_supervised_training_step,
+    load_training_checkpoint,
     run_training_loop,
-    save_training_checkpoint,
 )
 
 
@@ -34,14 +37,13 @@ def build_flow_training_components(
 
     Returns:
         A dictionary containing the combined ``"model"`` (encoder + flow
-        field on a single ``FlowGeneratorModel``), the same value as
-        ``"flow_field"`` for backward compatibility, and the ``"optimizer"``
+        field on a single ``FlowGeneratorModel``) and the ``"optimizer"``
         that updates both jointly.
     """
     model = cast(torch.nn.Module, FlowGeneratorModel(feature_dim, hidden_dim, num_layers))
     model.to(device)
     optimizer = build_adam_optimizer(model.parameters(), learning_rate)
-    return {"model": model, "flow_field": model, "optimizer": optimizer}
+    return {"model": model, "optimizer": optimizer}
 
 
 def build_flow_training_step(
@@ -51,39 +53,16 @@ def build_flow_training_step(
     device: str,
     seed: int | None = None,
 ) -> Callable[[torch.Tensor, torch.Tensor], dict[str, float]]:
-    """Build a callable training step closure for a flow-matching model.
-
-    The closure updates both the encoder and the flow field jointly so the
-    checkpoint preserves the exact encoder state used during training.
-
-    Args:
-        model: ``FlowGeneratorModel`` instance being trained (encoder + flow
-            field are jointly updated).
-        loss_fn: Loss function returned by
-            ``training.losses.build_flow_matching_loss``.
-        optimizer: Optimizer returned by ``build_adam_optimizer``.
-        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
-        seed: Optional random seed for reproducible interpolation sampling.
-
-    Returns:
-        A callable that consumes ``(point_clouds, targets)`` and returns a
-        dictionary of training metrics for the step.
-    """
+    """Build a callable training step closure for a flow-matching model."""
     device_obj = torch.device(device)
     generator = None
     if seed is not None:
         generator = torch.Generator(device=device_obj).manual_seed(seed)
 
-    def step(
-        point_clouds: torch.Tensor, targets: torch.Tensor
-    ) -> dict[str, float]:
-        model.train()
-        optimizer.zero_grad()
-
-        pcs = point_clouds.to(device_obj)
-        x_1 = targets.to(device_obj)
+    def flow_forward(point_clouds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        pcs = point_clouds
+        x_1 = targets
         batch_size_val = x_1.shape[0]
-
         t = torch.rand(
             batch_size_val,
             dtype=x_1.dtype,
@@ -99,51 +78,11 @@ def build_flow_training_step(
         t_view = t.view(batch_size_val, 1)
         x_t = (1.0 - t_view) * x_0 + t_view * x_1
         target_velocity = x_1 - x_0
-
         cond = model.condition(pcs)
         predicted_velocity = model.flow_field(x_t, cond)
-        loss = loss_fn(predicted_velocity, target_velocity)
+        return loss_fn(predicted_velocity, target_velocity)
 
-        loss.backward()
-        optimizer.step()
-
-        return {"loss": float(loss.item())}
-
-    step.model = model  # type: ignore[attr-defined]
-    step.optimizer = optimizer  # type: ignore[attr-defined]
-    return step
-
-
-class _FlowTrainingDataloader:
-    """Iterable dataloader that emits ``(pcs, targets)`` batches per epoch."""
-
-    def __init__(
-        self,
-        pairs: list[tuple[torch.Tensor, torch.Tensor]],
-        batch_size: int,
-        device: str,
-        seed: int | None,
-    ) -> None:
-        self.pairs = pairs
-        self.batch_size = batch_size
-        self.device = device
-        self.seed = seed
-
-    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-        num_samples = len(self.pairs)
-        indices = list(range(num_samples))
-        local_random = random.Random(self.seed if self.seed is not None else 42)
-        local_random.shuffle(indices)
-
-        for i in range(0, num_samples, self.batch_size):
-            batch_indices = indices[i : i + self.batch_size]
-            pcs = torch.stack([self.pairs[idx][0] for idx in batch_indices]).to(
-                self.device
-            )
-            targets = torch.stack(
-                [self.pairs[idx][1] for idx in batch_indices]
-            ).to(self.device)
-            yield pcs, targets
+    return build_supervised_training_step(model, optimizer, device, flow_forward)
 
 
 def run_flow_training_pipeline(
@@ -159,6 +98,8 @@ def run_flow_training_pipeline(
     seed: int | None = None,
     experiment_log_dir: Path | None = None,
     pretrained_encoder_path: Path | None = None,
+    resume_checkpoint_path: Path | None = None,
+    augment: bool = False,
 ) -> None:
     """Run the end-to-end flow-matching training pipeline for grasp generation.
 
@@ -194,6 +135,8 @@ def run_flow_training_pipeline(
             f"Dataset root does not exist: {dataset_root}"
         )
 
+    validate_grasp_dataset(dataset_root)
+
     if seed is not None:
         torch.manual_seed(seed)
 
@@ -201,6 +144,16 @@ def run_flow_training_pipeline(
         feature_dim, hidden_dim, num_layers, learning_rate, device
     )
     model = cast(FlowGeneratorModel, components["model"])
+    optimizer = cast(torch.optim.Optimizer, components["optimizer"])
+
+    resume_epoch = 0
+    if resume_checkpoint_path is not None:
+        resume_epoch = load_training_checkpoint(
+            resume_checkpoint_path,
+            cast(torch.nn.Module, model),
+            optimizer,
+            device,
+        )
 
     if pretrained_encoder_path is not None:
         from grasping_ai.pipelines.train import load_pretrained_encoder
@@ -209,18 +162,18 @@ def run_flow_training_pipeline(
         encoder_module = cast(torch.nn.Module, model.encoder)
         encoder_module.load_state_dict(encoder_state, strict=False)
 
-    pairs = build_supervised_training_pairs(dataset_root)
+    pairs = build_supervised_training_pairs(dataset_root, augment=augment, seed=seed)
 
     loss_fn = build_flow_matching_loss()
     training_step = build_flow_training_step(
         model,
         loss_fn,
-        cast(torch.optim.Optimizer, components["optimizer"]),
+        optimizer,
         device,
         seed=seed,
     )
 
-    dataloader: Iterable[tuple[torch.Tensor, torch.Tensor]] = _FlowTrainingDataloader(
+    dataloader: Iterable[tuple[torch.Tensor, torch.Tensor]] = SupervisedTrainingDataloader(
         pairs, batch_size, device, seed
     )
 
@@ -235,9 +188,12 @@ def run_flow_training_pipeline(
         "num_epochs": num_epochs,
         "batch_size": batch_size,
         "device": device,
+        "augment": augment,
     }
     if seed is not None:
         metadata["seed"] = seed
+    if resume_epoch > 0:
+        metadata["resume_from_epoch"] = resume_epoch
 
     run_training_loop(
         cast(Callable[[torch.Tensor, torch.Tensor], dict[str, float]], training_step),
@@ -250,47 +206,10 @@ def run_flow_training_pipeline(
         seed=seed,
     )
 
-    save_training_checkpoint(
-        cast(torch.nn.Module, model),
-        cast(torch.optim.Optimizer, components["optimizer"]),
-        num_epochs,
-        checkpoint_path,
-        seed=seed,
-    )
 
-
-def load_flow_model_checkpoint(
-    checkpoint_path: Path,
-    feature_dim: int,
-    hidden_dim: int,
-    num_layers: int,
-    device: str,
-) -> FlowGeneratorModel:
-    """Reconstruct a ``FlowGeneratorModel`` from a joint train/inference checkpoint.
-
-    Loads the combined ``state_dict`` (encoder + flow field) into a freshly
-    constructed ``FlowGeneratorModel`` so the encoder state matches the
-    encoder actually used during training.
-
-    Args:
-        checkpoint_path: Path to the flow checkpoint written by
-            ``run_flow_training_pipeline``.
-        feature_dim: Conditioning feature dimension used at training time.
-        hidden_dim: Hidden width used at training time.
-        num_layers: Number of hidden layers used at training time.
-        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
-
-    Returns:
-        A ``FlowGeneratorModel`` in evaluation mode on the requested device.
-    """
-    if not isinstance(checkpoint_path, Path):
-        raise TypeError("checkpoint_path must be a pathlib.Path instance")
-    model = cast(
-        FlowGeneratorModel,
-        FlowGeneratorModel(feature_dim, hidden_dim, num_layers),
-    )
-    checkpoint = load_torch_checkpoint(checkpoint_path, device)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    model.to(torch.device(device))
-    model.eval()
-    return model
+__all__ = [
+    "build_flow_training_components",
+    "build_flow_training_step",
+    "load_flow_model_checkpoint",
+    "run_flow_training_pipeline",
+]

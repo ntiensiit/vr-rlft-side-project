@@ -1,27 +1,12 @@
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 
-from grasping_ai.inference.grasp_generator import GraspPoseGenerator
-
-
-def build_generation_pipeline(
-    object_point_cloud: np.ndarray,
-    grasp_generator: GraspPoseGenerator,
-    num_candidates: int,
-) -> np.ndarray:
-    """Run an end-to-end grasp-generation pipeline for a single object.
-
-    Args:
-        object_point_cloud: Object point cloud with shape ``(N, 3)``.
-        grasp_generator: Callable grasp generator produced by inference.
-        num_candidates: Number of candidate grasp poses to generate.
-
-    Returns:
-        Candidate grasp poses as a numpy array.
-    """
-    return grasp_generator(object_point_cloud, num_candidates)
+from grasping_ai.inference.grasp_generator import (
+    GraspPoseGenerator,
+    generate_candidate_grasps,
+)
 
 
 def generate_grasps_for_dataset(
@@ -29,35 +14,76 @@ def generate_grasps_for_dataset(
     grasp_generator: GraspPoseGenerator,
     num_candidates: int,
 ) -> list[np.ndarray]:
-    """Generate grasp candidates for a list of object point clouds.
-
-    Args:
-        dataset_point_clouds: List of per-object point clouds.
-        grasp_generator: Callable grasp generator produced by inference.
-        num_candidates: Number of candidate grasp poses to generate per object.
-
-    Returns:
-        List of per-object candidate grasp-pose arrays.
-    """
+    """Generate grasp candidates for a list of object point clouds."""
     return [
-        build_generation_pipeline(pc, grasp_generator, num_candidates)
+        generate_candidate_grasps(grasp_generator, pc, num_candidates)
         for pc in dataset_point_clouds
     ]
 
 
-def write_generated_grasps(output_path: Path, grasps_by_object: dict[str, np.ndarray]) -> None:
-    """Persist generated grasps to disk under the supplied output path.
+def load_generated_grasps(
+    grasps_path: Path,
+    object_key: str | None = None,
+) -> np.ndarray:
+    """Load generated grasps from either on-disk format.
 
-    Args:
-        output_path: Destination path for the generated-grasp file.
-        grasps_by_object: Mapping from object identifier to grasp-pose array.
+    Supports:
+    * Plain array with shape ``(K, 4, 4)`` (runtime workflow / simulation).
+    * Pickled dict mapping object identifiers to grasp arrays (artifact chain).
     """
+    if not isinstance(grasps_path, Path):
+        raise TypeError("grasps_path must be a pathlib.Path instance")
+
+    loaded = np.load(grasps_path, allow_pickle=True)
+    if isinstance(loaded, np.ndarray) and loaded.dtype == object:
+        data: object = loaded.item()
+    else:
+        data = loaded
+
+    if isinstance(data, dict):
+        keyed = cast(dict[str, np.ndarray], data)
+        if object_key is not None:
+            if object_key not in keyed:
+                raise ValueError(
+                    f"Object key '{object_key}' not found in grasp dictionary: "
+                    f"{list(keyed.keys())}"
+                )
+            return keyed[object_key]
+        if len(keyed) == 1:
+            return next(iter(keyed.values()))
+        raise ValueError(
+            "object_key is required when the grasp file contains multiple objects"
+        )
+
+    grasps = cast(np.ndarray, data)
+    if grasps.ndim == 4 and grasps.shape[0] == 1:
+        return grasps[0]
+    return grasps
+
+
+def write_generated_grasps(
+    output_path: Path,
+    grasps_by_object: dict[str, np.ndarray],
+) -> None:
+    """Persist multi-object generated grasps as a pickled dict (artifact-chain format)."""
     if not isinstance(output_path, Path):
         raise TypeError("output_path must be a pathlib.Path instance")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        from typing import Any
         np.save(output_path, cast(Any, grasps_by_object), allow_pickle=True)
     except Exception as e:
         raise ValueError(f"Failed to write generated grasps: {e}") from e
+
+
+def write_generated_grasps_array(output_path: Path, grasp_poses: np.ndarray) -> None:
+    """Persist a plain ``(K, 4, 4)`` grasp array (runtime-workflow format)."""
+    if not isinstance(output_path, Path):
+        raise TypeError("output_path must be a pathlib.Path instance")
+    if grasp_poses.ndim != 3 or grasp_poses.shape[1:] != (4, 4):
+        raise ValueError(
+            f"grasp_poses must have shape (K, 4, 4), got {grasp_poses.shape}"
+        )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(output_path, grasp_poses)

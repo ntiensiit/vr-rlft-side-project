@@ -5,6 +5,29 @@ import torch
 
 OptimizerFactory = Callable[[Iterator[torch.nn.Parameter]], torch.optim.Optimizer]
 TrainingStep = Callable[[torch.Tensor, torch.Tensor], dict[str, float]]
+LossForward = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+
+
+def build_supervised_training_step(
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    device: str,
+    forward_fn: LossForward,
+) -> TrainingStep:
+    """Build a generic supervised step closure with pluggable forward/loss logic."""
+    device_obj = torch.device(device)
+
+    def step(inputs: torch.Tensor, targets: torch.Tensor) -> dict[str, float]:
+        model.train()
+        optimizer.zero_grad()
+        loss = forward_fn(inputs.to(device_obj), targets.to(device_obj))
+        loss.backward()
+        optimizer.step()
+        return {"loss": float(loss.item())}
+
+    step.model = model  # type: ignore[attr-defined]
+    step.optimizer = optimizer  # type: ignore[attr-defined]
+    return step
 
 
 def build_adam_optimizer(
@@ -49,41 +72,28 @@ def build_training_step(
     if seed is not None:
         generator = torch.Generator(device=device_obj).manual_seed(seed)
 
-    def step(inputs: torch.Tensor, targets: torch.Tensor) -> dict[str, float]:
-        model.train()
-        optimizer.zero_grad()
-
-        cond = inputs.to(device_obj)
-        x_0 = targets.to(device_obj)
+    def diffusion_forward(cond: torch.Tensor, x_0: torch.Tensor) -> torch.Tensor:
         batch_size_val = x_0.shape[0]
-
         from grasping_ai.config.diffusion import (
             DEFAULT_DIFFUSION_SCHEDULE,
             linear_beta_schedule,
         )
         num_steps = DEFAULT_DIFFUSION_SCHEDULE.num_steps
-        t = torch.randint(0, num_steps, (batch_size_val,), device=device_obj, generator=generator)
-        noise = torch.randn(x_0.shape, dtype=x_0.dtype, device=device_obj, generator=generator)
-
+        t = torch.randint(
+            0, num_steps, (batch_size_val,), device=device_obj, generator=generator
+        )
+        noise = torch.randn(
+            x_0.shape, dtype=x_0.dtype, device=device_obj, generator=generator
+        )
         beta = linear_beta_schedule().to(device_obj)
         alpha = 1.0 - beta
         alpha_bar = torch.cumprod(alpha, dim=0)
-
         ab_t = alpha_bar[t].view(batch_size_val, 1)
         x_t = torch.sqrt(ab_t) * x_0 + torch.sqrt(1.0 - ab_t) * noise
-
         pred_noise = model(x_t, t, cond)
-        loss = loss_fn(pred_noise, noise)
+        return loss_fn(pred_noise, noise)
 
-        loss.backward()
-        optimizer.step()
-
-        return {"loss": float(loss.item())}
-
-    # Attach model and optimizer as attributes to the function object for serialization in the loop
-    step.model = model  # type: ignore[attr-defined]
-    step.optimizer = optimizer  # type: ignore[attr-defined]
-    return step
+    return build_supervised_training_step(model, optimizer, device, diffusion_forward)
 
 
 def run_training_loop(
@@ -205,8 +215,6 @@ def load_training_checkpoint(
     """
     if not isinstance(checkpoint_path, Path):
         raise TypeError("checkpoint_path must be a pathlib.Path instance")
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
 
     from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 
