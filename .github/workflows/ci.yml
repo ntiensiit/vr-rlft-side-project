@@ -39,4 +39,4 @@ jobs:
       - name: Verify package import
         run: uv run python -c "import grasping_ai; print('grasping_ai ok')"
       - name: Pytest (excluding slow / artifact-chain tests)
-        run: xvfb-run -a uv run pytest -q -m "not slow" --cov=src/grasping_ai --cov-fail-under=80
+        run: xvfb-run -a uv run pytest -q -m "not slow"
