@@ -8,7 +8,7 @@ Open implementation and research tasks for the grasping-ai side project.
 | --- | --- | --- |
 | Local gate pass | Engineering verification on this machine | 226 passed, 85.74% coverage, ruff clean, mypy clean on 48 source files (2026-08-13) |
 | Record in this file | Repository-recorded verification | Same as local gate above |
-| GitHub Actions on current `dev` HEAD | GitHub CI verified | FAILED on `3947f1f` (pytest exit 2); fix pushed pending re-run |
+| GitHub Actions on current `dev` HEAD | GitHub CI verified | FAILED on `73220e9` (pytest exit 139 segfault); fix pushed pending re-run |
 
 Local verify gate (run after each code change):
 
@@ -89,7 +89,7 @@ Pass/fail: step exits 0; log reports success on source files.
 
 Step name in log: `Pytest (excluding slow / artifact-chain tests)`
 
-Command in CI: `xvfb-run -a uv run pytest -q -m "not slow" --cov=src/grasping_ai --cov-config=coverage.toml --cov-fail-under=80`
+Command in CI: `bash scripts/ci_pytest.sh` (per-file `coverage run` under `xvfb-run`)
 
 Pass/fail: step exits 0; tests ran (not skipped); coverage gate at or above 80%.
 
@@ -115,7 +115,7 @@ Verified: <YYYY-MM-DD>
 
 Then change the checklist item to `[x]`.
 
-**Latest run (2026-08-13):** `d8d7ccc` run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31626633282 — Verify runtime imports FAIL (Open3D on headless Linux); pytest skipped. Prior runs `3947f1f`, `a677b97` failed at pytest (exit 2). Follow-up adds xvfb-run for import and test steps.
+**Latest run (2026-08-13):** `73220e9` run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31629980653 — Ruff/Mypy/import PASS; pytest FAIL (exit 139 segfault on headless Linux). Follow-up: per-file CI runner + EGL/OSMesa env.
 
 ---
 
