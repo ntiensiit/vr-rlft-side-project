@@ -44,7 +44,7 @@ jobs:
       EGL_PLATFORM: surfaceless
       PYTHONFAULTHANDLER: "1"
       OMP_NUM_THREADS: "1"
-      COVERAGE_FILE: .coverage.${{ matrix.id }}
+      COVERAGE_FILE: cov-${{ matrix.id }}
     strategy:
       fail-fast: false
       matrix:
@@ -103,7 +103,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.id }}
-          path: .coverage.${{ matrix.id }}
+          path: cov-${{ matrix.id }}
 
   coverage:
     name: Coverage gate
@@ -127,12 +127,12 @@ jobs:
           merge-multiple: true
       - name: Combine and report coverage
         run: |
-          mapfile -t fragments < <(find coverage-data -name '.coverage.*' -type f)
+          find coverage-data -print
+          mapfile -t fragments < <(find coverage-data -name 'cov-*' -type f)
           if ((${#fragments[@]} == 0)); then
-            echo "No coverage fragments found under coverage-data:" >&2
-            find coverage-data -print >&2 || true
+            echo "No coverage fragments found" >&2
             exit 1
           fi
           export COVERAGE_FILE=.coverage
-          uv run coverage combine "${fragments[@]}"
+          uv run coverage combine --rcfile=coverage.toml "${fragments[@]}"
           uv run coverage report --rcfile=coverage.toml --fail-under=80
