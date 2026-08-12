@@ -91,6 +91,7 @@ def simulate_grasp(
             "contact_count": 0.0,
             "object_velocity": np.zeros(6),
             "grasp_pose": grasp_pose,
+            "fk_position_error": float("inf"),
         }
 
     # Teleport robot to grasp pose in simulation
@@ -111,17 +112,34 @@ def simulate_grasp(
     if dt <= 0 or not np.isfinite(dt):
         dt = 0.002
 
-    # Set gripper command
-    nu_robot = cast(int, mj_model.nu)
-    ctrl_cmd = np.zeros(nu_robot, dtype=np.float64)
-    close_len = gripper_close_command.shape[0]
-    if close_len <= nu_robot:
-        ctrl_cmd[:close_len] = gripper_close_command
-    else:
-        ctrl_cmd[:] = gripper_close_command[:nu_robot]
+    from grasping_ai.robotics.gripper import load_gripper_model, make_close_command
+    from grasping_ai.robotics.kinematics import build_forward_kinematics
+    from grasping_ai.simulation.scene import step_scene
 
-    for _ in range(num_simulation_steps):
-        scene.step(ctrl_cmd, dt)
+    gripper_model = load_gripper_model(str(robot_xml_path))
+    gripper_model["model"] = mj_model
+    gripper_model["data"] = mj_data
+    nu_robot = cast(int, mj_model.nu)
+    ctrl_cmd = make_close_command(gripper_model).astype(np.float64)
+    if nu_robot < ctrl_cmd.shape[0]:
+        ctrl_cmd = ctrl_cmd[:nu_robot]
+    elif nu_robot > ctrl_cmd.shape[0]:
+        padded = np.zeros(nu_robot, dtype=np.float64)
+        padded[: ctrl_cmd.shape[0]] = ctrl_cmd
+        ctrl_cmd = padded
+    close_len = gripper_close_command.shape[0]
+    if close_len > 0:
+        overlay_len = min(close_len, nu_robot)
+        ctrl_cmd[:overlay_len] = gripper_close_command[:overlay_len]
+
+    def _advance_physics(step_dt: float) -> None:
+        scene.step(ctrl_cmd, step_dt)
+
+    step_scene(_advance_physics, dt, num_simulation_steps)
+
+    fk_solver = build_forward_kinematics(robot_model)
+    achieved_pose = fk_solver(q_target)
+    fk_position_error = float(np.linalg.norm(achieved_pose[:3, 3] - grasp_pose[:3, 3]))
 
     # Read final height and velocities of the object
     final_pose = scene.body_pose(object_id)
@@ -159,6 +177,7 @@ def simulate_grasp(
         "contact_count": float(contact_count),
         "object_velocity": object_velocity,
         "grasp_pose": grasp_pose,
+        "fk_position_error": fk_position_error,
     }
 
 

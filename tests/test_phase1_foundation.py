@@ -24,9 +24,12 @@ def test_package_imports():
 
 def test_math_dependencies_available():
     """Verify that core math libraries can be imported."""
+    import theseus
+
     assert pytransform3d.__version__ is not None
     assert scipy.__version__ is not None
     assert np.__version__ is not None
+    assert theseus.__version__ is not None
 
 
 def test_base_config_file_exists():

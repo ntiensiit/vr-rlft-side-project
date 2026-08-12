@@ -1,6 +1,83 @@
+from collections.abc import Callable
 from pathlib import Path
 
+from theseus import Node, default_tokenizer  # type: ignore[import-untyped]
+
 YcbObjectMesh = Path
+
+
+def tokenize_ycb_object_name(object_name: str) -> list[str]:
+    """Tokenize a YCB object identifier for vocabulary-based alias matching.
+
+    Uses the ``theseus`` dependency's ``default_tokenizer`` so object names
+    with spaces, underscores, or numeric YCB prefixes resolve consistently.
+
+    Args:
+        object_name: Logical object identifier such as ``"mustard_bottle"`` or
+            ``"006 mustard bottle"``.
+
+    Returns:
+        Lowercased word tokens extracted from ``object_name``.
+    """
+    if not isinstance(object_name, str):
+        raise TypeError("object_name must be a string")
+
+    normalized = object_name.replace("-", " ").replace("_", " ")
+    return default_tokenizer(normalized)
+
+
+def build_ycb_object_name_classifier(
+    ycb_root: Path,
+) -> Callable[[str], str | None]:
+    """Build a vocabulary classifier that maps alias strings to YCB directory names.
+
+    Profiles each installed YCB object directory with ``theseus.Node`` and
+    returns the best-matching canonical directory name for free-form queries
+    such as ``"mustard bottle"`` or ``"006 mustard bottle"``.
+
+    Args:
+        ycb_root: Root directory of the YCB object set.
+
+    Returns:
+        Callable that maps a query string to a directory name, or ``None`` when
+        no object profile matches.
+    """
+    if not isinstance(ycb_root, Path):
+        raise TypeError("ycb_root must be a pathlib.Path instance")
+    if not ycb_root.is_dir():
+        raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
+
+    object_names = list_ycb_objects(ycb_root)
+    if not object_names:
+        raise ValueError(f"No YCB objects found under '{ycb_root}'")
+
+    vocabularies: dict[str, set[str]] = {}
+    for name in object_names:
+        node = Node(documents=[tokenize_ycb_object_name(name)], name=name)
+        vocabularies[name] = set(node.counter.keys())
+
+    def classify(query: str) -> str | None:
+        query_tokens = set(tokenize_ycb_object_name(query))
+        if not query_tokens:
+            return None
+
+        best_name: str | None = None
+        best_hits = 0
+        for name, vocabulary in vocabularies.items():
+            hits = len(query_tokens & vocabulary)
+            if hits > best_hits:
+                best_hits = hits
+                best_name = name
+
+        if best_hits == 0 or best_name is None:
+            return None
+
+        # Reject weak partial matches (e.g. a single shared token across objects).
+        if best_hits < len(query_tokens):
+            return None
+        return best_name
+
+    return classify
 
 
 def list_ycb_objects(ycb_root: Path) -> list[str]:
@@ -65,6 +142,10 @@ def resolve_ycb_object_directory(ycb_root: Path, object_name: str) -> Path:
                 and object_name[:3].isdigit()
             ):
                 return path
+
+    matched = build_ycb_object_name_classifier(ycb_root)(object_name)
+    if matched is not None:
+        return ycb_root / matched
 
     raise FileNotFoundError(f"YCB object '{object_name}' not found under '{ycb_root}'")
 

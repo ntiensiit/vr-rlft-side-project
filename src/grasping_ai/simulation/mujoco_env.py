@@ -7,6 +7,8 @@ import gymnasium as gym
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
 
+from grasping_ai.perception.geometry import make_transform
+
 SimulationStep = Callable[[float], None]
 ContactReporter = Callable[[], list[dict[str, np.ndarray]]]
 
@@ -247,10 +249,7 @@ def read_body_pose(state: object, body_name: str) -> np.ndarray:
     if body_id == -1:
         raise ValueError(f"Body '{body_name}' not found in simulation model")
 
-    pose = np.eye(4)
-    pose[:3, :3] = data.xmat[body_id].reshape(3, 3)
-    pose[:3, 3] = data.xpos[body_id]
-    return pose
+    return make_transform(data.xmat[body_id].reshape(3, 3), data.xpos[body_id])
 
 
 class MuJoCoGraspingEnv(gym.Env):

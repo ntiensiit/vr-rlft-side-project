@@ -689,6 +689,10 @@ def test_ycb_dataset_path_resolution(tmp_path):
     path2 = resolve_ycb_object_directory(ycb_root, "banana")
     assert path2 == obj2_dir
 
+    # theseus-backed alias resolution for free-form object names
+    path_alias = resolve_ycb_object_directory(ycb_root, "mustard bottle")
+    assert path_alias == obj1_dir
+
     # Mesh file lookup
     file2 = find_ycb_mesh_file(path2)
     assert file2 == mesh2

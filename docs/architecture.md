@@ -93,7 +93,8 @@ trivial feature action.
 It is **not** a conventional nontrivial equivariant neural network (e.g.,
 steerable / equivariant tensor-field networks). If the intended research
 objective requires genuine nontrivial equivariance, the encoder must be
-replaced; see `hot-fix-checklist.md` Priority 8-3 for the open decision.
+replaced; see [ADR-0001](adr/001-phase4-canonicalization-vs-equivariant.md) and
+`CHECKLIST.md` (encoder validation research item).
 
 ## Grasp representation
 

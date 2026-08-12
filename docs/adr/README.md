@@ -9,6 +9,8 @@ rationale, and consequences of a single choice.
 | 0001  | [Phase 4 representation: canonicalization vs. nontrivial equivariance](./001-phase4-canonicalization-vs-equivariant.md) | Accepted | 2026-08-12 |
 | 0002  | [Flow-matching training: required deliverable vs. optional extension](./002-flow-training-optional-vs-required.md) | Accepted | 2026-08-12 |
 | 0003  | [Flow model checkpoint contract: jointly train encoder + flow field](./003-flow-checkpoint-joint-encoder.md) | Accepted | 2026-08-12 |
+| 0004  | [Dead-helper wiring, deduplication, and dependency retention](./004-dead-helper-wiring-and-refactoring.md) | Accepted | 2026-08-12 |
+| 0005  | [Runtime workflow integration scripts](./005-runtime-workflow-integration.md) | Accepted | 2026-08-12 |
 
 ## Conventions
 

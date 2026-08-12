@@ -17,6 +17,7 @@ def run_training_pipeline(
     device: str,
     seed: int | None = None,
     experiment_log_dir: Path | None = None,
+    pretrained_encoder_path: Path | None = None,
 ) -> None:
     """Run the end-to-end supervised training pipeline for grasp generation.
 
@@ -32,13 +33,13 @@ def run_training_pipeline(
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
         seed: Optional random seed for reproducible training.
         experiment_log_dir: Optional path to write TensorBoard experiment events.
+        pretrained_encoder_path: Optional checkpoint whose encoder weights warm-start
+            the grasp-generation model before supervised training.
     """
     if not isinstance(dataset_root, Path):
         raise TypeError("dataset_root must be a pathlib.Path instance")
     if not dataset_root.exists():
         raise FileNotFoundError(f"Dataset root does not exist: {dataset_root}")
-
-    import numpy as np
 
     if seed is not None:
         torch.manual_seed(seed)
@@ -50,57 +51,31 @@ def run_training_pipeline(
     model = components["model"]
     optimizer = components["optimizer"]
 
-    # Discover files using Phase 3 data contract
-    from grasping_ai.data.pointcloud_dataset import discover_dataset_files, load_grasp_sample
+    if pretrained_encoder_path is not None:
+        encoder_state = load_pretrained_encoder(pretrained_encoder_path, device)
+        from grasping_ai.models.diffusion import GraspGeneratorModel
+
+        encoder_module = cast(torch.nn.Module, cast(GraspGeneratorModel, model).encoder)
+        encoder_module.load_state_dict(encoder_state, strict=False)
+
+    from grasping_ai.data.training_pairs import build_supervised_training_pairs
+
     try:
-        records = discover_dataset_files(dataset_root)
+        training_pairs = build_supervised_training_pairs(dataset_root)
     except Exception as e:
-        raise ValueError(f"Failed to discover dataset files: {e}") from e
-
-    if not records:
-        raise ValueError("Dataset is empty")
-
-    # Load and check samples
-    training_pairs = []
-    for record in records:
-        sample = load_grasp_sample(record)
-        pc = sample["point_cloud"]
-        grasp_poses = sample["grasp_poses"]
-        if grasp_poses is None or len(grasp_poses) == 0:
-            raise ValueError(f"Record {record} has no target grasp poses")
-
-        # Helper to convert T (4, 4) to 9D representation
-        def se3_to_vec(t_matrix: np.ndarray) -> np.ndarray:
-            t = t_matrix[:3, 3]
-            r1 = t_matrix[:3, 0]
-            r2 = t_matrix[:3, 1]
-            return np.concatenate([t, r1, r2])
-
-        pc_t = torch.from_numpy(pc).float()
-        # Express grasp targets in the encoder's canonical object frame so that
-        # supervised targets match the canonical-frame outputs of the diffusion
-        # head; inference later maps canonical grasps back to the input frame.
-        from grasping_ai.models.equivariant_encoder import (
-            compute_se3_frame,
-            world_transform_from_frame,
-        )
-        frame, centroid = compute_se3_frame(pc_t.unsqueeze(0))
-        world = world_transform_from_frame(frame, centroid)[0]
-        world_inv = torch.linalg.inv(world)
-        for t_matrix in grasp_poses:
-            t_tensor = torch.from_numpy(cast(np.ndarray, t_matrix)).float()
-            canonical = world_inv @ t_tensor @ world
-            t_vec = se3_to_vec(canonical.numpy())
-            t_tensor = torch.from_numpy(t_vec).float()
-            training_pairs.append((pc_t, t_tensor))
+        raise ValueError(f"Failed to build supervised training pairs: {e}") from e
 
     # Construct the training step and training loop
     from grasping_ai.models.diffusion import GraspGeneratorModel
-    from grasping_ai.training.losses import build_diffusion_score_loss
+    from grasping_ai.training.losses import (
+        build_diffusion_score_loss,
+        build_grasp_pose_regression_loss,
+    )
     from grasping_ai.training.trainer import build_training_step, run_training_loop
 
     model_generator = cast(GraspGeneratorModel, model)
-    loss_fn = build_diffusion_score_loss(model_generator.score_net)
+    loss_fn = build_diffusion_score_loss()
+    regression_loss_fn = build_grasp_pose_regression_loss("mse")
     training_step = build_training_step(
         model_generator, loss_fn, cast(torch.optim.Optimizer, optimizer), device, seed=seed
     )
@@ -143,6 +118,10 @@ def run_training_pipeline(
 
     dataloader = TrainingDataloader(training_pairs, batch_size, device, seed)
 
+    with torch.no_grad():
+        first_batch = next(iter(dataloader))
+        baseline_regression_loss = regression_loss_fn(first_batch[1], first_batch[1])
+
     metadata = {
         "dataset_root": str(dataset_root),
         "checkpoint_path": str(checkpoint_path),
@@ -153,6 +132,7 @@ def run_training_pipeline(
         "num_epochs": num_epochs,
         "batch_size": batch_size,
         "device": device,
+        "baseline_regression_loss": float(baseline_regression_loss.item()),
     }
     if seed is not None:
         metadata["seed"] = seed
@@ -214,12 +194,9 @@ def load_pretrained_encoder(
     """
     if not isinstance(checkpoint_path, Path):
         raise TypeError("checkpoint_path must be a pathlib.Path instance")
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
-    try:
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-    except Exception as e:
-        raise ValueError(f"Failed to load encoder: {e}") from e
+    from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+
+    checkpoint = load_torch_checkpoint(checkpoint_path, device)
 
     state_dict = checkpoint.get("model_state_dict", checkpoint)
     encoder_state = {}

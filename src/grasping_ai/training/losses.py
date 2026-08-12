@@ -5,11 +5,8 @@ import torch
 LossFunction = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
 
-def build_diffusion_score_loss(_score_model: Callable[..., torch.Tensor]) -> LossFunction:
+def build_diffusion_score_loss() -> LossFunction:
     """Construct a denoising score-matching loss for a diffusion grasp model.
-
-    Args:
-        _score_model: Score network produced by ``models.diffusion.build_score_network``.
 
     Returns:
         A callable loss mapping ``(predicted_score, target_score)`` to a scalar
@@ -20,11 +17,8 @@ def build_diffusion_score_loss(_score_model: Callable[..., torch.Tensor]) -> Los
     return loss
 
 
-def build_flow_matching_loss(_flow_field: Callable[..., torch.Tensor]) -> LossFunction:
+def build_flow_matching_loss() -> LossFunction:
     """Construct a flow-matching loss for a kinematic-flow grasp model.
-
-    Args:
-        _flow_field: Flow field produced by ``models.flow.build_flow_field``.
 
     Returns:
         A callable loss mapping ``(predicted_velocity, target_velocity)`` to a

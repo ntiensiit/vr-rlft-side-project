@@ -5,6 +5,8 @@ from typing import Any, cast
 import numpy as np
 import torch
 
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+
 PolicyActionSampler = Callable[[np.ndarray], np.ndarray]
 
 
@@ -27,7 +29,7 @@ def load_rl_policy_checkpoint(
             f"Checkpoint file not found: {checkpoint_path}"
         )
 
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = load_torch_checkpoint(checkpoint_path, device)
     return cast(dict[str, torch.Tensor], checkpoint)
 
 
@@ -38,6 +40,9 @@ def build_rl_policy_runner(
     device: str,
     action_low: np.ndarray | None = None,
     action_high: np.ndarray | None = None,
+    stochastic: bool = False,
+    exploration_noise: float = 0.1,
+    seed: int | None = None,
 ) -> PolicyActionSampler:
     """Build a callable that maps observations to robot actions via an RL policy.
 
@@ -50,13 +55,22 @@ def build_rl_policy_runner(
             actions. ``None`` disables clipping.
         action_high: Optional per-dimension upper bound used to clip returned
             actions. ``None`` disables clipping.
+        stochastic: When ``True``, sample actions with Gaussian exploration
+            noise via ``select_action`` instead of deterministic forward pass.
+        exploration_noise: Standard deviation of exploration noise when
+            ``stochastic`` is enabled.
+        seed: Optional random seed for stochastic action sampling.
 
     Returns:
         A function that takes an observation as a numpy array and returns an
         action as a numpy array clipped to ``[action_low, action_high]`` when
         both bounds are supplied.
     """
-    from grasping_ai.models.rl_policy import build_policy_network, read_rl_policy_metadata
+    from grasping_ai.models.rl_policy import (
+        build_policy_network,
+        read_rl_policy_metadata,
+        select_action,
+    )
 
     model_state = cast(dict[str, torch.Tensor], checkpoint.get("model_state_dict"))
     metadata = read_rl_policy_metadata(cast(dict[str, object], checkpoint))
@@ -102,6 +116,12 @@ def build_rl_policy_runner(
             f"action_high must have shape ({action_dim},), got {clip_high.shape}"
         )
 
+    device_obj = torch.device(device)
+    action_rng = None
+    if stochastic:
+        action_rng = torch.Generator(device=device_obj)
+        action_rng.manual_seed(seed if seed is not None else 0)
+
     def runner(observation: np.ndarray) -> np.ndarray:
         """Map a single observation to an action clipped to the actuator bounds."""
         if not isinstance(observation, np.ndarray):
@@ -116,10 +136,15 @@ def build_rl_policy_runner(
             torch.from_numpy(observation)
             .float()
             .unsqueeze(0)
-            .to(device)
+            .to(device_obj)
         )
         with torch.no_grad():
-            action_tensor = policy(obs_tensor)
+            if stochastic and action_rng is not None:
+                action_tensor = select_action(
+                    policy, obs_tensor, action_rng, noise_scale=exploration_noise
+                )
+            else:
+                action_tensor = policy(obs_tensor)
         action = action_tensor.squeeze(0).cpu().numpy()
         if clip_low is not None and clip_high is not None:
             return np.clip(action, clip_low, clip_high)

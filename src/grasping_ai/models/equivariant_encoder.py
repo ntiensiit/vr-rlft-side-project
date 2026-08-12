@@ -1,6 +1,9 @@
 from collections.abc import Callable
 
+import numpy as np
 import torch
+
+from grasping_ai.perception.geometry import invert_transform
 
 EquivariantFeatures = torch.Tensor
 
@@ -134,7 +137,12 @@ def compose_with_se3_frame(
         Input-frame grasp transforms with shape ``(B, 4, 4)``.
     """
     world = world_transform_from_frame(frame, centroid)
-    world_inv = torch.linalg.inv(world)
+    world_inv = torch.from_numpy(
+        np.stack(
+            [invert_transform(world[i].detach().cpu().numpy()) for i in range(world.shape[0])],
+            axis=0,
+        )
+    ).to(device=world.device, dtype=world.dtype)
     return torch.matmul(torch.matmul(world, transforms), world_inv)
 
 

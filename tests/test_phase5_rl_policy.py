@@ -372,6 +372,17 @@ def test_save_rl_policy_checkpoint_writes_metadata():
         assert checkpoint["seed"] == 42
         assert "model_state_dict" in checkpoint
 
+        from grasping_ai.training.checkpoint_io import read_model_checkpoint_metadata
+
+        metadata = read_model_checkpoint_metadata(checkpoint_path, "cpu")
+        assert metadata["kind"] == "rl_policy"
+        assert metadata["observation_dim"] == 4
+        assert metadata["action_dim"] == 2
+        assert metadata["hidden_dim"] == 16
+        assert metadata["num_layers"] == 2
+        assert metadata["epoch"] == 5
+        assert metadata["seed"] == 42
+
 
 def test_read_rl_policy_metadata():
     with tempfile.TemporaryDirectory() as tmp_dir:

@@ -92,8 +92,7 @@ def test_generative_model_rejects_non_finite_input():
 
 def test_supervised_training_loss_is_finite():
     """Verify diffusion score loss is finite."""
-    score_model = build_score_network(16, 32, 2)
-    loss_fn = build_diffusion_score_loss(score_model)
+    loss_fn = build_diffusion_score_loss()
 
     pred = torch.randn(4, 9)
     target = torch.randn(4, 9)
@@ -152,6 +151,14 @@ def test_training_creates_checkpoint():
         assert int(checkpoint["feature_dim"]) == 8
         assert int(checkpoint["hidden_dim"]) == 16
         assert int(checkpoint["num_layers"]) == 2
+
+        from grasping_ai.training.checkpoint_io import read_model_checkpoint_metadata
+
+        metadata = read_model_checkpoint_metadata(checkpoint_path, "cpu")
+        assert metadata["kind"] == "diffusion"
+        assert metadata["feature_dim"] == 8
+        assert metadata["hidden_dim"] == 16
+        assert metadata["num_layers"] == 2
 
 
 def test_training_reiterates_dataloader_per_epoch():
@@ -381,10 +388,9 @@ def test_model_inference_is_repeatable_without_global_state():
 
 def test_flow_matching_loss_is_finite():
     """Verify flow matching loss function."""
-    from grasping_ai.models.flow import build_flow_field
     from grasping_ai.training.losses import build_flow_matching_loss
-    flow_field = build_flow_field(8, 16, 2)
-    loss_fn = build_flow_matching_loss(flow_field)
+
+    loss_fn = build_flow_matching_loss()
 
     pred = torch.randn(4, 9)
     target = torch.randn(4, 9)

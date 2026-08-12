@@ -39,11 +39,14 @@
     }
   ],
   "retained_artifacts": [
+    "artifacts\\checkpoints\\flow_grasp.pt",
     "artifacts\\checkpoints\\grasp_generation.pt",
     "artifacts\\checkpoints\\rl_policy.pt",
     "artifacts\\exports\\generated_grasps.npy",
     "artifacts\\exports\\grasp_poses_cracker.npy",
+    "artifacts\\manifest.json",
     "artifacts\\reports\\evaluation_report.json",
+    "artifacts\\reports\\rl_evaluation.json",
     "artifacts\\reports\\simulation_cracker.json",
     "data\\processed\\003_cracker_box.npy",
     "data\\processed\\004_sugar_box.npy",

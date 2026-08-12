@@ -8,7 +8,7 @@ from grasping_ai.pipelines.generate_grasps import (
     generate_grasps_for_dataset,
     write_generated_grasps,
 )
-from grasping_ai.sensors.pointcloud_sensor import acquire_point_cloud_from_observation
+from grasping_ai.sensors.pointcloud_sensor import acquire_point_cloud_stream
 
 
 def generate_grasps_main(
@@ -35,7 +35,7 @@ def generate_grasps_main(
     generator = build_diffusion_grasp_generator(
         checkpoint, feature_dim, num_diffusion_steps, device
     )
-    point_clouds = [acquire_point_cloud_from_observation(path) for path in observation_paths]
+    point_clouds = list(acquire_point_cloud_stream(observation_paths))
     grasps = generate_grasps_for_dataset(point_clouds, generator, num_grasps)
     write_generated_grasps(output_path, {f"object_{i}": grasp for i, grasp in enumerate(grasps)})
 

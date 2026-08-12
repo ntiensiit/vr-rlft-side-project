@@ -10,7 +10,12 @@ from grasping_ai.data.pointcloud_dataset import (
     resolve_ycb_object_id,
 )
 from grasping_ai.data.transforms import save_grasp_dataset_index
-from grasping_ai.perception.pointcloud import estimate_point_cloud_normals
+from grasping_ai.perception.pointcloud import (
+    estimate_point_cloud_normals,
+    farthest_point_sampling,
+    sample_point_cloud,
+    voxel_downsample,
+)
 from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
 from grasping_ai.simulation.ycb import list_ycb_objects
 
@@ -75,8 +80,17 @@ def generate_synthetic_dataset(
                         failures.append(f"{name}: no mesh files found")
                     continue
 
-            # Sample point cloud
-            points = sample_point_cloud_from_mesh(mesh_path, num_samples, rng)
+            # Sample point cloud, then refine with perception helpers
+            oversample_count = max(num_samples, min(num_samples * 2, num_samples + 128))
+            raw_points = sample_point_cloud_from_mesh(mesh_path, oversample_count, rng)
+            if raw_points.shape[0] >= num_samples:
+                fps_indices = farthest_point_sampling(raw_points, num_samples, rng)
+                points = raw_points[fps_indices]
+            else:
+                points = sample_point_cloud(raw_points, num_samples, rng)
+            points = voxel_downsample(points, voxel_size=1e-5)
+            if points.shape[0] != num_samples:
+                points = sample_point_cloud(points, num_samples, rng)
 
             # Estimate normals
             normals = estimate_point_cloud_normals(points, neighborhood_size=30)

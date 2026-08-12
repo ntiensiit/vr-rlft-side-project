@@ -5,6 +5,13 @@ from typing import Any, cast
 import numpy as np
 import torch
 
+from grasping_ai.inference.grasp_sampling import (
+    encode_grasp_conditioning,
+    prepare_point_cloud_tensor,
+    sample_to_world_frame,
+)
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+
 GraspPoseGenerator = Callable[[np.ndarray, int], np.ndarray]
 
 
@@ -23,11 +30,7 @@ def load_grasp_model_checkpoint(checkpoint_path: Path, device: str) -> dict[str,
         raise TypeError("checkpoint_path must be a pathlib.Path instance")
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
-    try:
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-    except Exception as e:
-        raise ValueError(f"Failed to load checkpoint: {e}") from e
-    from typing import cast
+    checkpoint = load_torch_checkpoint(checkpoint_path, device)
     return cast(dict[str, torch.Tensor], checkpoint)
 
 
@@ -37,32 +40,6 @@ def _ckpt_int(checkpoint: dict[str, Any], key: str) -> int:
     if isinstance(val, torch.Tensor):
         return int(val.item())
     return int(val)
-
-
-def vec_to_se3(x: torch.Tensor) -> torch.Tensor:
-    """Convert (M, 9) vectors to SE(3) transforms (M, 4, 4).
-
-    Each row contains translation (3) + 6D rotation representation.
-    """
-    m = x.shape[0]
-    t = x[:, :3]
-    v = x[:, 3:9]
-
-    a1 = v[:, :3]
-    a2 = v[:, 3:]
-
-    b1 = a1 / torch.norm(a1, dim=-1, keepdim=True).clamp(min=1e-8)
-    dot = torch.sum(b1 * a2, dim=-1, keepdim=True)
-    u2 = a2 - dot * b1
-    b2 = u2 / torch.norm(u2, dim=-1, keepdim=True).clamp(min=1e-8)
-    b3 = torch.cross(b1, b2, dim=-1)
-
-    rot = torch.stack([b1, b2, b3], dim=-1)
-
-    se3 = torch.eye(4, device=x.device, dtype=x.dtype).unsqueeze(0).repeat(m, 1, 1)
-    se3[:, :3, :3] = rot
-    se3[:, :3, 3] = t
-    return se3
 
 
 def build_diffusion_grasp_generator(
@@ -98,21 +75,12 @@ def build_diffusion_grasp_generator(
     sampler = build_diffusion_sampler(num_diffusion_steps)
 
     def generator(point_cloud: np.ndarray, num_grasps: int = 10) -> np.ndarray:
-        if point_cloud.ndim != 2 or point_cloud.shape[1] != 3:
-            raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
-
-        pc_tensor = torch.from_numpy(point_cloud).float().to(device).unsqueeze(0)
+        pc_tensor = prepare_point_cloud_tensor(point_cloud, device)
 
         with torch.no_grad():
-            from grasping_ai.models.equivariant_encoder import (
-                compose_with_se3_frame,
-                compute_se3_frame,
-                encode_point_cloud,
-                pool_object_features,
+            cond, frame, centroid = encode_grasp_conditioning(
+                model.encoder, pc_tensor
             )
-            frame, centroid = compute_se3_frame(pc_tensor)
-            features = encode_point_cloud(model.encoder, pc_tensor)
-            cond = pool_object_features(features)
 
             from grasping_ai.models.diffusion import sample_grasps_with_diffusion
             rng = torch.Generator(device=device)
@@ -127,13 +95,7 @@ def build_diffusion_grasp_generator(
                 rng=rng,
             )
 
-            samples_flat = samples.view(-1, 9)
-            canonical = vec_to_se3(samples_flat)
-            transforms = compose_with_se3_frame(
-                canonical, frame, centroid
-            )
-
-        return transforms.cpu().numpy()
+            return sample_to_world_frame(samples, frame, centroid)
 
     return generator
 
@@ -182,21 +144,12 @@ def build_flow_grasp_generator(
     integrator = build_flow_integrator(num_flow_steps)
 
     def generator(point_cloud: np.ndarray, num_grasps: int = 10) -> np.ndarray:
-        if point_cloud.ndim != 2 or point_cloud.shape[1] != 3:
-            raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
-
-        pc_tensor = torch.from_numpy(point_cloud).float().to(device).unsqueeze(0)
+        pc_tensor = prepare_point_cloud_tensor(point_cloud, device)
 
         with torch.no_grad():
-            from grasping_ai.models.equivariant_encoder import (
-                compose_with_se3_frame,
-                compute_se3_frame,
-                encode_point_cloud,
-                pool_object_features,
+            cond, frame, centroid = encode_grasp_conditioning(
+                model.encoder, pc_tensor
             )
-            frame, centroid = compute_se3_frame(pc_tensor)
-            features = encode_point_cloud(model.encoder, pc_tensor)
-            cond = pool_object_features(features)
 
             rng = torch.Generator(device=device)
             rng.manual_seed(seed)
@@ -210,13 +163,7 @@ def build_flow_grasp_generator(
                 rng=rng,
             )
 
-            samples_flat = samples.view(-1, 9)
-            canonical = vec_to_se3(samples_flat)
-            transforms = compose_with_se3_frame(
-                canonical, frame, centroid
-            )
-
-        return transforms.cpu().numpy()
+            return sample_to_world_frame(samples, frame, centroid)
 
     return generator
 

@@ -3,18 +3,11 @@ from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import cast
 
-import numpy as np
 import torch
 
-from grasping_ai.data.pointcloud_dataset import (
-    discover_dataset_files,
-    load_grasp_sample,
-)
-from grasping_ai.models.equivariant_encoder import (
-    compute_se3_frame,
-    world_transform_from_frame,
-)
+from grasping_ai.data.training_pairs import build_supervised_training_pairs
 from grasping_ai.models.flow import FlowGeneratorModel
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 from grasping_ai.training.losses import build_flow_matching_loss
 from grasping_ai.training.trainer import (
     build_adam_optimizer,
@@ -121,52 +114,6 @@ def build_flow_training_step(
     return step
 
 
-def _se3_to_vec(t_matrix: np.ndarray) -> np.ndarray:
-    """Convert a 4x4 SE(3) transform into a 9D position+rotation-column vector."""
-    t = t_matrix[:3, 3]
-    r1 = t_matrix[:3, 0]
-    r2 = t_matrix[:3, 1]
-    return np.concatenate([t, r1, r2])
-
-
-def _flow_dataset_pairs(
-    dataset_root: Path,
-) -> list[tuple[torch.Tensor, torch.Tensor]]:
-    """Load the synthetic-grasp dataset and convert each grasp to canonical 9D.
-
-    Args:
-        dataset_root: Root directory of the grasp-pose dataset.
-
-    Returns:
-        List of ``(point_cloud, grasp_vector)`` pairs in canonical frame.
-    """
-    records = discover_dataset_files(dataset_root)
-    if not records:
-        raise ValueError("Dataset is empty")
-
-    pairs: list[tuple[torch.Tensor, torch.Tensor]] = []
-    for record in records:
-        sample = load_grasp_sample(record)
-        pc = sample["point_cloud"]
-        grasp_poses = sample["grasp_poses"]
-        if grasp_poses is None or len(grasp_poses) == 0:
-            raise ValueError(
-                f"Record {record} has no target grasp poses"
-            )
-
-        pc_t = torch.from_numpy(pc).float()
-        frame, centroid = compute_se3_frame(pc_t.unsqueeze(0))
-        world = world_transform_from_frame(frame, centroid)[0]
-        world_inv = torch.linalg.inv(world)
-        for t_matrix in grasp_poses:
-            t_tensor = torch.from_numpy(cast(np.ndarray, t_matrix)).float()
-            canonical = world_inv @ t_tensor @ world
-            t_vec = _se3_to_vec(canonical.numpy())
-            pairs.append((pc_t, torch.from_numpy(t_vec).float()))
-
-    return pairs
-
-
 class _FlowTrainingDataloader:
     """Iterable dataloader that emits ``(pcs, targets)`` batches per epoch."""
 
@@ -211,6 +158,7 @@ def run_flow_training_pipeline(
     device: str,
     seed: int | None = None,
     experiment_log_dir: Path | None = None,
+    pretrained_encoder_path: Path | None = None,
 ) -> None:
     """Run the end-to-end flow-matching training pipeline for grasp generation.
 
@@ -236,6 +184,8 @@ def run_flow_training_pipeline(
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
         seed: Optional random seed for reproducible training.
         experiment_log_dir: Optional path to write TensorBoard experiment events.
+        pretrained_encoder_path: Optional checkpoint whose encoder weights warm-start
+            the flow model before training.
     """
     if not isinstance(dataset_root, Path):
         raise TypeError("dataset_root must be a pathlib.Path instance")
@@ -252,9 +202,16 @@ def run_flow_training_pipeline(
     )
     model = cast(FlowGeneratorModel, components["model"])
 
-    pairs = _flow_dataset_pairs(dataset_root)
+    if pretrained_encoder_path is not None:
+        from grasping_ai.pipelines.train import load_pretrained_encoder
 
-    loss_fn = build_flow_matching_loss(model.flow_field)
+        encoder_state = load_pretrained_encoder(pretrained_encoder_path, device)
+        encoder_module = cast(torch.nn.Module, model.encoder)
+        encoder_module.load_state_dict(encoder_state, strict=False)
+
+    pairs = build_supervised_training_pairs(dataset_root)
+
+    loss_fn = build_flow_matching_loss()
     training_step = build_flow_training_step(
         model,
         loss_fn,
@@ -328,17 +285,12 @@ def load_flow_model_checkpoint(
     """
     if not isinstance(checkpoint_path, Path):
         raise TypeError("checkpoint_path must be a pathlib.Path instance")
-    if not checkpoint_path.is_file():
-        raise FileNotFoundError(
-            f"Checkpoint file not found: {checkpoint_path}"
-        )
-
     model = cast(
         FlowGeneratorModel,
         FlowGeneratorModel(feature_dim, hidden_dim, num_layers),
     )
-    state_dict = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(state_dict["model_state_dict"])
+    checkpoint = load_torch_checkpoint(checkpoint_path, device)
+    model.load_state_dict(checkpoint["model_state_dict"])
     model.to(torch.device(device))
     model.eval()
     return model

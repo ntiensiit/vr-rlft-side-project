@@ -44,7 +44,7 @@ print(len(records))
 
 # %%
 flow_field = build_flow_field(feature_dim=128, hidden_dim=256, num_layers=4)
-loss_fn = build_flow_matching_loss(flow_field)
+loss_fn = build_flow_matching_loss()
 optimizer = build_adam_optimizer(flow_field.parameters(), learning_rate=0.0001)
 
 # %%

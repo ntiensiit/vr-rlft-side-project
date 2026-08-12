@@ -12,4 +12,4 @@ dataset, reports, MJCF wrappers, observations) are excluded from version
 control by `.gitignore` and are produced from source on demand by this script.
 
 For per-phase design and verification status, see
-`docs/PROJECT.md` and `hot-fix-checklist.md`.
+`docs/PROJECT.md` and `CHECKLIST.md`.

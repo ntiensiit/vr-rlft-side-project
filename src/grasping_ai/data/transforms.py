@@ -4,6 +4,14 @@ from pathlib import Path
 
 import numpy as np
 
+from grasping_ai.perception.geometry import (
+    apply_transform,
+    grasp_pose_to_transform,
+    rotation_matrix_from_axis_angle,
+    rotation_matrix_to_axis_angle,
+)
+from grasping_ai.robotics.transforms import transform_grasp_pose
+
 SampleTransform = Callable[
     [np.ndarray, np.ndarray | None, np.ndarray | None],
     tuple[np.ndarray, np.ndarray | None, np.ndarray | None],
@@ -37,9 +45,10 @@ def make_random_rotation_jitter(rng: np.random.Generator) -> SampleTransform:
         q, _ = np.linalg.qr(rng.standard_normal((3, 3)))
         d = np.linalg.det(q)
         q[:, 0] *= d
-        rot_mat = q
+        axis, angle = rotation_matrix_to_axis_angle(q)
+        rot_mat = rotation_matrix_from_axis_angle(axis, angle)
 
-        points_rot = points @ rot_mat.T
+        points_rot = apply_transform(points, grasp_pose_to_transform(rot_mat, np.zeros(3)))
 
         grasp_poses_rot = None
         if grasp_poses is not None:
@@ -49,11 +58,10 @@ def make_random_rotation_jitter(rng: np.random.Generator) -> SampleTransform:
                 raise ValueError(f"grasp_poses must have shape (M, 4, 4), got {grasp_poses.shape}")
             if not np.isfinite(grasp_poses).all():
                 raise ValueError("grasp_poses must contain only finite values")
-            t_rot = np.eye(4)
-            t_rot[:3, :3] = rot_mat
+            t_rot = grasp_pose_to_transform(rot_mat, np.zeros(3))
             grasp_poses_rot = np.zeros_like(grasp_poses)
             for i in range(len(grasp_poses)):
-                grasp_poses_rot[i] = t_rot @ grasp_poses[i]
+                grasp_poses_rot[i] = transform_grasp_pose(t_rot, grasp_poses[i])
 
         if scores is not None:
             if not isinstance(scores, np.ndarray):

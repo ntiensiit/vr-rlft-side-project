@@ -20,11 +20,33 @@ from grasping_ai.simulation.mujoco_env import (
 SceneCommand = Callable[[], None]
 
 
+def _resolve_scene_output_dir(output_dir: Path | None) -> Path:
+    """Return a writable directory for assembled scene XML artifacts.
+
+    Args:
+        output_dir: Optional explicit directory. When ``None``, uses a
+            process-local folder under the system temp directory.
+
+    Returns:
+        Path to an existing writable output directory.
+    """
+    if output_dir is not None:
+        if not isinstance(output_dir, Path):
+            raise TypeError("output_dir must be a pathlib.Path instance or None")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir
+
+    temp_root = Path(tempfile.gettempdir()) / "grasping_ai_scenes"
+    temp_root.mkdir(parents=True, exist_ok=True)
+    return temp_root
+
+
 def build_scene_xml(
     robot_xml_path: Path,
     object_xml_path: Path,
     table_xml_path: Path | None,
     object_name: str | None = None,
+    output_dir: Path | None = None,
 ) -> Path:
     """Assemble a MuJoCo scene XML file combining robot, object, and table.
 
@@ -35,6 +57,8 @@ def build_scene_xml(
         object_name: Optional logical name assigned to the object body. When
             supplied, the first body of the object XML is renamed before
             inclusion; when ``None``, the object XML is included unchanged.
+        output_dir: Optional directory for temporary assembled XML files.
+            Defaults to a folder under the system temp directory.
 
     Returns:
         Path to the assembled scene XML file written to disk.
@@ -55,8 +79,7 @@ def build_scene_xml(
     if table_xml_path is not None and not table_xml_path.is_file():
         raise FileNotFoundError(f"Table XML path '{table_xml_path}' does not exist")
 
-    out_dir = Path("data/interim")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = _resolve_scene_output_dir(output_dir)
 
     included_object_path = object_xml_path
     if object_name is not None:
@@ -125,13 +148,19 @@ def _rename_object_body(
     return modified_object_xml_path
 
 
-def attach_object_to_scene(state: object, object_xml_path: Path, object_name: str) -> None:
+def attach_object_to_scene(
+    state: object,
+    object_xml_path: Path,
+    object_name: str,
+    output_dir: Path | None = None,
+) -> None:
     """Attach a YCB object into an existing simulation scene.
 
     Args:
         state: Opaque state handle returned by ``create_simulation``.
         object_xml_path: Path to the object MJCF description.
         object_name: Logical name to assign to the attached object.
+        output_dir: Optional directory for temporary assembled XML files.
     """
     if not isinstance(state, dict) or "model" not in state or "data" not in state:
         raise TypeError("state must be a simulation state dictionary")
@@ -160,8 +189,7 @@ def attach_object_to_scene(state: object, object_xml_path: Path, object_name: st
     if not body_renamed:
         raise ValueError(f"No body element found in object XML '{object_xml_path}' to rename")
 
-    out_dir = Path("data/interim")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = _resolve_scene_output_dir(output_dir)
 
     fd_obj, obj_path_str = tempfile.mkstemp(suffix=f"_{object_name}.xml", dir=str(out_dir))
     os.close(fd_obj)
@@ -270,6 +298,7 @@ class MuJoCoScene:
         object_xml_path: Optional path to the object MJCF description.
         table_xml_path: Optional path to a table/workbench MJCF description.
         object_name: Optional logical name assigned to the object body.
+        scene_output_dir: Optional directory for temporary assembled XML files.
 
     Raises:
         FileNotFoundError: If any supplied MJCF path does not exist.
@@ -282,6 +311,7 @@ class MuJoCoScene:
         object_xml_path: Path | None = None,
         table_xml_path: Path | None = None,
         object_name: str | None = None,
+        scene_output_dir: Path | None = None,
     ) -> None:
         """Initialize the scene by composing the supplied MJCF files."""
         if not isinstance(robot_xml_path, Path):
@@ -292,11 +322,14 @@ class MuJoCoScene:
             raise TypeError("table_xml_path must be a pathlib.Path instance or None")
         if object_name is not None and not isinstance(object_name, str):
             raise TypeError("object_name must be a string or None")
+        if scene_output_dir is not None and not isinstance(scene_output_dir, Path):
+            raise TypeError("scene_output_dir must be a pathlib.Path instance or None")
 
         self.robot_xml_path = robot_xml_path
         self.object_xml_path = object_xml_path
         self.table_xml_path = table_xml_path
         self.object_name = object_name
+        self._scene_output_dir = scene_output_dir
 
         scene_path = self._resolve_scene_path()
         self._model_handle = load_mujoco_model(scene_path)
@@ -314,6 +347,7 @@ class MuJoCoScene:
             self.object_xml_path,
             self.table_xml_path,
             object_name=self.object_name,
+            output_dir=self._scene_output_dir,
         )
 
     def _capture_state(self) -> dict[str, np.ndarray]:
@@ -383,5 +417,10 @@ class MuJoCoScene:
             object_xml_path: Path to the object MJCF description.
             object_name: Logical name assigned to the attached object.
         """
-        attach_object_to_scene(self._state, object_xml_path, object_name)
+        attach_object_to_scene(
+            self._state,
+            object_xml_path,
+            object_name,
+            output_dir=self._scene_output_dir,
+        )
         self._snapshot = self._capture_state()

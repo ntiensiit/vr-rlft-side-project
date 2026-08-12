@@ -15,6 +15,7 @@ def train_flow_main(
     device: str,
     seed: int | None = None,
     experiment_log_dir: Path | None = None,
+    pretrained_encoder_path: Path | None = None,
 ) -> None:
     """Run the flow-matching grasp-generation training pipeline.
 
@@ -43,6 +44,7 @@ def train_flow_main(
         device=device,
         seed=seed,
         experiment_log_dir=experiment_log_dir,
+        pretrained_encoder_path=pretrained_encoder_path,
     )
 
 
@@ -63,6 +65,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, required=True)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--experiment-log-dir", type=Path, default=None)
+    parser.add_argument("--pretrained-encoder", type=Path, default=None)
     args = parser.parse_args()
     train_flow_main(
         args.dataset_root,
@@ -76,4 +79,5 @@ if __name__ == "__main__":
         args.device,
         args.seed,
         args.experiment_log_dir,
+        args.pretrained_encoder,
     )

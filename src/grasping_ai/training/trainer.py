@@ -208,10 +208,9 @@ def load_training_checkpoint(
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
 
-    try:
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-    except Exception as e:
-        raise ValueError(f"Failed to load checkpoint: {e}") from e
+    from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+
+    checkpoint = load_torch_checkpoint(checkpoint_path, device)
 
     model.load_state_dict(checkpoint["model_state_dict"])
     if optimizer is not None and "optimizer_state_dict" in checkpoint:

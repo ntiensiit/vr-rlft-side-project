@@ -20,6 +20,8 @@ def evaluate_main(
     contact_clearance: float = 0.005,
     wrench_regularization: float = 1.0,
     experiment_log_dir: Path | None = None,
+    contact_path: Path | None = None,
+    filter_collisions: bool = False,
 ) -> None:
     """Evaluate a set of generated grasps and write a report to disk.
 
@@ -73,6 +75,8 @@ def evaluate_main(
         lift_height_threshold=lift_height_threshold,
         clearance=contact_clearance,
         wrench_regularization=wrench_regularization,
+        contact_path=contact_path,
+        filter_collisions=filter_collisions,
     )
     aggregated = aggregate_evaluation_results({object_id: per_grasp})
     write_evaluation_report(report_path, aggregated, experiment_log_dir)
@@ -92,6 +96,12 @@ if __name__ == "__main__":
     parser.add_argument("--contact-clearance", type=float, default=0.005)
     parser.add_argument("--wrench-regularization", type=float, default=1.0)
     parser.add_argument("--experiment-log-dir", type=Path, default=None)
+    parser.add_argument("--contact-path", type=Path, default=None)
+    parser.add_argument(
+        "--filter-collisions",
+        action="store_true",
+        help="Evaluate only collision-free grasps",
+    )
     args = parser.parse_args()
     evaluate_main(
         args.grasps,
@@ -104,5 +114,7 @@ if __name__ == "__main__":
         args.contact_clearance,
         args.wrench_regularization,
         args.experiment_log_dir,
+        args.contact_path,
+        args.filter_collisions,
     )
 

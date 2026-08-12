@@ -3,6 +3,9 @@ from pathlib import Path
 
 import numpy as np
 
+from grasping_ai.perception.geometry import make_transform
+from grasping_ai.perception.pointcloud import build_kdtree
+
 type GraspSample = dict[str, np.ndarray | str | None]
 
 
@@ -116,34 +119,13 @@ def resolve_ycb_object_id(ycb_root: Path, object_name: str) -> Path:
     if not ycb_root.is_dir():
         raise ValueError(f"YCB root '{ycb_root}' is not a directory")
 
-    target_dir = ycb_root / object_name
-    if not target_dir.is_dir():
-        found_dir = None
-        for p in ycb_root.iterdir():
-            if p.is_dir() and object_name in p.name:
-                found_dir = p
-                break
-        if found_dir is None:
-            raise FileNotFoundError(f"YCB object '{object_name}' not found under '{ycb_root}'")
-        target_dir = found_dir
+    from grasping_ai.simulation.ycb import find_ycb_mesh_file, resolve_ycb_object_directory
 
-    mesh_path = None
-    for p in target_dir.rglob("textured.obj"):
-        if p.is_file():
-            mesh_path = p
-            break
-    if mesh_path is None:
-        for p in target_dir.rglob("*.ply"):
-            if p.is_file():
-                mesh_path = p
-                break
-    if mesh_path is None:
-        for p in target_dir.rglob("*.obj"):
-            if p.is_file():
-                mesh_path = p
-                break
-
-    return mesh_path if mesh_path is not None else target_dir
+    object_dir = resolve_ycb_object_directory(ycb_root, object_name)
+    try:
+        return find_ycb_mesh_file(object_dir)
+    except FileNotFoundError:
+        return object_dir
 
 
 def generate_analytical_grasps(
@@ -192,9 +174,7 @@ def generate_analytical_grasps(
     if not -1.0 <= relaxed_antipodal_dot <= 1.0:
         raise ValueError("relaxed_antipodal_dot must be in [-1, 1]")
 
-    import scipy.spatial  # type: ignore[import-untyped]
-
-    tree = scipy.spatial.KDTree(points)
+    tree = build_kdtree(points)
     valid_grasps: list[np.ndarray] = []
     n = points.shape[0]
 
@@ -247,11 +227,10 @@ def generate_analytical_grasps(
                 y_axis = np.cross(z_axis, x_axis)
                 y_axis = y_axis / np.linalg.norm(y_axis)
 
-                pose = np.eye(4)
-                pose[:3, 0] = x_axis
-                pose[:3, 1] = y_axis
-                pose[:3, 2] = z_axis
-                pose[:3, 3] = 0.5 * (p_i + p_j)
+                pose = make_transform(
+                    np.column_stack([x_axis, y_axis, z_axis]),
+                    0.5 * (p_i + p_j),
+                )
 
                 # Ensure determinant is +1 within tolerance
                 det = np.linalg.det(pose[:3, :3])
@@ -304,11 +283,10 @@ def generate_analytical_grasps(
                     y_axis = np.cross(z_axis, x_axis)
                     y_axis = y_axis / np.linalg.norm(y_axis)
 
-                    pose = np.eye(4)
-                    pose[:3, 0] = x_axis
-                    pose[:3, 1] = y_axis
-                    pose[:3, 2] = z_axis
-                    pose[:3, 3] = 0.5 * (p_i + p_j)
+                    pose = make_transform(
+                        np.column_stack([x_axis, y_axis, z_axis]),
+                        0.5 * (p_i + p_j),
+                    )
 
                     det = np.linalg.det(pose[:3, :3])
                     if np.abs(det - 1.0) < 1e-4:

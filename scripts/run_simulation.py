@@ -15,6 +15,7 @@ def run_simulation_main(
     output_path: Path,
     num_simulation_steps: int,
     gripper_close_command: list[float],
+    grasp_pose_format: str = "world",
 ) -> None:
     """Load grasps from disk and execute them in MuJoCo for a YCB object.
 
@@ -27,8 +28,23 @@ def run_simulation_main(
         output_path: Destination path for the simulation outcomes.
         num_simulation_steps: Number of physics steps per grasp attempt.
         gripper_close_command: Gripper command used to close the gripper.
+        grasp_pose_format: Coordinate frame of the input grasps. ``"world"``
+            passes grasps through unchanged. ``"object"`` converts object-frame
+            grasps to world coordinates using the identity object placement.
     """
     grasp_poses = np.load(grasps_path)
+    if grasp_pose_format == "object":
+        from grasping_ai.perception.geometry import identity_transform
+        from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
+
+        grasp_poses = convert_grasps_to_world_frame(
+            grasp_poses, identity_transform()
+        )
+    elif grasp_pose_format != "world":
+        raise ValueError(
+            f"Unsupported grasp pose format '{grasp_pose_format}'; "
+            "supported values are 'world' and 'object'"
+        )
     outcomes = run_simulation_sweep(
         grasp_poses=grasp_poses,
         object_id=object_id,
@@ -72,6 +88,13 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--num-simulation-steps", type=int, required=True)
     parser.add_argument("--gripper-close-command", type=float, nargs="+", required=True)
+    parser.add_argument(
+        "--grasp-pose-format",
+        type=str,
+        choices=["world", "object"],
+        default="world",
+        help="Coordinate frame of the input grasps ('world' or 'object')",
+    )
     args = parser.parse_args()
     run_simulation_main(
         args.grasps,
@@ -82,4 +105,5 @@ if __name__ == "__main__":
         args.output,
         args.num_simulation_steps,
         args.gripper_close_command,
+        args.grasp_pose_format,
     )

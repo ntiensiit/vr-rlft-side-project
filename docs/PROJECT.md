@@ -194,7 +194,7 @@ A flow formulation can learn a vector field that transforms an initial distribut
 
 A score-based diffusion formulation learns a score function used during denoising and sampling.
 
-**Status note (2026-08-12):** both flow and diffusion paths are now fully implemented through to training. `scripts/train.py` runs diffusion-based supervised training; `scripts/train_flow.py` runs flow-matching supervised training (newly added in Priority 6 of the hot-fix checklist). Both produce checkpoints loadable by the corresponding inference modules.
+**Status note (2026-08-12):** both flow and diffusion paths are now fully implemented through to training. `scripts/train.py` runs diffusion-based supervised training; `scripts/train_flow.py` runs flow-matching supervised training. Both produce checkpoints loadable by the corresponding inference modules.
 
 ### 5.5 Robotics layer
 
@@ -1035,3 +1035,5 @@ Current ADRs:
 - [ADR-0001: Phase 4 representation — canonicalization vs. nontrivial equivariance](adr/001-phase4-canonicalization-vs-equivariant.md)
 - [ADR-0002: Flow-matching training — required deliverable vs. optional extension](adr/002-flow-training-optional-vs-required.md)
 - [ADR-0003: Flow model checkpoint contract — jointly train encoder + flow field](adr/003-flow-checkpoint-joint-encoder.md)
+- [ADR-0004: Dead-helper wiring, deduplication, and dependency retention](adr/004-dead-helper-wiring-and-refactoring.md)
+- [ADR-0005: Runtime workflow integration scripts](adr/005-runtime-workflow-integration.md)

@@ -1,7 +1,9 @@
 from collections.abc import Callable
 
 import numpy as np
-from scipy.spatial import KDTree  # type: ignore[import-untyped]
+
+from grasping_ai.perception.pointcloud import build_kdtree
+from grasping_ai.robotics.transforms import transform_between_frames
 
 CollisionChecker = Callable[[np.ndarray], bool]
 
@@ -29,16 +31,14 @@ def build_collision_checker(
     if clearance < 0:
         raise ValueError("clearance must be non-negative")
 
-    tree = KDTree(object_point_cloud)
+    tree = build_kdtree(object_point_cloud)
 
     def checker(grasp_pose: np.ndarray) -> bool:
         if grasp_pose.shape != (4, 4):
             raise ValueError(
                 f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}"
             )
-        rot = grasp_pose[:3, :3]
-        trans = grasp_pose[:3, 3]
-        transformed_gripper = gripper_point_cloud @ rot.T + trans
+        transformed_gripper = transform_between_frames(grasp_pose, gripper_point_cloud)
 
         dists, _ = tree.query(transformed_gripper)
         return not bool(np.any(dists < clearance))
@@ -139,11 +139,9 @@ def generate_analytical_contacts(
     if object_point_cloud.shape[0] == 0 or gripper_point_cloud.shape[0] == 0:
         return []
 
-    rot = grasp_pose[:3, :3]
-    trans = grasp_pose[:3, 3]
-    transformed_gripper = gripper_point_cloud @ rot.T + trans
+    transformed_gripper = transform_between_frames(grasp_pose, gripper_point_cloud)
 
-    tree = KDTree(object_point_cloud)
+    tree = build_kdtree(object_point_cloud)
     dists, idxs = tree.query(transformed_gripper)
 
     contacts = []

@@ -26,12 +26,11 @@ def transform_between_frames(
         raise TypeError("point_in_source must be a numpy array")
 
     if point_in_source.shape == (3,):
-        pt_hom = np.append(point_in_source, 1.0)
-        return (source_to_target @ pt_hom)[:3]
+        pt_hom = pt.vectors_to_points(point_in_source.reshape(1, 3))
+        return pt.transform(source_to_target, pt_hom)[0, :3]
     if len(point_in_source.shape) == 2 and point_in_source.shape[1] == 3:
-        n = point_in_source.shape[0]
-        pts_hom = np.hstack((point_in_source, np.ones((n, 1))))
-        return (source_to_target @ pts_hom.T).T[:, :3]
+        pts_hom = pt.vectors_to_points(point_in_source)
+        return pt.transform(source_to_target, pts_hom)[:, :3]
     raise ValueError("point_in_source must have shape (3,) or (N, 3)")
 
 

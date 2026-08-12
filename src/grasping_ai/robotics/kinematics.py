@@ -4,10 +4,30 @@ from typing import Any
 
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
+import pytransform3d.rotations as pr
+import pytransform3d.transformations as pt
+
+from grasping_ai.perception.geometry import make_transform
 
 JointConfiguration = np.ndarray
 RigidTransform = np.ndarray
 ForwardKinematics = Callable[[JointConfiguration], RigidTransform]
+
+
+def _se3_pose_error(target_pose: RigidTransform, current_pose: RigidTransform) -> np.ndarray:
+    """Compute a 6D SE(3) pose error using ``pytransform3d`` conventions.
+
+    Args:
+        target_pose: Desired end-effector transform with shape ``(4, 4)``.
+        current_pose: Current end-effector transform with shape ``(4, 4)``.
+
+    Returns:
+        Concatenated translation and compact axis-angle rotation error.
+    """
+    delta = pt.concat(target_pose, pt.invert_transform(current_pose))
+    err_pos = delta[:3, 3]
+    err_rot = pr.compact_axis_angle_from_matrix(delta[:3, :3])
+    return np.hstack((err_pos, err_rot))
 
 
 def load_robot_model(robot_description_path: str) -> dict[str, object]:
@@ -89,10 +109,10 @@ def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematic
         local_data.qpos[:] = joints
         mujoco.mj_forward(model, local_data)
 
-        pose = np.eye(4)
-        pose[:3, :3] = local_data.xmat[body_id].reshape(3, 3)
-        pose[:3, 3] = local_data.xpos[body_id]
-        return pose
+        return make_transform(
+            local_data.xmat[body_id].reshape(3, 3),
+            local_data.xpos[body_id],
+        )
 
     return fk
 
@@ -158,28 +178,15 @@ def build_inverse_kinematics(
         q = np.copy(initial_joints)
         damping = 0.01
 
-        target_pos = target_pose[:3, 3]
-        target_rot = target_pose[:3, :3]
-
         for _ in range(max_iterations):
             local_data.qpos[:] = q
             mujoco.mj_forward(model, local_data)
 
             curr_pos = local_data.xpos[body_id]
             curr_rot = local_data.xmat[body_id].reshape(3, 3)
+            current_pose = make_transform(curr_rot, curr_pos)
 
-            err_pos = target_pos - curr_pos
-
-            r_err = target_rot @ curr_rot.T
-            err_rot = 0.5 * np.array(
-                [
-                    r_err[2, 1] - r_err[1, 2],
-                    r_err[0, 2] - r_err[2, 0],
-                    r_err[1, 0] - r_err[0, 1],
-                ]
-            )
-
-            err = np.hstack((err_pos, err_rot))
+            err = _se3_pose_error(target_pose, current_pose)
             if np.linalg.norm(err) < tolerance:
                 break
 
@@ -209,16 +216,8 @@ def build_inverse_kinematics(
         mujoco.mj_forward(model, local_data)
         curr_pos = local_data.xpos[body_id]
         curr_rot = local_data.xmat[body_id].reshape(3, 3)
-        err_pos = target_pos - curr_pos
-        r_err = target_rot @ curr_rot.T
-        err_rot = 0.5 * np.array(
-            [
-                r_err[2, 1] - r_err[1, 2],
-                r_err[0, 2] - r_err[2, 0],
-                r_err[1, 0] - r_err[0, 1],
-            ]
-        )
-        final_err = np.linalg.norm(np.hstack((err_pos, err_rot)))
+        current_pose = make_transform(curr_rot, curr_pos)
+        final_err = np.linalg.norm(_se3_pose_error(target_pose, current_pose))
 
         if final_err > tolerance:
             raise ValueError(

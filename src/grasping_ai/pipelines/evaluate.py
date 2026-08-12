@@ -5,17 +5,74 @@ from pathlib import Path
 import numpy as np
 
 from grasping_ai.evaluation.collision import (
+    CollisionChecker,
     build_collision_checker,
     check_collision,
+    filter_collision_free_grasps,
     generate_analytical_contacts,
 )
 from grasping_ai.evaluation.force_closure import (
+    ForceClosureJudge,
     build_force_closure_judge,
     compute_grasp_quality,
+    compute_grasp_wrench_matrix,
     evaluate_force_closure,
+    load_contact_set,
 )
+from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
 
 GraspEvaluation = dict[str, float | bool]
+
+
+def _contact_provider_from_path(
+    contact_path: Path,
+) -> Callable[[np.ndarray], list[dict[str, np.ndarray]]]:
+    """Build a contact provider that returns a fixed loaded contact set."""
+    file_contacts = load_contact_set(contact_path)
+
+    def provider(pose: np.ndarray) -> list[dict[str, np.ndarray]]:
+        del pose
+        return file_contacts
+
+    return provider
+
+
+def _evaluate_single_grasp(
+    pose: np.ndarray,
+    collision_checker: CollisionChecker,
+    contact_set_provider: Callable[[np.ndarray], list[dict[str, np.ndarray]]] | None,
+    object_point_cloud: np.ndarray,
+    gripper_point_cloud: np.ndarray,
+    clearance: float,
+    fc_judge: ForceClosureJudge,
+    friction_coefficient: float,
+) -> GraspEvaluation:
+    """Evaluate one grasp pose and return its metric dictionary."""
+    collision_free = check_collision(collision_checker, pose)
+    if contact_set_provider is not None:
+        contacts = contact_set_provider(pose)
+    else:
+        contacts = generate_analytical_contacts(
+            object_point_cloud, gripper_point_cloud, pose, clearance
+        )
+
+    force_closure = evaluate_force_closure(fc_judge, contacts)
+    wrench_matrix = compute_grasp_wrench_matrix(contacts, friction_coefficient)
+    wrench_rank = (
+        float(np.linalg.matrix_rank(wrench_matrix))
+        if wrench_matrix.size
+        else 0.0
+    )
+    grasp_quality = compute_grasp_quality(contacts, friction_coefficient)
+    grasp_success = bool(collision_free and force_closure)
+
+    return {
+        "collision_free": collision_free,
+        "force_closure": force_closure,
+        "grasp_success": grasp_success,
+        "grasp_quality": float(grasp_quality),
+        "wrench_rank": wrench_rank,
+    }
 
 
 def evaluate_generated_grasps(
@@ -27,6 +84,8 @@ def evaluate_generated_grasps(
     lift_height_threshold: float = 0.05,
     clearance: float = 0.005,
     wrench_regularization: float = 1.0,
+    contact_path: Path | None = None,
+    filter_collisions: bool = False,
 ) -> list[GraspEvaluation]:
     """Evaluate a set of generated grasps using a common evaluation pipeline.
 
@@ -40,6 +99,9 @@ def evaluate_generated_grasps(
         lift_height_threshold: Height threshold used by lift-success evaluation.
         clearance: Collision clearance distance.
         wrench_regularization: Wrench regularization parameter for force-closure.
+        contact_path: Optional serialized contact set used for every grasp when
+            ``contact_set_provider`` is not supplied.
+        filter_collisions: When ``True``, evaluate only collision-free grasps.
 
     Returns:
         A list of per-grasp evaluation dictionaries.
@@ -64,40 +126,31 @@ def evaluate_generated_grasps(
     collision_checker = build_collision_checker(
         object_point_cloud, gripper_point_cloud, clearance=clearance
     )
+    if filter_collisions:
+        grasp_poses = filter_collision_free_grasps(collision_checker, grasp_poses)
+        if grasp_poses.shape[0] == 0:
+            return []
+
+    if contact_set_provider is None and contact_path is not None:
+        contact_set_provider = _contact_provider_from_path(contact_path)
+
     fc_judge = build_force_closure_judge(
         friction_coefficient, wrench_regularization=wrench_regularization
     )
 
-    evaluations = []
-    for i in range(grasp_poses.shape[0]):
-        pose = grasp_poses[i]
-        collision_free = check_collision(collision_checker, pose)
-
-        if contact_set_provider is not None:
-            contacts = contact_set_provider(pose)
-        else:
-            # Generate contacts analytically using the same clearance threshold
-            contacts = generate_analytical_contacts(
-                object_point_cloud, gripper_point_cloud, pose, clearance
-            )
-
-        force_closure = evaluate_force_closure(fc_judge, contacts)
-        grasp_quality = compute_grasp_quality(contacts, friction_coefficient)
-
-        # Analytical grasp success is the conjunction of collision-freeness and
-        # force-closure. This is NOT a physical lift signal: the MuJoCo
-        # simulation pipeline reports simulated lift success separately.
-        grasp_success = bool(collision_free and force_closure)
-
-        eval_dict: GraspEvaluation = {
-            "collision_free": collision_free,
-            "force_closure": force_closure,
-            "grasp_success": grasp_success,
-            "grasp_quality": float(grasp_quality),
-        }
-        evaluations.append(eval_dict)
-
-    return evaluations
+    return [
+        _evaluate_single_grasp(
+            grasp_poses[i],
+            collision_checker,
+            contact_set_provider,
+            object_point_cloud,
+            gripper_point_cloud,
+            clearance,
+            fc_judge,
+            friction_coefficient,
+        )
+        for i in range(grasp_poses.shape[0])
+    ]
 
 
 def aggregate_evaluation_results(
@@ -139,6 +192,7 @@ def aggregate_evaluation_results(
             "success_rate": 0.0,
             "collision_free_rate": 0.0,
             "force_closure_rate": 0.0,
+            "object_success_rate": 0.0,
             "mean_grasp_quality": 0.0,
             "min_grasp_quality": 0.0,
             "max_grasp_quality": 0.0,
@@ -153,10 +207,17 @@ def aggregate_evaluation_results(
         min_q = 0.0
         max_q = 0.0
 
+    per_object_success = {
+        object_id: any(bool(res.get("grasp_success")) for res in results)
+        for object_id, results in per_object_results.items()
+    }
+    object_success_rate = aggregate_grasp_success_rate(per_object_success)
+
     return {
         "success_rate": float(grasp_success_count / total_grasps),
         "collision_free_rate": float(collision_free_count / total_grasps),
         "force_closure_rate": float(force_closure_count / total_grasps),
+        "object_success_rate": object_success_rate,
         "mean_grasp_quality": mean_q,
         "min_grasp_quality": min_q,
         "max_grasp_quality": max_q,

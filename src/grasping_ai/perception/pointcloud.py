@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import scipy.spatial  # type: ignore[import-untyped]
@@ -195,7 +196,7 @@ def voxel_downsample(points: np.ndarray, voxel_size: float) -> np.ndarray:
     return downsampled / counts[:, np.newaxis]
 
 
-def build_kdtree(points: np.ndarray) -> object:
+def build_kdtree(points: np.ndarray) -> Any:
     """Build a spatial index over a point cloud for neighbor queries.
 
     Args:

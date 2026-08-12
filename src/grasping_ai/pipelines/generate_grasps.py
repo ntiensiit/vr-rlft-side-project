@@ -39,7 +39,10 @@ def generate_grasps_for_dataset(
     Returns:
         List of per-object candidate grasp-pose arrays.
     """
-    return [grasp_generator(pc, num_candidates) for pc in dataset_point_clouds]
+    return [
+        build_generation_pipeline(pc, grasp_generator, num_candidates)
+        for pc in dataset_point_clouds
+    ]
 
 
 def write_generated_grasps(output_path: Path, grasps_by_object: dict[str, np.ndarray]) -> None:

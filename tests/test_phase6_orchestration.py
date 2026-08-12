@@ -313,7 +313,7 @@ def test_simulate_grasp_renames_object_body_to_object_identifier(
     )
     assert set(outcome.keys()) == {
         "success", "initial_height", "final_height",
-        "contact_count", "object_velocity", "grasp_pose",
+        "contact_count", "object_velocity", "grasp_pose", "fk_position_error",
     }
     assert outcome["initial_height"] == pytest.approx(0.5)
     assert outcome["final_height"] == pytest.approx(0.5)

@@ -12,13 +12,13 @@ flow and score-based diffusion — and historically describes them as
 "alternative grasp-generation approaches unless the final project
 specification explicitly requires both."
 
-Until the most recent hot-fix checklist, the repository had a real flow
+Until the most recent checklist update, the repository had a real flow
 field, integrator, and sampler (`src/grasping_ai/models/flow.py`), but the
 training pipeline for flow was only sketched in code comments and an
 empty-dataloader notebook. The diffusion path (`scripts/train.py`) was the
 maintained supervised training entry point.
 
-The hot-fix checklist added `src/grasping_ai/pipelines/train_flow.py` and
+`CHECKLIST.md` added `src/grasping_ai/pipelines/train_flow.py` and
 `scripts/train_flow.py`, plus `tests/test_phase4_flow_training.py`, which
 brings flow training to parity with the diffusion training pipeline
 (canonical-frame 9D targets, MSE velocity loss, multi-epoch loop, optional
