@@ -1,6 +1,8 @@
+# ruff: noqa: I001
 import argparse
 from pathlib import Path
 
+import open3d as _open3d  # noqa: F401
 import numpy as np
 
 from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id

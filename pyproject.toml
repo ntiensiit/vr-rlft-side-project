@@ -39,6 +39,9 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/grasping_ai"]
 
+[tool.ruff.lint.isort]
+force-to-top = ["open3d"]
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]

@@ -89,7 +89,7 @@ Pass/fail: step exits 0; log reports success on source files.
 
 Step name in log: `Pytest (excluding slow / artifact-chain tests)`
 
-Command in CI: `bash scripts/ci_pytest.sh` (per-file `coverage run` under `xvfb-run`)
+Command in CI: `xvfb-run -a uv run pytest -q -m "not slow" --cov=src/grasping_ai --cov-config=coverage.toml --cov-fail-under=80`
 
 Pass/fail: step exits 0; tests ran (not skipped); coverage gate at or above 80%.
 

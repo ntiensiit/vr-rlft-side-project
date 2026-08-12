@@ -1,7 +1,9 @@
+# ruff: noqa: I001
 import argparse
 from pathlib import Path
 from typing import Any, cast
 
+import open3d as _open3d  # noqa: F401
 import numpy as np
 
 from grasping_ai.data.pointcloud_dataset import (
