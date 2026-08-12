@@ -1,3 +1,10 @@
+# OBSOLETE — this notebook predates the maintained SB3 PPO integration.
+# Use ``scripts/train_rl.py`` instead. The notebook's hardcoded
+# ``observation_dim=64, action_dim=7`` does not match the current
+# composed-scene dimensions (e.g., 21 observations and 4 actions for the
+# shipped ``deploy/robot.xml``) and the Gymnasium environment raises a
+# dimension mismatch if the args are passed unchanged.
+#
 # %%
 !git clone https://github.com/ntiensiit/vr-rlft-side-project.git
 %cd vr-rlft-side-project

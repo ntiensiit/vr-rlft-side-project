@@ -1,0 +1,11 @@
+services:
+  grasping:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    environment:
+      PYTHONPATH: /app/src
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+    working_dir: /app

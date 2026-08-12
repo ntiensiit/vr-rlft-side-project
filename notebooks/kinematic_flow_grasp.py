@@ -1,3 +1,8 @@
+# OBSOLETE — this notebook predates the maintained flow-training pipeline.
+# Use ``scripts/train_flow.py`` and ``src/grasping_ai/pipelines/train_flow.py``
+# instead. The notebook also constructs an empty ``dataloader = []`` and so
+# cannot actually train a usable flow model as written.
+#
 # %%
 !git clone https://github.com/ntiensiit/vr-rlft-side-project.git
 %cd vr-rlft-side-project

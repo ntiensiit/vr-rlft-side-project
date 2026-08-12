@@ -1,3 +1,9 @@
+# OBSOLETE — this notebook predates the current supervised diffusion pipeline
+# and references a non-existent ``data/raw/grasp_data`` directory plus an
+# obsolete observation layout. Use ``scripts/train.py`` (diffusion) or
+# ``scripts/train_flow.py`` (flow) together with ``scripts/prepare_data.py``
+# (synthetic YCB dataset) instead.
+#
 # %%
 !git clone https://github.com/ntiensiit/vr-rlft-side-project.git
 %cd vr-rlft-side-project

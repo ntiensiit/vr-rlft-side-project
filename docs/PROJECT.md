@@ -166,6 +166,8 @@ The important motivation in this project is that object geometry and grasp poses
 
 The equivariant descriptor therefore provides a geometric representation that can condition the grasp-generation model.
 
+**Status note (2026-08-12):** the active `SE3EquivariantPointNet` is a deterministic SE(3) canonicalization followed by an MLP on canonical-frame coordinates. The pooled descriptor is invariant under rigid SE(3); the per-point features transform under the trivial feature action. This is a canonicalization-based design, **not** a conventional nontrivial equivariant neural representation (e.g., steerable / equivariant tensor-field networks). If the intended research objective requires genuine nontrivial equivariance, the encoder must be replaced.
+
 ### 5.4 Grasp generation layer
 
 The grasp-generation layer maps an object representation to candidate grasp poses.
@@ -191,6 +193,8 @@ They should be treated as alternative grasp-generation approaches unless the fin
 A flow formulation can learn a vector field that transforms an initial distribution toward the grasp distribution.
 
 A score-based diffusion formulation learns a score function used during denoising and sampling.
+
+**Status note (2026-08-12):** both flow and diffusion paths are now fully implemented through to training. `scripts/train.py` runs diffusion-based supervised training; `scripts/train_flow.py` runs flow-matching supervised training (newly added in Priority 6 of the hot-fix checklist). Both produce checkpoints loadable by the corresponding inference modules.
 
 ### 5.5 Robotics layer
 

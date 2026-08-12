@@ -1,9 +1,14 @@
 # Documentation/default reference only; runtime pipelines accept parameters via CLI arguments.
+# Active grasp representation is 9D: 3 translation components plus the first two
+# columns of the rotation matrix (6D rotation column subset), as produced by
+# `se3_to_vec` in `src/grasping_ai/pipelines/train.py`. This replaces an older
+# 7D convention (3 translation + 4 quaternion) that no code path uses.
 model_type: diffusion
 feature_dim: 128
 hidden_dim: 256
 num_layers: 4
-grasp_dim: 7
+grasp_dim: 9
+grasp_representation: 6d_rotation_columns  # translation(3) + rot_col_1(3) + rot_col_2(3)
 num_diffusion_steps: 100
 num_flow_steps: 100
 rl_observation_dim: 0
