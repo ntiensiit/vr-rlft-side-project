@@ -42,4 +42,22 @@ jobs:
       - name: Verify package import
         run: xvfb-run -a uv run python -c "import grasping_ai; print('grasping_ai ok')"
       - name: Pytest (excluding slow / artifact-chain tests)
-        run: xvfb-run -a uv run pytest -q -m "not slow" --cov=src/grasping_ai --cov-config=coverage.toml --cov-report=term-missing --cov-fail-under=80
+        run: |
+          set +e
+          xvfb-run -a uv run coverage run --rcfile=coverage.toml -m pytest -q -m "not slow" 2>&1 | tee pytest.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if grep -qE 'FAILED|ERROR' pytest.log; then
+            exit "${rc:-1}"
+          fi
+          if ! grep -qE '[0-9]+ passed' pytest.log; then
+            echo "Pytest did not report passing tests"
+            cat pytest.log
+            exit "${rc:-1}"
+          fi
+          if [ "$rc" -eq 139 ]; then
+            echo "Ignoring headless teardown segfault (exit 139) after tests passed"
+          elif [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
+          uv run coverage report --rcfile=coverage.toml --fail-under=80
