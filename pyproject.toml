@@ -32,6 +32,7 @@ dev = [
     "ruff>=0.8",
     "pytest>=8",
     "pytest-cov>=6",
+    "pytest-forked>=1.6",
     "mypy>=1.13",
     "mujoco>=3.11.0",
 ]
