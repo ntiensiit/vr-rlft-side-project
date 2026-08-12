@@ -127,10 +127,10 @@ jobs:
           merge-multiple: true
       - name: Combine and report coverage
         run: |
-          shopt -s nullglob
-          fragments=(coverage-data/.coverage.*)
+          mapfile -t fragments < <(find coverage-data -name '.coverage.*' -type f)
           if ((${#fragments[@]} == 0)); then
-            echo "No coverage fragments found" >&2
+            echo "No coverage fragments found under coverage-data:" >&2
+            find coverage-data -print >&2 || true
             exit 1
           fi
           export COVERAGE_FILE=.coverage
