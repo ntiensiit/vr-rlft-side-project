@@ -231,3 +231,36 @@ def test_generate_synthetic_dataset_skips_zero_grasp_objects(monkeypatch):
 
         npy_file = output_dir / "006_mustard_bottle.npy"
         assert not npy_file.exists()
+
+
+def test_generate_synthetic_dataset_fail_fast_on_required_objects(monkeypatch):
+    """Required objects that fail to produce grasps raise instead of being skipped."""
+    from scripts.prepare_data import generate_synthetic_dataset
+
+    ycb_root = Path(tempfile.mkdtemp()) / "ycb"
+    obj_name = "006_mustard_bottle"
+    obj_dir = ycb_root / obj_name
+    obj_dir.mkdir(parents=True)
+    mesh = o3d.geometry.TriangleMesh.create_box(width=0.05, height=0.1, depth=0.05)
+    o3d.io.write_triangle_mesh(str(obj_dir / "textured.obj"), mesh)
+
+    output_dir = Path(tempfile.mkdtemp()) / "dataset"
+    output_dir.mkdir()
+
+    def always_empty(points, normals, num_grasps, gripper_width, rng, **kwargs):
+        return np.empty((0, 4, 4), dtype=np.float32)
+
+    monkeypatch.setattr(
+        "scripts.prepare_data.generate_analytical_grasps",
+        always_empty,
+    )
+    with pytest.raises(RuntimeError, match="Required YCB objects"):
+        generate_synthetic_dataset(
+            ycb_root=ycb_root,
+            output_dir=output_dir,
+            num_samples=100,
+            num_grasps=5,
+            gripper_width=0.08,
+            seed=42,
+            required_objects=[obj_name],
+        )

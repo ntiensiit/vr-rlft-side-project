@@ -42,14 +42,18 @@ def main() -> None:
     run([sys.executable, "scripts/prepare_ycb_mjcf.py",
          "--ycb-root", str(ycb_root), "--output-root", str(mjcf_root)])
 
-    # Step 1: YCB mesh -> synthetic grasp dataset + index.
+    # Step 1: YCB mesh -> synthetic grasp dataset + index. The three shipped
+    # YCB objects are declared as required: any missing/failed object aborts
+    # the chain rather than silently producing a partial dataset.
     run([sys.executable, "scripts/prepare_data.py",
          "--mode", "synthetic",
          "--ycb-root", str(ycb_root),
          "--dataset-root", str(DATA_PROCESSED),
          "--output-index", str(DATA_PROCESSED / "index.json"),
          "--num-samples", "256", "--num-grasps", "8",
-         "--gripper-width", "0.08", "--seed", "42"])
+         "--gripper-width", "0.08", "--seed", "42",
+         "--required-objects", "003_cracker_box", "004_sugar_box",
+         "006_mustard_bottle"])
 
     # Observations for inference/evaluation.
     run([sys.executable, "scripts/prepare_observations.py",
@@ -90,11 +94,12 @@ def main() -> None:
          "--output", str(ARTIFACTS / "reports" / "simulation_cracker.json"),
          "--num-simulation-steps", "50", "--gripper-close-command", "0.02", "0.02"])
 
-    # Step 5: evaluation report.
+    # Step 5: evaluation report — same object identity (003_cracker_box) as the
+    # simulation step, so the chain tracks one object end-to-end.
     run([sys.executable, "scripts/evaluate.py",
          "--grasps", str(ARTIFACTS / "exports" / "generated_grasps.npy"),
-         "--object-id", "object_1",
-         "--object-point-cloud", str(observations / "004_sugar_box.npy"),
+         "--object-id", "object_0",
+         "--object-point-cloud", str(observations / "003_cracker_box.npy"),
          "--gripper-point-cloud", str(observations / "gripper.npy"),
          "--report", str(ARTIFACTS / "reports" / "evaluation_report.json"),
          "--friction-coefficient", "0.5", "--lift-height-threshold", "0.05",

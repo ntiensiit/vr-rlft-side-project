@@ -34,6 +34,7 @@ def generate_synthetic_dataset(
     num_grasps: int,
     gripper_width: float,
     seed: int,
+    required_objects: list[str] | None = None,
 ) -> None:
     """Generate synthetic grasp dataset from YCB meshes.
 
@@ -44,9 +45,17 @@ def generate_synthetic_dataset(
         num_grasps: Number of analytical grasps to generate.
         gripper_width: Maximum gripper width.
         seed: Random seed for reproducibility.
+        required_objects: Optional list of object identifiers whose generation
+            must succeed. If any listed object fails to produce a record (no
+            strict or relaxed grasps, missing mesh, exception), the function
+            raises. Objects not in this list are still skipped with a printed
+            message when they fail.
     """
     if not ycb_root.is_dir():
         raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist.")
+
+    required_set = set(required_objects or [])
+    failures: list[str] = []
 
     output_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
@@ -62,6 +71,8 @@ def generate_synthetic_dataset(
                     mesh_path = candidates[0]
                 else:
                     print(f"Skipping {name}: no mesh files found.")
+                    if name in required_set:
+                        failures.append(f"{name}: no mesh files found")
                     continue
 
             # Sample point cloud
@@ -81,6 +92,8 @@ def generate_synthetic_dataset(
                 )
             if grasps.shape[0] == 0:
                 print(f"Skipping {name}: no valid grasps found.")
+                if name in required_set:
+                    failures.append(f"{name}: no valid grasps")
                 continue
 
             # Create sample dict
@@ -96,6 +109,14 @@ def generate_synthetic_dataset(
 
         except Exception as e:
             print(f"Failed to generate synthetic data for '{name}': {e}")
+            if name in required_set:
+                failures.append(f"{name}: {e}")
+
+    if failures:
+        joined = "; ".join(failures)
+        raise RuntimeError(
+            f"Required YCB objects failed to generate synthetic data: {joined}"
+        )
 
 
 if __name__ == "__main__":
@@ -111,6 +132,17 @@ if __name__ == "__main__":
     parser.add_argument("--num-grasps", type=int, default=64)
     parser.add_argument("--gripper-width", type=float, default=0.08)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--required-objects",
+        type=str,
+        nargs="+",
+        default=None,
+        help=(
+            "Space-separated list of YCB object identifiers whose generation "
+            "must succeed; missing objects cause a non-zero exit code. "
+            "Objects not in this list are skipped with a printed warning."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -130,6 +162,7 @@ if __name__ == "__main__":
             num_grasps=args.num_grasps,
             gripper_width=args.gripper_width,
             seed=args.seed,
+            required_objects=args.required_objects,
         )
         # Automatically index the generated files
         prepare_data_index(target_dir, args.output_index)
