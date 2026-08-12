@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Training dataloader re-instantiation; RL env object propagation; simulation judges; artifact-chain object identity; flow encoder checkpoint contract — [ADR-0003](docs/adr/003-flow-checkpoint-joint-encoder.md).
+- GitHub CI pytest step on Linux: install Open3D system libraries; sync dev dependency group explicitly.
 
 ## [0.1.0] - Earlier implementation phases
 

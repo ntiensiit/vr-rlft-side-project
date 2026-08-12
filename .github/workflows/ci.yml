@@ -16,6 +16,10 @@ jobs:
         python-version: ["3.12"]
     steps:
       - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libglib2.0-0 libgomp1
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -23,10 +27,10 @@ jobs:
       - name: Install uv
         run: pip install uv
       - name: Sync dependencies
-        run: uv sync --all-extras
+        run: uv sync --group dev
       - name: Ruff
         run: uv run ruff check src tests scripts
       - name: Mypy
         run: uv run mypy src
       - name: Pytest (excluding slow / artifact-chain tests)
-        run: uv run pytest -q -m "not slow" --cov --cov-fail-under=80
+        run: uv run pytest -q -m "not slow" --cov=src/grasping_ai --cov-fail-under=80
