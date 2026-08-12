@@ -33,8 +33,8 @@ jobs:
       - name: Verify package import
         run: xvfb-run -a uv run python -c "import grasping_ai; print('grasping_ai ok')"
 
-  pytest:
-    name: Pytest ${{ matrix.test_file }}
+  fast-tests:
+    name: Fast tests and coverage
     needs: lint
     runs-on: ubuntu-latest
     env:
@@ -44,35 +44,6 @@ jobs:
       EGL_PLATFORM: surfaceless
       PYTHONFAULTHANDLER: "1"
       OMP_NUM_THREADS: "1"
-      COVERAGE_FILE: cov-${{ matrix.id }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - id: grasp_io
-            test_file: tests/test_grasp_io_runtime.py
-          - id: phase1
-            test_file: tests/test_phase1_foundation.py
-          - id: phase2
-            test_file: tests/test_phase2_sim_robotics.py
-          - id: phase3
-            test_file: tests/test_phase3_data_perception.py
-          - id: phase4_flow
-            test_file: tests/test_phase4_flow_training.py
-          - id: phase4_gen
-            test_file: tests/test_phase4_generative_grasp.py
-          - id: phase5
-            test_file: tests/test_phase5_rl_policy.py
-          - id: phase6
-            test_file: tests/test_phase6_orchestration.py
-          - id: phase7
-            test_file: tests/test_phase7_synthetic_data.py
-          - id: phase8
-            test_file: tests/test_phase8_tracking.py
-          - id: phase9
-            test_file: tests/test_phase9_gymnasium_env.py
-          - id: phase10
-            test_file: tests/test_phase10_evaluation.py
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
@@ -87,52 +58,5 @@ jobs:
         run: pip install uv
       - name: Sync dependencies
         run: uv sync --group dev
-      - name: Run fast tests
-        run: |
-          set +e
-          xvfb-run -a uv run coverage run --rcfile=coverage.toml -m pytest -q "${{ matrix.test_file }}" -m "not slow"
-          rc=$?
-          set -e
-          if [ "$rc" -eq 139 ]; then
-            echo "Ignoring teardown segfault (139) for ${{ matrix.test_file }}"
-          elif [ "$rc" -ne 0 ]; then
-            exit "$rc"
-          fi
-      - name: Upload coverage fragment
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.id }}
-          path: cov-${{ matrix.id }}
-
-  coverage:
-    name: Coverage gate
-    needs: pytest
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install uv
-        run: pip install uv
-      - name: Sync dependencies
-        run: uv sync --group dev
-      - name: Download coverage fragments
-        uses: actions/download-artifact@v4
-        with:
-          path: coverage-data
-          pattern: coverage-*
-          merge-multiple: true
-      - name: Combine and report coverage
-        run: |
-          find coverage-data -print
-          mapfile -t fragments < <(find coverage-data -name 'cov-*' -type f)
-          if ((${#fragments[@]} == 0)); then
-            echo "No coverage fragments found" >&2
-            exit 1
-          fi
-          export COVERAGE_FILE=.coverage
-          uv run coverage combine --rcfile=coverage.toml "${fragments[@]}"
-          uv run coverage report --rcfile=coverage.toml --fail-under=80
+      - name: Pytest (excluding slow / artifact-chain tests)
+        run: bash scripts/ci_pytest.sh

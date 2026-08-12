@@ -27,7 +27,9 @@ Completed wiring and refactor work: [ADR-0004](docs/adr/004-dead-helper-wiring-a
 
 ### Execution plan: GitHub CI verification
 
-**Pass/fail:** Mark the item above `[x]` only when the current `dev` HEAD has a completed GitHub Actions run and every required step in job `Lint, typecheck, and fast tests` passed (not skipped, not `continue-on-error`).
+**Pass/fail:** Mark the item above `[x]` only when the current `dev` HEAD has a completed GitHub Actions run and every required job passed (not skipped, not `continue-on-error`).
+
+Required jobs in workflow `CI`: `Lint and typecheck`, `Fast tests and coverage`.
 
 **Step 1 — Push current `dev` commit**
 
