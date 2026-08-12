@@ -60,6 +60,10 @@ scope changes, and design rationale that drove these changes:
 - Artifact chain object-identity mismatch (`scripts/run_artifacts.py` evaluation step now uses `--object-id object_0` / cracker-box point cloud).
 - Flow train/inference inconsistency (encoder + flow field now jointly trained and persisted; see ADR-0003).
 
+### Verified
+
+- `scripts/run_artifacts.py` end-to-end run on a clean tree (`data/processed/` and `artifacts/` removed): exit code 0, 44.9s, 9 commands, 13 retained artifacts covering supervised training, RL training, MuJoCo simulation, analytical evaluation, and policy_runner inference. The chain keeps the same object identity end-to-end (`003_cracker_box` / `object_0`). Result captured in `artifacts/verification_log.md` (gitignored). `tests/test_artifact_chain.py` (slow marker) exercises the same flow as part of the local verification gate.
+
 ## [0.1.0] - Earlier implementation phases
 
 Phase 1-10 architecture: geometry/SE(3) primitives, MuJoCo/YCB simulation,
