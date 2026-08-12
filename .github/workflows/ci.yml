@@ -21,7 +21,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1 libgl1-mesa-dri libglib2.0-0 libgomp1 libegl1
+          sudo apt-get install -y libgl1 libgl1-mesa-dri libgl1-mesa-glx libglib2.0-0 libgomp1 libegl1 xvfb
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -35,6 +35,6 @@ jobs:
       - name: Mypy
         run: uv run mypy src
       - name: Verify runtime imports
-        run: uv run python -c "import open3d, mujoco, grasping_ai; print('imports ok')"
+        run: xvfb-run -a uv run python -c "import open3d; import mujoco; import grasping_ai; print('imports ok')"
       - name: Pytest (excluding slow / artifact-chain tests)
-        run: uv run pytest -q -m "not slow" --cov=src/grasping_ai --cov-fail-under=80
+        run: xvfb-run -a uv run pytest -q -m "not slow" --cov=src/grasping_ai --cov-fail-under=80

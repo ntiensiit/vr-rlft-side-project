@@ -115,7 +115,7 @@ Verified: <YYYY-MM-DD>
 
 Then change the checklist item to `[x]`.
 
-**Latest run (2026-08-13):** commit `3947f1f` run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31624253900 — Ruff PASS, Mypy PASS, Pytest FAIL (exit 2). Commit `a677b97` run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31626125280 — same pytest failure after apt packages; follow-up adds Open3D import-order guard and Mesa/EGL deps.
+**Latest run (2026-08-13):** `d8d7ccc` run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31626633282 — Verify runtime imports FAIL (Open3D on headless Linux); pytest skipped. Prior runs `3947f1f`, `a677b97` failed at pytest (exit 2). Follow-up adds xvfb-run for import and test steps.
 
 ---
 
