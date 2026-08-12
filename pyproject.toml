@@ -37,9 +37,24 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/grasping_ai"]
 
 [tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov",
+    "--cov-config=coverage.toml",
+    "--cov-report=term-missing",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+]
 markers = [
     "slow: end-to-end / artifact-chain tests that exercise full pipelines and may take tens of seconds; skip with ``-m 'not slow'``",
 ]
