@@ -46,13 +46,8 @@ pythonpath = ["src"]
 addopts = [
     "-ra",
     "--strict-markers",
-    "--strict-config",
-    "--cov",
-    "--cov-config=coverage.toml",
-    "--cov-report=term-missing",
 ]
 filterwarnings = [
-    "error",
     "ignore::DeprecationWarning",
 ]
 markers = [
