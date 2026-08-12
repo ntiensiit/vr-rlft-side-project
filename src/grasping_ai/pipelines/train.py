@@ -142,7 +142,6 @@ def run_training_pipeline(
                 yield cond, targets
 
     dataloader = TrainingDataloader(training_pairs, batch_size, device, seed)
-    dataloader_iter = cast(Iterator[tuple[torch.Tensor, torch.Tensor]], iter(dataloader))
 
     metadata = {
         "dataset_root": str(dataset_root),
@@ -160,7 +159,7 @@ def run_training_pipeline(
 
     run_training_loop(
         training_step,
-        dataloader_iter,
+        dataloader,
         num_epochs,
         checkpoint_path,
         log_every=10,

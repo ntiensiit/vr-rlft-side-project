@@ -14,6 +14,9 @@ def simulate_grasp(
     table_xml_path: Path | None,
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
+    lift_height_threshold: float = 0.05,
+    max_linear_velocity: float = 0.05,
+    max_angular_velocity: float = 0.1,
 ) -> SimulationOutcome:
     """Execute a single grasp in a MuJoCo simulation and report its outcome.
 
@@ -26,10 +29,14 @@ def simulate_grasp(
         table_xml_path: Optional path to a workbench/table MJCF description.
         num_simulation_steps: Number of physics steps to execute.
         gripper_close_command: Gripper command used to close the gripper.
+        lift_height_threshold: Minimum world-frame height gain required to
+            count the grasp as a successful lift.
+        max_linear_velocity: Maximum acceptable linear velocity of the object.
+        max_angular_velocity: Maximum acceptable angular velocity of the object.
 
     Returns:
-        A dictionary describing the simulation outcome, including success flag
-        and any recorded contact or trajectory information.
+        A dictionary describing the simulation outcome, including the success
+        flag and any recorded contact, velocity, or trajectory information.
     """
     if grasp_pose.shape != (4, 4):
         raise ValueError(f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}")
@@ -39,6 +46,12 @@ def simulate_grasp(
         raise FileNotFoundError(f"ycb_root not found: {ycb_root}")
     if num_simulation_steps <= 0:
         raise ValueError("num_simulation_steps must be positive")
+    if lift_height_threshold < 0:
+        raise ValueError("lift_height_threshold must be non-negative")
+    if max_linear_velocity < 0:
+        raise ValueError("max_linear_velocity must be non-negative")
+    if max_angular_velocity < 0:
+        raise ValueError("max_angular_velocity must be non-negative")
 
     # Resolve YCB object XML
     from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
@@ -125,8 +138,19 @@ def simulate_grasp(
     object_contacts = collect_contacts(scene.contacts, {object_id})
     contact_count = len(object_contacts)
 
-    # Success criteria: object hasn't fallen and has contacts
-    success = bool(final_height >= (initial_height - 0.05) and contact_count >= 1)
+    # Success requires a genuine lift: stable contact plus the object raised
+    # above the lift threshold with bounded object velocity.
+    from grasping_ai.evaluation.metrics import (
+        build_lift_outcome_judge,
+        build_stability_judge,
+        evaluate_lift_success,
+        evaluate_stability,
+    )
+    lift_judge = build_lift_outcome_judge(lift_height_threshold)
+    stability_judge = build_stability_judge(max_linear_velocity, max_angular_velocity)
+    lifted = evaluate_lift_success(lift_judge, initial_height, final_height)
+    stable = evaluate_stability(stability_judge, object_velocity)
+    success = bool(contact_count >= 1 and lifted and stable)
 
     return {
         "success": success,
@@ -146,6 +170,9 @@ def run_simulation_sweep(
     table_xml_path: Path | None,
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
+    lift_height_threshold: float = 0.05,
+    max_linear_velocity: float = 0.05,
+    max_angular_velocity: float = 0.1,
 ) -> list[SimulationOutcome]:
     """Execute a batch of grasps and aggregate the simulation outcomes.
 
@@ -157,6 +184,10 @@ def run_simulation_sweep(
         table_xml_path: Optional path to a workbench/table MJCF description.
         num_simulation_steps: Number of physics steps to execute per grasp.
         gripper_close_command: Gripper command used to close the gripper.
+        lift_height_threshold: Minimum world-frame height gain required to
+            count the grasp as a successful lift.
+        max_linear_velocity: Maximum acceptable linear velocity of the object.
+        max_angular_velocity: Maximum acceptable angular velocity of the object.
 
     Returns:
         A list of per-grasp simulation outcomes.
@@ -180,6 +211,9 @@ def run_simulation_sweep(
             table_xml_path=table_xml_path,
             num_simulation_steps=num_simulation_steps,
             gripper_close_command=gripper_close_command,
+            lift_height_threshold=lift_height_threshold,
+            max_linear_velocity=max_linear_velocity,
+            max_angular_velocity=max_angular_velocity,
         )
         outcomes.append(outcome)
 

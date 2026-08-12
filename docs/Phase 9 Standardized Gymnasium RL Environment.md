@@ -14,7 +14,7 @@ Verified evidence:
 
 - `pyproject.toml` declares `gymnasium>=1.3.0` and `stable-baselines3>=2.9.0`, but the inspected RL pipeline does not use either dependency.
 - `src/grasping_ai/pipelines/train_rl.py` defines `build_rl_environment` and `collect_rl_rollout`, which manually step MuJoCo, construct observations from `qpos` and `qvel`, pad or truncate actions, and compute a hardcoded reward.
-- `src/grasping_ai/training/rl_trainer.py` implements a custom policy update step rather than using a standard RL algorithm implementation.
+- `src/grasping_ai/training/rl_trainer.py` implements a custom policy update step rather than using a standard RL algorithm implementation. *(historical: module removed; `stable_baselines3` PPO is the active algorithm)*
 - `src/grasping_ai/simulation/mujoco_env.py` provides a functional MuJoCo wrapper with `load_mujoco_model`, `create_simulation`, `reset_simulation`, and body/joint accessors, but it does not expose a Gymnasium-compatible `reset`, `step`, observation space, or action space.
 - `src/grasping_ai/pipelines/train_rl.py::run_rl_training_pipeline` accepts `observation_dim` and `action_dim`, validates them against the MuJoCo model, builds a policy with `src/grasping_ai/models/rl_policy.py::build_policy_network`, and then uses the custom rollout loop.
 - `src/grasping_ai/pipelines/train_rl.py::build_rl_environment` accepts `ycb_root` and `object_id`, but the inspected implementation loads only the robot XML and does not attach or use the YCB object. This is an existing inconsistency.
@@ -60,7 +60,7 @@ After this phase:
   - `collect_rl_rollout` manually resets the simulation, reads `qpos` and `qvel`, calls the policy, pads or truncates the action, steps MuJoCo, and computes a reward.
 
 - **Custom RL update logic**
-  - File: `src/grasping_ai/training/rl_trainer.py`
+  - File: `src/grasping_ai/training/rl_trainer.py` *(historical: module removed in the SB3 PPO migration)*
   - `build_rl_training_step`, `run_rl_training_loop`, `compute_discounted_returns`, and `compute_gae_advantages` are implemented.
   - The custom update step computes discounted returns and applies a clipped advantage-style loss.
 
@@ -119,7 +119,7 @@ After this phase:
   - Implemented, but the inspected rollout path calls the policy directly rather than using this sampling function.
 
 - **`compute_gae_advantages`**
-  - File: `src/grasping_ai/training/rl_trainer.py`
+  - File: `src/grasping_ai/training/rl_trainer.py` *(historical: module removed in the SB3 PPO migration)*
   - Implemented, but the inspected custom update step does not use it.
 
 - **`build_value_network`**
@@ -203,8 +203,8 @@ Current RL execution flow:
       - calls `src/grasping_ai/simulation/mujoco_env.py::create_simulation`
     - validates observation and action dimensions from the MuJoCo model
     - calls `src/grasping_ai/models/rl_policy.py::build_policy_network`
-    - calls `src/grasping_ai/training/rl_trainer.py::build_rl_training_step`
-    - calls `src/grasping_ai/training/rl_trainer.py::run_rl_training_loop`
+    - calls `src/grasping_ai/training/rl_trainer.py::build_rl_training_step` *(historical: module removed; this describes the pre-Phase-9 flow)*
+    - calls `src/grasping_ai/training/rl_trainer.py::run_rl_training_loop` *(historical: module removed; this describes the pre-Phase-9 flow)*
       - repeatedly calls `collect_rl_rollout`
         - directly steps MuJoCo
         - computes observations and rewards
@@ -294,7 +294,7 @@ New RL execution flow:
 - Simulation module gains a Gymnasium-facing class but must continue exposing the existing functional API.
 - RL pipeline gains a dependency on `gymnasium` and `stable_baselines3` at execution time.
 - Inference module remains unchanged but depends on the pipeline exporting a compatible checkpoint.
-- Training module `rl_trainer.py` is no longer required by the standardized pipeline path but remains present for regression coverage of existing RL math.
+- Training module `rl_trainer.py` no longer exists in the repository; the standardized path uses `stable_baselines3` PPO.
 
 ## 5. Source Code Impact Analysis
 
@@ -379,7 +379,9 @@ New RL execution flow:
 
 **Regression risk:** Low if unchanged.
 
-### `src/grasping_ai/training/rl_trainer.py`
+### `src/grasping_ai/training/rl_trainer.py` (historical)
+
+*The module no longer exists; its functionality is superseded by `stable_baselines3` PPO in the standardized path.*
 
 **Current responsibility:** Custom RL update step and rollout loop.
 
@@ -672,7 +674,7 @@ Required regression tests:
 ### Impact on Phase 5: Reinforcement Learning Policy
 
 - The policy network construction function remains unchanged.
-- The custom RL trainer remains present but is no longer the active end-to-end training path.
+- The custom RL trainer module has been removed; it is no longer part of the end-to-end training path.
 - The trained policy checkpoint must remain compatible with the existing policy inference path.
 
 Required regression tests:
@@ -1104,11 +1106,11 @@ This phase is complete when all of the following are true:
 
 **Mitigation:** Validation requires CPU-only execution. Tests must use CPU.
 
-### Architectural risk: legacy RL trainer becomes obsolete
+### Architectural risk: legacy RL trainer becomes obsolete (historical: resolved by module removal)
 
-**Risk:** The custom RL trainer remains in the repository while the active pipeline uses stable-baselines3.
+**Risk:** *(historical)* The custom RL trainer has been removed from the repository; the active pipeline uses stable-baselines3.
 
-**Mitigation:** Phase 9 explicitly marks the custom trainer as legacy for regression coverage. Removal or consolidation belongs to a later cleanup phase unless repository tests are migrated in this phase.
+**Mitigation:** *(historical)* The module no longer exists; no later cleanup is required.
 
 ## 21. Out of Scope
 
@@ -1131,11 +1133,11 @@ The following are explicitly out of scope for this phase:
 - Changes to supervised training.
 - Changes to evaluation metrics.
 - Changes to force closure or collision checking.
-- Removal of all legacy RL trainer code unless directly required by test migration.
+- Removal of legacy RL trainer code. *(historical: the module no longer exists; this item no longer applies)*
 
 ## 22. Design Review Checklist
 
-- Repository state verified against simulation, RL pipeline, RL trainer, policy model, inference, CLI, and dependency files.
+- Repository state verified against simulation, RL pipeline, RL trainer *(historical: module no longer exists)*, policy model, inference, CLI, and dependency files.
 - Phase boundary restricted to standardized Gymnasium environment and stable-baselines3 integration.
 - Existing MuJoCo functional API preserved.
 - Existing inference checkpoint contract preserved.

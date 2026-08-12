@@ -154,6 +154,71 @@ def test_training_creates_checkpoint():
         assert int(checkpoint["num_layers"]) == 2
 
 
+def test_training_reiterates_dataloader_per_epoch():
+    """Verify multi-epoch training performs a fresh full pass over data each epoch."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        temp_path = Path(tmp_dir)
+        dataset_root = temp_path / "dataset"
+        dataset_root.mkdir()
+
+        record_data = {
+            "point_cloud": np.random.randn(50, 3).astype(np.float32),
+            "grasp_poses": np.array([np.eye(4) for _ in range(3)], dtype=np.float32),
+            "object_id": "ycb_master_chef_can",
+        }
+        np.save(dataset_root / "sample_0.npy", record_data, allow_pickle=True)
+        index = {
+            "records": [
+                {
+                    "file_path": "sample_0.npy",
+                    "object_id": "ycb_master_chef_can",
+                }
+            ]
+        }
+        with open(dataset_root / "index.json", "w") as f:
+            json.dump(index, f)
+
+        checkpoint_path = temp_path / "model.pt"
+
+        def counting_step(inputs, targets):
+            return {"loss": 0.0}
+
+        batches_seen = []
+
+        def recording_loop(
+            training_step,
+            dataloader,
+            num_epochs,
+            checkpoint_path,
+            log_every,
+            **kwargs,
+        ):
+            for _epoch in range(num_epochs):
+                epoch_batches = 0
+                for _ in dataloader:
+                    epoch_batches += 1
+                batches_seen.append(epoch_batches)
+
+        with pytest.MonkeyPatch.context() as m:
+            m.setattr(
+                "grasping_ai.training.trainer.run_training_loop",
+                recording_loop,
+            )
+            run_training_pipeline(
+                dataset_root=dataset_root,
+                checkpoint_path=checkpoint_path,
+                feature_dim=8,
+                hidden_dim=16,
+                num_layers=2,
+                learning_rate=0.01,
+                num_epochs=3,
+                batch_size=2,
+                device="cpu",
+            )
+
+        assert batches_seen == [2, 2, 2]
+
+
 def test_training_rejects_missing_dataset():
     """Verify that run_training_pipeline checks dataset_root existence."""
     with pytest.raises(FileNotFoundError):

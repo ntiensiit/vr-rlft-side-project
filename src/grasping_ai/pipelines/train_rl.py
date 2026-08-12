@@ -24,7 +24,9 @@ def run_rl_training_pipeline(
     Args:
         robot_xml_path: Path to the robot MJCF description used in training.
         ycb_root: Root directory of the YCB object set.
-        object_ids: YCB object identifiers used during training rollouts.
+        object_ids: YCB object identifiers used during training rollouts. The
+            environment tracks a single object body, so exactly one object
+            identifier must be supplied.
         policy_checkpoint_path: Destination path for the trained policy.
         observation_dim: Dimensionality of the policy observation vector.
         action_dim: Dimensionality of the policy action vector.
@@ -60,21 +62,37 @@ def run_rl_training_pipeline(
         raise ValueError("num_updates must be positive")
     if not 0.0 <= gamma <= 1.0:
         raise ValueError("gamma must be in [0, 1]")
+    if len(object_ids) > 1:
+        raise ValueError(
+            "object_ids must contain at most one object; the environment "
+            "tracks a single object body during RL training"
+        )
 
     env_xml_path = robot_xml_path
+    object_name: str | None = None
     if object_ids:
         from grasping_ai.simulation.scene import build_scene_xml
         from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
 
         object_dir = resolve_ycb_object_directory(ycb_root, object_ids[0])
         object_xml_path = find_ycb_mjcf(object_dir)
-        env_xml_path = build_scene_xml(robot_xml_path, object_xml_path, None)
+        object_name = object_ids[0]
+        env_xml_path = build_scene_xml(robot_xml_path, object_xml_path, None, object_name)
 
     from stable_baselines3 import PPO
 
-    from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
+    from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
 
-    env = MuJoCoGraspingEnv(env_xml_path)
+    reward_config = RewardConfig(
+        action_cost_weight=0.01,
+        survival_bonus=1.0,
+        contact_reward=0.5,
+        lift_reward_weight=2.0,
+        grasp_success_bonus=5.0,
+        lift_height_threshold=0.05,
+        drop_height_threshold=0.1,
+    )
+    env = MuJoCoGraspingEnv(env_xml_path, object_name=object_name, reward_config=reward_config)
 
     obs_shape = env.observation_space.shape
     act_shape = env.action_space.shape

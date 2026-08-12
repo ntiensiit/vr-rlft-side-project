@@ -143,12 +143,15 @@ def compose_transforms(*transforms: SampleTransform) -> SampleTransform:
     return composed
 
 
-def save_grasp_dataset_index(dataset_root: Path, entries: list[dict[str, str]]) -> None:
+def save_grasp_dataset_index(
+    dataset_root: Path, entries: list[dict[str, str]], filename: str = "index.json"
+) -> None:
     """Persist a dataset index file describing available records.
 
     Args:
         dataset_root: Root directory under which the index file is written.
         entries: List of metadata entries describing dataset records.
+        filename: Name of the index file written under ``dataset_root``.
     """
     if not isinstance(dataset_root, Path):
         raise TypeError("dataset_root must be a pathlib.Path instance")
@@ -159,7 +162,7 @@ def save_grasp_dataset_index(dataset_root: Path, entries: list[dict[str, str]]) 
             raise TypeError("All elements in entries must be dictionaries")
 
     dataset_root.mkdir(parents=True, exist_ok=True)
-    index_path = dataset_root / "index.json"
+    index_path = dataset_root / filename
     try:
         with open(index_path, "w", encoding="utf-8") as f:
             json.dump(entries, f, indent=4)

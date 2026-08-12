@@ -1,3 +1,4 @@
+# Documentation/default reference only; runtime pipelines accept parameters via CLI arguments.
 batch_size: 32
 learning_rate: 0.0001
 num_epochs: 100

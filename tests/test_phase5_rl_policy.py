@@ -157,7 +157,7 @@ def test_run_rl_pipeline_rejects_missing_ycb_root_when_objects_requested():
                 ycb_root=Path(tmp_dir) / "missing_ycb",
                 object_ids=["obj001"],
                 policy_checkpoint_path=Path(tmp_dir) / "policy.pt",
-                observation_dim=2,
+                observation_dim=15,
                 action_dim=1,
                 hidden_dim=8,
                 learning_rate=1e-3,
@@ -305,6 +305,52 @@ def test_run_rl_pipeline_loads_requested_object():
             device="cpu",
         )
         assert ckpt_path.exists()
+
+
+def test_rl_pipeline_tracks_object_and_enables_grasp_rewards(monkeypatch):
+    """Verify the RL pipeline propagates the object name and enables grasp rewards."""
+    from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
+    from grasping_ai.simulation.ycb import resolve_ycb_object_directory
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        robot_xml = _write_robot_xml(tmp_path)
+        _write_ycb_object_xml(tmp_path)
+        ycb_root = tmp_path / "ycb"
+        resolve_ycb_object_directory(ycb_root, "mustard_bottle")
+
+        captured = {}
+
+        def recording_env(*args, **kwargs):
+            captured["object_name"] = kwargs.get("object_name")
+            captured["reward_config"] = kwargs.get("reward_config")
+            return MuJoCoGraspingEnv(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "grasping_ai.simulation.mujoco_env.MuJoCoGraspingEnv",
+            recording_env,
+        )
+
+        run_rl_training_pipeline(
+            robot_xml_path=robot_xml,
+            ycb_root=ycb_root,
+            object_ids=["mustard_bottle"],
+            policy_checkpoint_path=tmp_path / "policy.pt",
+            observation_dim=15,
+            action_dim=1,
+            hidden_dim=8,
+            learning_rate=1e-3,
+            num_updates=1,
+            gamma=0.99,
+            device="cpu",
+        )
+
+        assert captured["object_name"] == "mustard_bottle"
+        reward_config = captured["reward_config"]
+        assert isinstance(reward_config, RewardConfig)
+        assert reward_config.contact_reward > 0.0
+        assert reward_config.lift_reward_weight > 0.0
+        assert reward_config.grasp_success_bonus > 0.0
 
 
 def test_save_rl_policy_checkpoint_writes_metadata():

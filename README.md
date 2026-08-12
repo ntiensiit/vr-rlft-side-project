@@ -5,7 +5,7 @@
 ## Repository Layout
 
 ```text
-configs/                       Experiment configuration (YAML)
+configs/                       Reference experiment settings (documentation templates; CLI args are authoritative)
 scripts/                       Thin CLI entry points
 src/grasping_ai/
   data/                        Dataset loading and transforms
@@ -43,7 +43,7 @@ data -> perception -> models -> training -> inference
 RL training:
 
 ```text
-simulation -> inference.policy_runner -> training.rl_trainer -> checkpoints
+simulation -> pipelines.train_rl (SB3 PPO + Gymnasium) -> exported legacy checkpoint -> inference.policy_runner
 ```
 
 ## Scripts
@@ -65,7 +65,7 @@ Key implemented features:
 - **Phase 1**: Foundation (Geometry, point clouds, coordinate transforms)
 - **Phase 2**: Robotics & Simulation (MuJoCo env, YCB scenes, inverse kinematics)
 - **Phase 3**: Data Pipeline & Perception (SE(3) processing, point cloud datasets)
-- **Phase 4**: Generative Grasp Model (Diffusion, Flow matching, SE(3) Equivariant Encoders)
+- **Phase 4**: Generative Grasp Model (Diffusion, Flow matching, SE(3) Equivariant Encoders — deterministic SE(3) canonicalization + invariant features with a trivial feature action, not a nontrivial equivariant net)
 - **Phase 5**: Reinforcement Learning (RL Policy network, PPO trainer integration)
 - **Phase 6**: Orchestration & Evaluation (Force-closure judging, stability/collision checking, end-to-end simulation pipelines)
 - **Phase 7**: Synthetic Data (Analytical antipodal grasping, ground truth grasp generation)

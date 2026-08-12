@@ -81,6 +81,22 @@ def test_prepare_data_creates_index_from_minimal_dataset(tmp_path):
     assert loaded_entries[0]["path"] == str(record_path)
 
 
+def test_save_grasp_dataset_index_honors_custom_filename():
+    """Verify that a custom index filename is honored instead of defaulting to index.json."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dataset_root = Path(tmpdir)
+        entries = [{"path": "record_0.npy"}]
+        save_grasp_dataset_index(dataset_root, entries, "custom_index.json")
+
+        index_file = dataset_root / "custom_index.json"
+        assert index_file.is_file()
+        assert not (dataset_root / "index.json").exists()
+
+        with open(index_file, encoding="utf-8") as f:
+            loaded_entries = json.load(f)
+        assert loaded_entries == entries
+
+
 def test_prepare_data_rejects_missing_dataset_root():
     """Verify that discover_dataset_files raises FileNotFoundError for missing paths."""
     with pytest.raises(FileNotFoundError):

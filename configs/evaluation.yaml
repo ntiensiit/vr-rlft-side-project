@@ -1,3 +1,4 @@
+# Documentation/default reference only; runtime pipelines accept parameters via CLI arguments.
 friction_coefficient: 0.5
 wrench_regularization: 0.001
 lift_height_threshold: 0.05

@@ -75,7 +75,8 @@ This confirms that the RL training entry point already exists and that the missi
   - `src/grasping_ai/pipelines/` as end-to-end orchestration.
 - `README.md` defines the RL training flow as:
 
-  `simulation -> inference.policy_runner -> training.rl_trainer -> checkpoints`
+  `simulation -> pipelines.train_rl (SB3 PPO + Gymnasium) -> exported legacy checkpoint -> inference.policy_runner`
+  *(historical README flow: `simulation -> inference.policy_runner -> training.rl_trainer -> checkpoints`; `training.rl_trainer` no longer exists)*
 
 - `docs/PROJECT.md` states that the exact RL algorithm has not been fixed.
 - `docs/USAGE.md` describes `configs/training.yaml` as containing reinforcement learning hyperparameters.

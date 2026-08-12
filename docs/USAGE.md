@@ -161,7 +161,7 @@ python scripts/evaluate.py --grasps <path_to_grasps_file> --object-id 003_cracke
 
 ## 6. Configuration
 
-The project separates configuration parameters from source code, storing them in YAML files within the `configs/` directory. The main settings read by the code include:
+The project stores reference experiment settings as YAML files in the `configs/` directory. These files are documentation/default templates, not runtime-loaded configuration: the CLI scripts and pipeline functions accept parameters directly via explicit arguments. The main reference settings documented are:
 
 * General Config (`base.yaml`):
   * `seed`: Random seed (Default: `0`).

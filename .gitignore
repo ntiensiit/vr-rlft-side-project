@@ -14,3 +14,13 @@ MUJOCO_LOG.TXT
 build/
 dist/
 .venv/
+
+artifacts/checkpoints/*.pt
+artifacts/exports/*.npy
+artifacts/exports/tensorboard/
+artifacts/reports/*.json
+artifacts/rl_inference_smoke.py
+data/processed/*.npy
+data/processed/index.json
+data/processed/ycb_mjcf/
+data/observations/

@@ -24,7 +24,7 @@ def prepare_data_index(dataset_root: Path, output_index_path: Path) -> None:
     """
     records = discover_dataset_files(dataset_root)
     entries = [{"path": str(record)} for record in records]
-    save_grasp_dataset_index(output_index_path.parent, entries)
+    save_grasp_dataset_index(output_index_path.parent, entries, output_index_path.name)
 
 
 def generate_synthetic_dataset(
@@ -72,6 +72,16 @@ def generate_synthetic_dataset(
 
             # Generate grasps
             grasps = generate_analytical_grasps(points, normals, num_grasps, gripper_width, rng)
+            if grasps.shape[0] == 0:
+                # Fallback: retry with the relaxed antipodal search so that
+                # objects producing no strict grasps are not saved unusable.
+                grasps = generate_analytical_grasps(
+                    points, normals, num_grasps, gripper_width, rng,
+                    allow_relaxed=True,
+                )
+            if grasps.shape[0] == 0:
+                print(f"Skipping {name}: no valid grasps found.")
+                continue
 
             # Create sample dict
             sample = {

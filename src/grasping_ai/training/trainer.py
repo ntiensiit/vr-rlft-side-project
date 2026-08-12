@@ -1,4 +1,4 @@
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
 import torch
@@ -88,7 +88,7 @@ def build_training_step(
 
 def run_training_loop(
     training_step: TrainingStep,
-    dataloader: Iterator[tuple[torch.Tensor, torch.Tensor]],
+    dataloader: Iterable[tuple[torch.Tensor, torch.Tensor]],
     num_epochs: int,
     checkpoint_path: Path,
     log_every: int,
@@ -100,7 +100,7 @@ def run_training_loop(
 
     Args:
         training_step: Callable returned by ``build_training_step``.
-        dataloader: Iterator yielding ``(inputs, targets)`` batches.
+        dataloader: Iterable yielding ``(inputs, targets)`` batches, refreshed for each epoch.
         num_epochs: Number of full passes over the dataloader.
         checkpoint_path: Path where the final checkpoint should be written.
         log_every: Logging interval measured in training steps.

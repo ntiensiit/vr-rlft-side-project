@@ -228,6 +228,30 @@ def test_run_simulation_creates_outcome_report(minimal_robot_xml, minimal_ycb_ro
     assert "contact_count" in outcome
 
 
+def test_run_simulation_validates_success_contract_params(minimal_robot_xml, minimal_ycb_root):
+    """Verify simulate_grasp validates lift and stability thresholds."""
+    grasp = np.eye(4)
+    grasp[:3, 3] = [0.0, 0.0, 0.3]
+    with pytest.raises(ValueError, match="lift_height_threshold"):
+        simulate_grasp(
+            grasp, "mustard_bottle", minimal_ycb_root,
+            minimal_robot_xml, None, 5, np.zeros(1),
+            lift_height_threshold=-0.01,
+        )
+    with pytest.raises(ValueError, match="max_linear_velocity"):
+        simulate_grasp(
+            grasp, "mustard_bottle", minimal_ycb_root,
+            minimal_robot_xml, None, 5, np.zeros(1),
+            max_linear_velocity=-0.1,
+        )
+    with pytest.raises(ValueError, match="max_angular_velocity"):
+        simulate_grasp(
+            grasp, "mustard_bottle", minimal_ycb_root,
+            minimal_robot_xml, None, 5, np.zeros(1),
+            max_angular_velocity=-0.1,
+        )
+
+
 def test_evaluate_creates_report_from_synthetic_inputs():
     """Verify evaluate_generated_grasps runs evaluation on batch."""
     grasps = np.stack([np.eye(4), np.eye(4)], axis=0)

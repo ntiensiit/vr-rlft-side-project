@@ -1,3 +1,4 @@
+# Documentation/default reference only; runtime pipelines accept parameters via CLI arguments.
 seed: 0
 device: cuda
 output_dir: artifacts

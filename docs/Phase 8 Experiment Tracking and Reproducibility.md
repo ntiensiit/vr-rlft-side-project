@@ -13,12 +13,12 @@ The repository already contains runnable training and evaluation pipelines, but 
 Verified evidence:
 
 - `src/grasping_ai/training/trainer.py::run_training_loop` only prints loss using `print`. It does not persist metrics, hyperparameters, or run metadata.
-- `src/grasping_ai/training/rl_trainer.py::run_rl_training_loop` accepts `log_every` but does not use it. It discards the metrics dictionary returned by the update step.
+- `src/grasping_ai/training/rl_trainer.py::run_rl_training_loop` accepts `log_every` but does not use it. It discards the metrics dictionary returned by the update step. *(historical: module removed in the Phase 9 SB3 migration; the SB3 path logs via TensorBoard)*
 - `pyproject.toml` declares `tensorboard` and `wandb` dependencies, but inspected training, RL, pipeline, and script files do not use either dependency.
 - `src/grasping_ai/pipelines/train.py` hardcodes a local dataloader shuffle through `random.seed(42)` inside `TrainingDataloader.__iter__`, mutating global Python random state.
 - `src/grasping_ai/pipelines/train.py` and `src/grasping_ai/pipelines/train_rl.py` do not expose seed arguments.
 - `scripts/train.py` and `scripts/train_rl.py` do not expose experiment tracking directories or seed arguments.
-- `src/grasping_ai/training/rl_trainer.py::build_rl_training_step` uses a hardcoded discount factor of `0.99`, while `src/grasping_ai/pipelines/train_rl.py::run_rl_training_pipeline` accepts and validates a `gamma` argument but does not pass it into the training step. This is a reproducibility and metadata-consistency defect.
+- `src/grasping_ai/training/rl_trainer.py::build_rl_training_step` uses a hardcoded discount factor of `0.99`, while `src/grasping_ai/pipelines/train_rl.py::run_rl_training_pipeline` accepts and validates a `gamma` argument but does not pass it into the training step. This is a reproducibility and metadata-consistency defect. *(historical: module removed in the Phase 9 SB3 migration; the SB3 PPO path passes gamma directly to the algorithm)*
 - `src/grasping_ai/pipelines/evaluate.py::write_evaluation_report` writes JSON metrics but does not emit tracking artifacts.
 
 **Expected outcome:**
@@ -45,7 +45,7 @@ After this phase:
   - `run_training_loop` prints loss every `log_every` steps and saves a checkpoint at the end.
 
 - **RL training step and loop**
-  - File: `src/grasping_ai/training/rl_trainer.py`
+  - File: `src/grasping_ai/training/rl_trainer.py` *(historical: module no longer exists; the active RL loop is SB3 PPO in `src/grasping_ai/pipelines/train_rl.py`)*
   - `build_rl_training_step`, `run_rl_training_loop`, `compute_discounted_returns`, and `compute_gae_advantages` are implemented.
   - `build_rl_training_step` returns metrics containing `loss`, `policy_loss`, and `mean_reward`.
 
@@ -68,7 +68,7 @@ After this phase:
 ### Partially implemented
 
 - **Logging interval in RL training**
-  - File: `src/grasping_ai/training/rl_trainer.py`
+  - File: `src/grasping_ai/training/rl_trainer.py` *(historical: module removed in the SB3 PPO migration)*
   - `run_rl_training_loop` receives `log_every` but does not use it. The parameter exists but has no behavioral effect.
 
 - **Reproducible supervised data shuffling**
@@ -95,8 +95,8 @@ After this phase:
 - **RL gamma argument is accepted but not honored**
   - File: `src/grasping_ai/pipelines/train_rl.py`
   - `gamma` is validated but never passed into `build_rl_training_step`.
-  - File: `src/grasping_ai/training/rl_trainer.py`
-  - `build_rl_training_step` calls `compute_discounted_returns(transitions, 0.99)`.
+  - File: `src/grasping_ai/training/rl_trainer.py` *(historical: module removed; gamma is now passed directly to SB3 PPO)*
+  - `build_rl_training_step` calls `compute_discounted_returns(transitions, 0.99)`. *(historical: function from the removed module)*
 
 - **Global RNG mutation inside dataloader**
   - File: `src/grasping_ai/pipelines/train.py`
@@ -113,7 +113,7 @@ After this phase:
   - Declared but not used by inspected training or evaluation code before this phase.
 
 - **`compute_gae_advantages`**
-  - File: `src/grasping_ai/training/rl_trainer.py`
+  - File: `src/grasping_ai/training/rl_trainer.py` *(historical: module removed in the SB3 PPO migration)*
   - Implemented, but inspected RL training step does not use it.
 
 - **`load_pretrained_encoder`**
@@ -211,10 +211,9 @@ Current RL flow:
   - calls `src/grasping_ai/pipelines/train_rl.py::run_rl_training_pipeline`
     - calls `src/grasping_ai/simulation/mujoco_env.py` through environment construction
     - constructs policy from `src/grasping_ai/models/rl_policy.py`
-    - constructs RL step from `src/grasping_ai/training/rl_trainer.py`
-    - calls `run_rl_training_loop`
-      - collects rollouts through `collect_rl_rollout`
-      - saves RL checkpoint
+    - constructs `stable_baselines3` PPO against `MuJoCoGraspingEnv`
+    - trains the PPO through the Gymnasium environment
+    - exports a legacy checkpoint via `src/grasping_ai/models/rl_policy.py::save_rl_policy_checkpoint`
 
 Current evaluation flow:
 
@@ -348,7 +347,9 @@ Existing checkpoint consumers must continue to work because extra keys are ignor
 - Seeded noise sampling can change numerical results relative to unseeded prior runs.
 - Optional parameters must preserve existing call sites.
 
-### `src/grasping_ai/training/rl_trainer.py`
+### `src/grasping_ai/training/rl_trainer.py` (historical)
+
+*The module no longer exists. Its intended responsibilities are fulfilled by the SB3 PPO path in `src/grasping_ai/pipelines/train_rl.py`.*
 
 **Current responsibility:** RL update step construction, RL training loop, return computation.
 
@@ -457,8 +458,7 @@ Existing checkpoint consumers must continue to work because extra keys are ignor
 
 **Dependency impact:**
 
-- Depends on updated `rl_trainer.py` signatures.
-- No new module dependency.
+- The dependency on `rl_trainer.py` is removed because the module no longer exists; the pipeline now depends on `stable-baselines3`.
 
 **Regression risk:**
 
@@ -1153,7 +1153,7 @@ Modify:
 
 Then run existing supervised pipeline tests and new supervised tracking tests.
 
-### Step 3: Extend RL trainer
+### Step 3: Extend RL trainer (historical: module removed in the SB3 migration; this step no longer applies)
 
 Modify:
 
