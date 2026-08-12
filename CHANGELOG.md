@@ -63,6 +63,20 @@ scope changes, and design rationale that drove these changes:
 ### Verified
 
 - `scripts/run_artifacts.py` end-to-end run on a clean tree (`data/processed/` and `artifacts/` removed): exit code 0, 44.9s, 9 commands, 13 retained artifacts covering supervised training, RL training, MuJoCo simulation, analytical evaluation, and policy_runner inference. The chain keeps the same object identity end-to-end (`003_cracker_box` / `object_0`). Result captured in `artifacts/verification_log.md` (gitignored). `tests/test_artifact_chain.py` (slow marker) exercises the same flow as part of the local verification gate.
+- Three-stage verification distinction recorded for the project:
+  - **Software pipeline correctness — VERIFIED.** The artifact chain
+    runs end-to-end on a clean tree.
+  - **Learning pipeline execution — VERIFIED mechanically.** Training,
+    checkpoint persistence, and inference all execute; the flow path's
+    joint encoder/checkpoint contract is verified structurally
+    (`tests/test_phase4_flow_training.py`).
+  - **Robotics / research outcome — NOT VERIFIED.** The recorded
+    verification run produced 8/8 IK failures and 0/0 physical grasp
+    successes because the shipped 2-DOF robot cannot reach the
+    diffusion model's outputs and the model itself is undertrained.
+    This is a research-stage condition, not a pipeline defect. See
+    `hot-fix-checklist.md` Priority 13 for the recorded research-stage
+    items.
 
 ## [0.1.0] - Earlier implementation phases
 
