@@ -85,6 +85,13 @@ jobs:
           key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
           restore-keys: |
             uv-${{ runner.os }}-
+      - name: Cache pytest
+        uses: actions/cache@v6
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ hashFiles('uv.lock') }}-${{ github.sha }}
+          restore-keys: |
+            pytest-${{ runner.os }}-${{ hashFiles('uv.lock') }}-
       - name: Install uv
         run: pip install uv
       - name: Sync dependencies
@@ -94,8 +101,7 @@ jobs:
         # and segfaults on CPU-only runners. Local Windows uses torch+cpu (no triton).
         run: uv pip uninstall -y triton || true
       - name: Pytest (excluding slow / artifact-chain tests)
-        # Single process is safe once torch is CPU-pinned (no triton).
         run: >
-          xvfb-run -a uv run --frozen pytest -q -m "not slow"
+          xvfb-run -a uv run --frozen pytest -n auto -q -m "not slow"
           --cov=src/grasping_ai --cov-config=coverage.toml
           --cov-report=term-missing --cov-fail-under=80
