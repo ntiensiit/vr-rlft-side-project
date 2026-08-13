@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Run each fast test module in its own process under xvfb, combine coverage,
-# and tolerate Open3D/MuJoCo teardown segfaults (exit 139) on headless Linux.
+# Run each fast test module in its own process under xvfb, then combine coverage.
 set -euo pipefail
+
+# Prevent Adam -> torch._dynamo -> triton segfaults on headless Linux runners.
+export TORCHDYNAMO_DISABLE=1
+export TORCH_COMPILE_DISABLE=1
 
 shopt -s nullglob
 test_files=(tests/test_*.py)
@@ -25,13 +28,6 @@ run_batch() {
 
   if [[ "${rc}" -eq 5 ]]; then
     echo "No non-slow tests in ${test_file}; skipping."
-    return 0
-  fi
-  if [[ "${rc}" -eq 139 ]]; then
-    echo "Ignoring teardown segfault (139) for ${test_file}"
-    if [[ -f "${data_file}" ]]; then
-      coverage_files+=("${data_file}")
-    fi
     return 0
   fi
   if [[ "${rc}" -ne 0 ]]; then

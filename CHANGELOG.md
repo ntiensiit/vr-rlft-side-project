@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Training dataloader re-instantiation; RL env object propagation; simulation judges; artifact-chain object identity; flow encoder checkpoint contract — [ADR-0003](docs/adr/003-flow-checkpoint-joint-encoder.md).
-- GitHub CI pytest step on Linux: headless Open3D/Mesa/EGL setup, xvfb, hatch package path; Open3D import before NumPy in data-prep scripts to avoid subprocess segfault (exit 139).
+- GitHub CI pytest step on Linux: headless Open3D/Mesa/EGL setup, xvfb, hatch package path; Open3D import before NumPy in data-prep scripts; disable Torch Dynamo/compile (`TORCHDYNAMO_DISABLE`) so Adam construction does not load triton and segfault mid-test.
 
 ## [0.1.0] - Earlier implementation phases
 

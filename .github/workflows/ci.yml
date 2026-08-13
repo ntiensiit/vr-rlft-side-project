@@ -44,6 +44,8 @@ jobs:
       EGL_PLATFORM: surfaceless
       PYTHONFAULTHANDLER: "1"
       OMP_NUM_THREADS: "1"
+      TORCHDYNAMO_DISABLE: "1"
+      TORCH_COMPILE_DISABLE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies

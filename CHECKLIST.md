@@ -8,7 +8,7 @@ Open implementation and research tasks for the grasping-ai side project.
 | --- | --- | --- |
 | Local gate pass | Engineering verification on this machine | 226 passed, 85.74% coverage, ruff clean, mypy clean on 48 source files (2026-08-13) |
 | Record in this file | Repository-recorded verification | Same as local gate above |
-| GitHub Actions on current `dev` HEAD | GitHub CI verified | Run #38 (`5a67beb`) pending confirmation; matrix #30 proved all 12 fast modules pass |
+| GitHub Actions on current `dev` HEAD | GitHub CI verified | Failed: mid-test triton/dynamo segfaults misclassified as teardown; fix pending (`TORCHDYNAMO_DISABLE`) |
 
 Local verify gate (run after each code change):
 
@@ -91,7 +91,7 @@ Pass/fail: step exits 0; log reports success on source files.
 
 Step name in log: `Pytest (excluding slow / artifact-chain tests)`
 
-Command in CI: `bash scripts/ci_pytest.sh` (two `coverage run` batches under `xvfb-run`, then `coverage report --fail-under=80`)
+Command in CI: `bash scripts/ci_pytest.sh` (per-module `coverage run` under `xvfb-run`, then `coverage report --fail-under=80`; Torch Dynamo disabled)
 
 Pass/fail: step exits 0; tests ran (not skipped); coverage gate at or above 80%.
 
