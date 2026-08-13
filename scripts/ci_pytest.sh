@@ -11,12 +11,15 @@ run_batch() {
   local test_file="$1"
   local module_id
   module_id="$(basename "${test_file}" .py)"
-  local data_file=".coverage.ci.${module_id}"
+  local data_file="cov-ci-${module_id}"
   local rc=0
 
   echo "=== ${test_file} ==="
   set +e
-  COVERAGE_FILE="${data_file}" xvfb-run -a uv run coverage run --rcfile=coverage.toml -m pytest -q "${test_file}" -m "not slow"
+  (
+    export COVERAGE_FILE="${data_file}"
+    xvfb-run -a uv run coverage run --rcfile=coverage.toml -m pytest -q "${test_file}" -m "not slow"
+  )
   rc=$?
   set -e
 
@@ -37,6 +40,9 @@ run_batch() {
   fi
   if [[ -f "${data_file}" ]]; then
     coverage_files+=("${data_file}")
+  else
+    echo "Expected coverage data file missing: ${data_file}" >&2
+    exit 1
   fi
 }
 
@@ -53,5 +59,9 @@ if ((${#coverage_files[@]} == 0)); then
 fi
 
 export COVERAGE_FILE=.coverage
-uv run coverage combine "${coverage_files[@]}"
+if ((${#coverage_files[@]} == 1)); then
+  cp "${coverage_files[0]}" .coverage
+else
+  uv run coverage combine --rcfile=coverage.toml "${coverage_files[@]}"
+fi
 uv run coverage report --rcfile=coverage.toml --fail-under=80
