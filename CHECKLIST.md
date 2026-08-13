@@ -8,7 +8,7 @@ Open implementation and research tasks for the grasping-ai side project.
 | --- | --- | --- |
 | Local gate pass | Engineering verification on this machine | 226 passed, 85.74% coverage, ruff clean, mypy clean on 48 source files (2026-08-13) |
 | Record in this file | Repository-recorded verification | Same as local gate above |
-| GitHub Actions on current `dev` HEAD | GitHub CI verified | Run #37 (`935a012`) pending confirmation; matrix run #30 proved all 12 fast modules pass on Linux |
+| GitHub Actions on current `dev` HEAD | GitHub CI verified | Run #38 (`5a67beb`) pending confirmation; matrix #30 proved all 12 fast modules pass |
 
 Local verify gate (run after each code change):
 
