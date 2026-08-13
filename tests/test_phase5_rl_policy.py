@@ -526,3 +526,84 @@ def test_run_policy_step_execution() -> None:
     assert action.shape == (2,)
     assert np.allclose(action, [0.1, -0.1])
 
+
+def test_rl_policy_additional_validations(tmp_path: Path) -> None:
+    policy = build_policy_network(4, 2, 16, 2)
+    checkpoint_path = tmp_path / "policy.pt"
+
+    with pytest.raises(ValueError, match="hidden_dim must be positive"):
+        save_rl_policy_checkpoint(policy, checkpoint_path, 1, 4, 2, 0, 2)
+
+    with pytest.raises(ValueError, match="num_layers must be positive"):
+        save_rl_policy_checkpoint(policy, checkpoint_path, 1, 4, 2, 16, 0)
+
+    tensor_ckpt = {
+        "observation_dim": torch.tensor(4),
+        "action_dim": torch.tensor(2),
+        "hidden_dim": torch.tensor(16),
+        "num_layers": torch.tensor(2),
+    }
+    assert read_rl_policy_metadata(tensor_ckpt) == (4, 2, 16, 2)
+
+    corrupted_ckpt = {
+        "observation_dim": "invalid",
+        "action_dim": 2,
+        "hidden_dim": 16,
+        "num_layers": 2,
+    }
+    assert read_rl_policy_metadata(corrupted_ckpt) is None
+
+    with pytest.raises(ValueError, match="hidden_dim must be positive"):
+        build_policy_network(4, 2, 0, 2)
+
+    with pytest.raises(ValueError, match="num_layers must be positive"):
+        build_policy_network(4, 2, 16, 0)
+
+    with pytest.raises(ValueError, match="observation_dim must be positive"):
+        build_value_network(0, 16, 2)
+
+    with pytest.raises(ValueError, match="hidden_dim must be positive"):
+        build_value_network(4, 0, 2)
+
+    with pytest.raises(ValueError, match="num_layers must be positive"):
+        build_value_network(4, 16, 0)
+
+    obs = torch.randn(2, 4)
+    with pytest.raises(TypeError, match=r"rng must be a torch\.Generator"):
+        select_action(policy, obs, "not_a_generator")  # type: ignore[arg-type]
+
+
+def test_run_rl_training_pipeline_integration(tmp_path: Path) -> None:
+    ycb_dir = tmp_path / "ycb"
+    ycb_dir.mkdir()
+    robot_xml = tmp_path / "robot.xml"
+    robot_xml.write_text(MINIMAL_ACTUATED_ROBOT_XML, encoding="utf-8")
+    policy_ckpt = tmp_path / "trained_policy.pt"
+
+    from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
+
+    env = MuJoCoGraspingEnv(robot_xml)
+    obs_dim = env.observation_space.shape[0]
+    act_dim = env.action_space.shape[0]
+    env.close()
+
+    run_rl_training_pipeline(
+        robot_xml_path=robot_xml,
+        ycb_root=ycb_dir,
+        object_ids=[],
+        policy_checkpoint_path=policy_ckpt,
+        observation_dim=obs_dim,
+        action_dim=act_dim,
+        hidden_dim=16,
+        learning_rate=1e-3,
+        num_updates=1,
+        gamma=0.99,
+        device="cpu",
+        seed=42,
+    )
+
+    assert policy_ckpt.is_file()
+    ckpt = torch.load(policy_ckpt, map_location="cpu")
+    assert ckpt["observation_dim"] == obs_dim
+    assert ckpt["action_dim"] == act_dim
+

@@ -1067,3 +1067,28 @@ def test_simulate_grasp_and_sweep_validations(actuated_robot_xml, tmp_path: Path
             num_simulation_steps=10,
             gripper_close_command=np.zeros(1),
         )
+
+
+def test_run_simulation_sweep_execution(monkeypatch, actuated_robot_xml, tmp_path: Path) -> None:
+    ycb_dir = tmp_path / "ycb"
+    ycb_dir.mkdir()
+
+    def dummy_simulate_grasp(**kwargs):
+        return {"success": True, "grasp_pose": kwargs["grasp_pose"]}
+
+    import sys
+    sim_mod = sys.modules["grasping_ai.pipelines.simulate_grasp"]
+    monkeypatch.setattr(sim_mod, "simulate_grasp", dummy_simulate_grasp)
+
+    grasps = np.stack([np.eye(4), np.eye(4)], axis=0)
+    outcomes = run_simulation_sweep(
+        grasp_poses=grasps,
+        object_id="mustard_bottle",
+        ycb_root=ycb_dir,
+        robot_xml_path=actuated_robot_xml,
+        table_xml_path=None,
+        num_simulation_steps=10,
+        gripper_close_command=np.zeros(1),
+    )
+    assert len(outcomes) == 2
+    assert outcomes[0]["success"]
