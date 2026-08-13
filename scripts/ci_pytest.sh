@@ -5,38 +5,39 @@ set -euo pipefail
 
 shopt -s nullglob
 test_files=(tests/test_*.py)
-
-export COVERAGE_FILE=.coverage.ci
-rm -f .coverage.ci
-
-first_batch=1
+coverage_files=()
 
 run_batch() {
   local test_file="$1"
+  local module_id
+  module_id="$(basename "${test_file}" .py)"
+  local data_file=".coverage.ci.${module_id}"
   local rc=0
-  local append_flag=()
-  if [[ "${first_batch}" -eq 0 ]]; then
-    append_flag=(--append)
-  fi
+
   echo "=== ${test_file} ==="
   set +e
-  xvfb-run -a uv run coverage run "${append_flag[@]}" --rcfile=coverage.toml -m pytest -q "${test_file}" -m "not slow"
+  COVERAGE_FILE="${data_file}" xvfb-run -a uv run coverage run --rcfile=coverage.toml -m pytest -q "${test_file}" -m "not slow"
   rc=$?
   set -e
+
   if [[ "${rc}" -eq 5 ]]; then
     echo "No non-slow tests in ${test_file}; skipping."
     return 0
   fi
   if [[ "${rc}" -eq 139 ]]; then
     echo "Ignoring teardown segfault (139) for ${test_file}"
-    first_batch=0
+    if [[ -f "${data_file}" ]]; then
+      coverage_files+=("${data_file}")
+    fi
     return 0
   fi
   if [[ "${rc}" -ne 0 ]]; then
     echo "pytest failed for ${test_file} with exit ${rc}" >&2
     exit "${rc}"
   fi
-  first_batch=0
+  if [[ -f "${data_file}" ]]; then
+    coverage_files+=("${data_file}")
+  fi
 }
 
 for test_file in "${test_files[@]}"; do
@@ -46,5 +47,11 @@ for test_file in "${test_files[@]}"; do
   run_batch "${test_file}"
 done
 
-export COVERAGE_FILE=.coverage.ci
+if ((${#coverage_files[@]} == 0)); then
+  echo "No coverage data files were produced" >&2
+  exit 1
+fi
+
+export COVERAGE_FILE=.coverage
+uv run coverage combine "${coverage_files[@]}"
 uv run coverage report --rcfile=coverage.toml --fail-under=80
