@@ -470,3 +470,59 @@ def test_select_action_rejects_negative_noise_scale():
     rng = torch.Generator()
     with pytest.raises(ValueError, match="non-negative"):
         select_action(policy, obs, rng, noise_scale=-0.1)
+
+
+def test_build_rl_policy_runner_additional_branches(tmp_path: Path) -> None:
+    policy = build_policy_network(4, 2, 16, 2)
+    checkpoint_path = tmp_path / "policy.pt"
+    save_rl_policy_checkpoint(policy, checkpoint_path, 1, 4, 2, 16, 2)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+    with pytest.raises(ValueError, match="action_low must have shape"):
+        build_rl_policy_runner(checkpoint, 4, 2, "cpu", action_low=[0.0])
+
+    with pytest.raises(ValueError, match="action_high must have shape"):
+        build_rl_policy_runner(checkpoint, 4, 2, "cpu", action_high=[1.0, 1.0, 1.0])
+
+    stochastic_runner = build_rl_policy_runner(
+        checkpoint,
+        4,
+        2,
+        "cpu",
+        stochastic=True,
+        exploration_noise=0.1,
+        seed=42,
+        action_low=[-0.5, -0.5],
+        action_high=[0.5, 0.5],
+    )
+    obs = np.random.randn(4).astype(np.float32)
+    action = stochastic_runner(obs)
+    assert action.shape == (2,)
+    assert np.all(action >= -0.5)
+    assert np.all(action <= 0.5)
+
+    with pytest.raises(TypeError, match="observation must be a numpy array"):
+        stochastic_runner("invalid_obs")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="observation must have shape"):
+        stochastic_runner(np.zeros(3))
+
+
+def test_load_rl_policy_checkpoint_validations(tmp_path: Path) -> None:
+    with pytest.raises(TypeError, match="checkpoint_path must be"):
+        load_rl_policy_checkpoint("invalid_path", "cpu")  # type: ignore[arg-type]
+
+    non_existent = tmp_path / "missing.pt"
+    with pytest.raises(FileNotFoundError, match="Checkpoint file not found"):
+        load_rl_policy_checkpoint(non_existent, "cpu")
+
+
+def test_run_policy_step_execution() -> None:
+    def dummy_runner(obs: np.ndarray) -> np.ndarray:
+        return np.array([0.1, -0.1], dtype=np.float32)
+
+    obs = np.zeros(4, dtype=np.float32)
+    action = run_policy_step(dummy_runner, obs)
+    assert action.shape == (2,)
+    assert np.allclose(action, [0.1, -0.1])
+

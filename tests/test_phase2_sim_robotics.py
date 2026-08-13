@@ -3,6 +3,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from grasping_ai.pipelines.simulate_grasp import (
+    run_simulation_sweep,
+    simulate_grasp,
+)
 from grasping_ai.robotics.gripper import (
     build_gripper_controller,
     load_gripper_model,
@@ -956,3 +960,110 @@ def test_set_actuator_controls_validation(actuated_robot_xml):
         set_actuator_controls(state, np.array([np.nan]))
     with pytest.raises(ValueError, match="shape"):
         set_actuator_controls(state, np.array([0.1, 0.2]))
+
+
+def test_simulate_grasp_and_sweep_validations(actuated_robot_xml, tmp_path: Path) -> None:
+    ycb_dir = tmp_path / "ycb"
+    ycb_dir.mkdir()
+
+    with pytest.raises(ValueError, match="grasp_pose must have shape"):
+        simulate_grasp(
+            grasp_pose=np.zeros(3),
+            object_id="mustard_bottle",
+            ycb_root=ycb_dir,
+            robot_xml_path=actuated_robot_xml,
+            table_xml_path=None,
+            num_simulation_steps=10,
+            gripper_close_command=np.zeros(1),
+        )
+
+    with pytest.raises(FileNotFoundError, match="robot_xml_path not found"):
+        simulate_grasp(
+            grasp_pose=np.eye(4),
+            object_id="mustard_bottle",
+            ycb_root=ycb_dir,
+            robot_xml_path=tmp_path / "missing_robot.xml",
+            table_xml_path=None,
+            num_simulation_steps=10,
+            gripper_close_command=np.zeros(1),
+        )
+
+    with pytest.raises(FileNotFoundError, match="ycb_root not found"):
+        simulate_grasp(
+            grasp_pose=np.eye(4),
+            object_id="mustard_bottle",
+            ycb_root=tmp_path / "missing_ycb",
+            robot_xml_path=actuated_robot_xml,
+            table_xml_path=None,
+            num_simulation_steps=10,
+            gripper_close_command=np.zeros(1),
+        )
+
+    with pytest.raises(ValueError, match="num_simulation_steps must be positive"):
+        simulate_grasp(
+            grasp_pose=np.eye(4),
+            object_id="mustard_bottle",
+            ycb_root=ycb_dir,
+            robot_xml_path=actuated_robot_xml,
+            table_xml_path=None,
+            num_simulation_steps=0,
+            gripper_close_command=np.zeros(1),
+        )
+
+    with pytest.raises(ValueError, match="lift_height_threshold must be non-negative"):
+        simulate_grasp(
+            grasp_pose=np.eye(4),
+            object_id="mustard_bottle",
+            ycb_root=ycb_dir,
+            robot_xml_path=actuated_robot_xml,
+            table_xml_path=None,
+            num_simulation_steps=10,
+            gripper_close_command=np.zeros(1),
+            lift_height_threshold=-0.1,
+        )
+
+    with pytest.raises(ValueError, match="max_linear_velocity must be non-negative"):
+        simulate_grasp(
+            grasp_pose=np.eye(4),
+            object_id="mustard_bottle",
+            ycb_root=ycb_dir,
+            robot_xml_path=actuated_robot_xml,
+            table_xml_path=None,
+            num_simulation_steps=10,
+            gripper_close_command=np.zeros(1),
+            max_linear_velocity=-0.1,
+        )
+
+    with pytest.raises(ValueError, match="max_angular_velocity must be non-negative"):
+        simulate_grasp(
+            grasp_pose=np.eye(4),
+            object_id="mustard_bottle",
+            ycb_root=ycb_dir,
+            robot_xml_path=actuated_robot_xml,
+            table_xml_path=None,
+            num_simulation_steps=10,
+            gripper_close_command=np.zeros(1),
+            max_angular_velocity=-0.1,
+        )
+
+    with pytest.raises(ValueError, match="grasp_poses must have shape"):
+        run_simulation_sweep(
+            grasp_poses=np.zeros((10, 3)),
+            object_id="mustard_bottle",
+            ycb_root=ycb_dir,
+            robot_xml_path=actuated_robot_xml,
+            table_xml_path=None,
+            num_simulation_steps=10,
+            gripper_close_command=np.zeros(1),
+        )
+
+    with pytest.raises(ValueError, match="grasp_poses must have shape"):
+        run_simulation_sweep(
+            grasp_poses=np.zeros((2, 2, 4, 4)),
+            object_id="mustard_bottle",
+            ycb_root=ycb_dir,
+            robot_xml_path=actuated_robot_xml,
+            table_xml_path=None,
+            num_simulation_steps=10,
+            gripper_close_command=np.zeros(1),
+        )

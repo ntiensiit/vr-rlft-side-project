@@ -34,6 +34,11 @@ from grasping_ai.models.equivariant_encoder import (
 from grasping_ai.models.flow import FlowGeneratorModel
 from grasping_ai.pipelines.generate_grasps import write_generated_grasps
 from grasping_ai.pipelines.train import load_pretrained_encoder, run_training_pipeline
+from grasping_ai.training.checkpoint_io import (
+    checkpoint_scalar_int,
+    load_torch_checkpoint,
+    read_model_checkpoint_metadata,
+)
 from grasping_ai.training.losses import build_diffusion_score_loss, build_grasp_pose_regression_loss
 from grasping_ai.training.trainer import (
     build_adam_optimizer,
@@ -832,4 +837,57 @@ def test_generated_grasps_follow_input_frame(builder: str):
     assert grasps.shape == (6, 4, 4)
     assert grasps_translated.shape == (6, 4, 4)
     assert not np.allclose(grasps, grasps_translated, atol=1e-6)
+
+
+def test_checkpoint_io_validations_and_infer_kinds(tmp_path: Path) -> None:
+    with pytest.raises(TypeError, match="checkpoint_path must be"):
+        load_torch_checkpoint("not_a_path", "cpu")  # type: ignore[arg-type]
+
+    non_existent = tmp_path / "missing.pt"
+    with pytest.raises(FileNotFoundError, match="Checkpoint file not found"):
+        load_torch_checkpoint(non_existent, "cpu")
+
+    corrupted_file = tmp_path / "corrupted.pt"
+    corrupted_file.write_bytes(b"invalid data")
+    with pytest.raises(ValueError, match="Failed to load checkpoint"):
+        load_torch_checkpoint(corrupted_file, "cpu")
+
+    non_dict_file = tmp_path / "non_dict.pt"
+    torch.save([1, 2, 3], non_dict_file)
+    with pytest.raises(ValueError, match="must deserialize to a dictionary"):
+        load_torch_checkpoint(non_dict_file, "cpu")
+
+    assert checkpoint_scalar_int(torch.tensor(5)) == 5
+    assert checkpoint_scalar_int(True) == 1
+    assert checkpoint_scalar_int(4.8) == 4
+    with pytest.raises(TypeError, match="Expected numeric checkpoint scalar"):
+        checkpoint_scalar_int("invalid_scalar")  # type: ignore[arg-type]
+
+    flow_ckpt_file = tmp_path / "flow_ckpt.pt"
+    torch.save(
+        {
+            "model_state_dict": {"flow_field.weight": torch.zeros(1)},
+            "architecture": "flow_matching",
+            "pipeline": "flow_training",
+            "feature_dim": 128,
+        },
+        flow_ckpt_file,
+    )
+    flow_meta = read_model_checkpoint_metadata(flow_ckpt_file)
+    assert flow_meta["kind"] == "flow"
+    assert flow_meta["architecture"] == "flow_matching"
+    assert flow_meta["pipeline"] == "flow_training"
+    assert flow_meta["feature_dim"] == 128
+
+    diff_ckpt_file = tmp_path / "diff_ckpt.pt"
+    torch.save(
+        {
+            "model_state_dict": {"score_net.weight": torch.zeros(1)},
+            "hidden_dim": 256,
+        },
+        diff_ckpt_file,
+    )
+    diff_meta = read_model_checkpoint_metadata(diff_ckpt_file)
+    assert diff_meta["kind"] == "diffusion"
+    assert diff_meta["hidden_dim"] == 256
 

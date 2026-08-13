@@ -6,8 +6,26 @@ import numpy as np
 import pytest
 from scripts.evaluate import evaluate_main
 
-from grasping_ai.evaluation.collision import generate_analytical_contacts
-from grasping_ai.evaluation.force_closure import compute_grasp_quality
+from grasping_ai.evaluation.collision import (
+    build_collision_checker,
+    check_collision,
+    filter_collision_free_grasps,
+    generate_analytical_contacts,
+)
+from grasping_ai.evaluation.force_closure import (
+    build_force_closure_judge,
+    compute_grasp_quality,
+    compute_grasp_wrench_matrix,
+    evaluate_force_closure,
+    load_contact_set,
+)
+from grasping_ai.evaluation.metrics import (
+    aggregate_grasp_success_rate,
+    build_lift_outcome_judge,
+    build_stability_judge,
+    evaluate_lift_success,
+    evaluate_stability,
+)
 from grasping_ai.pipelines.evaluate import (
     aggregate_evaluation_results,
     evaluate_generated_grasps,
@@ -211,3 +229,205 @@ def test_evaluate_script_dictionary(temp_files):
 
     assert "success_rate" in report
     assert "mean_grasp_quality" in report
+
+
+def test_force_closure_load_contact_set_validations(tmp_path: Path) -> None:
+    with pytest.raises(TypeError, match="contact_path must be"):
+        load_contact_set("not_a_path")  # type: ignore[arg-type]
+
+    non_existent = tmp_path / "missing.npy"
+    with pytest.raises(FileNotFoundError, match="Contact file not found"):
+        load_contact_set(non_existent)
+
+    contacts = [{"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])}]
+    payload = np.empty((), dtype=object)
+    payload[()] = contacts
+    valid_file = tmp_path / "contacts.npy"
+    np.save(valid_file, payload, allow_pickle=True)
+    loaded = load_contact_set(valid_file)
+    assert len(loaded) == 1
+
+    corrupted_file = tmp_path / "corrupted.npy"
+    corrupted_file.write_bytes(b"invalid data")
+    with pytest.raises(ValueError, match="Failed to load contact set"):
+        load_contact_set(corrupted_file)
+
+
+def test_force_closure_judge_and_quality_validations() -> None:
+    with pytest.raises(ValueError, match="friction_coefficient must be non-negative"):
+        build_force_closure_judge(-0.1, 0.01)
+
+    with pytest.raises(ValueError, match="wrench_regularization must be non-negative"):
+        build_force_closure_judge(0.5, -0.01)
+
+    judge = build_force_closure_judge(0.5, 0.01)
+    assert not judge([])
+    assert not evaluate_force_closure(judge, [])
+
+    contacts_x_normal = [
+        {"position": np.array([-0.05, 0.0, 0.0]), "normal": np.array([1.0, 0.0, 0.0])},
+        {"position": np.array([0.05, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])},
+        {"position": np.array([0.0, -0.05, 0.0]), "normal": np.array([0.0, 1.0, 0.0])},
+        {"position": np.array([0.0, 0.05, 0.0]), "normal": np.array([0.0, -1.0, 0.0])},
+        {"position": np.array([0.0, 0.0, -0.05]), "normal": np.array([0.0, 0.0, 1.0])},
+        {"position": np.array([0.0, 0.0, 0.05]), "normal": np.array([0.0, 0.0, -1.0])},
+    ]
+
+    with pytest.raises(ValueError, match="friction_coefficient must be non-negative"):
+        compute_grasp_quality(contacts_x_normal, -0.5)
+
+    q = compute_grasp_quality(contacts_x_normal, 0.5)
+    assert q > 0.0
+
+
+def test_metrics_validations() -> None:
+    with pytest.raises(ValueError, match="max_linear_velocity must be non-negative"):
+        build_stability_judge(-1.0, 1.0)
+    with pytest.raises(ValueError, match="max_angular_velocity must be non-negative"):
+        build_stability_judge(1.0, -1.0)
+
+    stab_judge = build_stability_judge(1.0, 1.0)
+    with pytest.raises(TypeError, match="object_velocity must be a numpy array"):
+        evaluate_stability(stab_judge, [0.0] * 6)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="6D velocity"):
+        evaluate_stability(stab_judge, np.zeros(3))
+
+    assert evaluate_stability(stab_judge, np.zeros(6))
+    assert not evaluate_stability(stab_judge, np.ones(6) * 10.0)
+
+    with pytest.raises(ValueError, match="lift_height_threshold must be non-negative"):
+        build_lift_outcome_judge(-0.1)
+
+    lift_judge = build_lift_outcome_judge(0.05)
+    with pytest.raises(TypeError, match="initial_height must be a number"):
+        evaluate_lift_success(lift_judge, "invalid", 0.1)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="final_height must be a number"):
+        evaluate_lift_success(lift_judge, 0.0, "invalid")  # type: ignore[arg-type]
+
+    assert evaluate_lift_success(lift_judge, 0.0, 0.06)
+    assert not evaluate_lift_success(lift_judge, 0.0, 0.02)
+
+    with pytest.raises(TypeError, match="per_object_success must be a dictionary"):
+        aggregate_grasp_success_rate("not_a_dict")  # type: ignore[arg-type]
+    assert aggregate_grasp_success_rate({}) == 0.0
+    assert aggregate_grasp_success_rate({"obj1": True, "obj2": False}) == 0.5
+
+
+def test_collision_and_evaluate_pipeline_validations() -> None:
+    with pytest.raises(ValueError, match="clearance must be non-negative"):
+        build_collision_checker(np.zeros((10, 3)), np.zeros((5, 3)), -0.05)
+
+    obj_pc = np.zeros((10, 3))
+    grip_pc = np.full((5, 3), 10.0)
+    checker = build_collision_checker(obj_pc, grip_pc, 0.005)
+    with pytest.raises(ValueError, match="grasp_pose must have shape"):
+        check_collision(checker, np.zeros((3, 3)))
+
+    with pytest.raises(ValueError, match="grasp_poses must have shape"):
+        filter_collision_free_grasps(checker, np.zeros((10, 2)))
+
+    empty_filtered = filter_collision_free_grasps(checker, np.zeros((0, 4, 4)))
+    assert empty_filtered.shape == (0, 4, 4)
+
+    res_2d = filter_collision_free_grasps(checker, np.eye(4))
+    assert res_2d.shape == (1, 4, 4)
+
+    empty_evals = evaluate_generated_grasps(
+        grasp_poses=np.zeros((0, 4, 4)),
+        object_point_cloud=np.zeros((10, 3)),
+        gripper_point_cloud=np.zeros((5, 3)),
+    )
+    assert len(empty_evals) == 0
+
+    assert aggregate_evaluation_results({})["success_rate"] == 0.0
+
+
+def test_force_closure_additional_branches() -> None:
+    incomplete_contacts = [{"position": np.zeros(3)}, {"normal": np.zeros(3)}]
+    w_matrix = compute_grasp_wrench_matrix(incomplete_contacts, 0.5)
+    assert w_matrix.shape == (6, 0)
+
+    zero_contacts = [{"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])} for _ in range(7)]
+    q_zero = compute_grasp_quality(zero_contacts, 0.5)
+    assert q_zero == 0.0
+
+
+def test_collision_additional_branches() -> None:
+    with pytest.raises(ValueError, match="object_point_cloud"):
+        build_collision_checker(np.zeros(3), np.zeros((5, 3)), 0.05)
+
+    with pytest.raises(ValueError, match="gripper_point_cloud"):
+        build_collision_checker(np.zeros((10, 3)), np.zeros(3), 0.05)
+
+    with pytest.raises(ValueError, match="object_point_cloud"):
+        generate_analytical_contacts("not_array", np.zeros((5, 3)), np.eye(4), 0.05)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="gripper_point_cloud"):
+        generate_analytical_contacts(np.zeros((10, 3)), "not_array", np.eye(4), 0.05)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="grasp_pose"):
+        generate_analytical_contacts(np.zeros((10, 3)), np.zeros((5, 3)), np.zeros(3), 0.05)
+
+    with pytest.raises(ValueError, match="finite"):
+        generate_analytical_contacts(np.full((10, 3), np.nan), np.zeros((5, 3)), np.eye(4), 0.05)
+
+    with pytest.raises(ValueError, match="finite"):
+        generate_analytical_contacts(np.zeros((10, 3)), np.full((5, 3), np.inf), np.eye(4), 0.05)
+
+    with pytest.raises(ValueError, match="finite"):
+        generate_analytical_contacts(np.zeros((10, 3)), np.zeros((5, 3)), np.full((4, 4), np.nan), 0.05)
+
+    with pytest.raises(ValueError, match="contact_clearance"):
+        generate_analytical_contacts(np.zeros((10, 3)), np.zeros((5, 3)), np.eye(4), -0.01)
+
+    assert generate_analytical_contacts(np.zeros((0, 3)), np.zeros((5, 3)), np.eye(4), 0.05) == []
+
+    contacts_overlap = generate_analytical_contacts(np.zeros((1, 3)), np.zeros((1, 3)), np.eye(4), 0.05)
+    assert len(contacts_overlap) == 1
+    assert np.allclose(contacts_overlap[0]["normal"], [0.0, 0.0, 1.0])
+
+    colliding_checker = build_collision_checker(np.zeros((10, 3)), np.zeros((5, 3)), 0.05)
+    assert filter_collision_free_grasps(colliding_checker, np.eye(4)).shape == (0, 4, 4)
+    assert filter_collision_free_grasps(colliding_checker, np.stack([np.eye(4), np.eye(4)])).shape == (0, 4, 4)
+
+
+def test_evaluate_pipeline_additional_branches(tmp_path: Path) -> None:
+    contacts = [{"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])}]
+    payload = np.empty((), dtype=object)
+    payload[()] = contacts
+    contact_file = tmp_path / "contacts.npy"
+    np.save(contact_file, payload, allow_pickle=True)
+
+    evals_from_path = evaluate_generated_grasps(
+        grasp_poses=np.eye(4),
+        object_point_cloud=np.zeros((10, 3)),
+        gripper_point_cloud=np.zeros((5, 3)),
+        contact_path=contact_file,
+        filter_collisions=True,
+    )
+    assert len(evals_from_path) == 0
+
+    custom_evals = evaluate_generated_grasps(
+        grasp_poses=np.eye(4),
+        object_point_cloud=np.full((10, 3), 10.0),
+        gripper_point_cloud=np.zeros((5, 3)),
+        contact_set_provider=lambda pose: [],
+    )
+    assert len(custom_evals) == 1
+    assert not custom_evals[0]["force_closure"]
+
+    with pytest.raises(TypeError, match="per_object_results must be a dictionary"):
+        aggregate_evaluation_results("not_a_dict")  # type: ignore[arg-type]
+
+
+def test_force_closure_additional_rank_and_friction() -> None:
+    with pytest.raises(ValueError, match="friction_coefficient must be non-negative"):
+        compute_grasp_wrench_matrix([], -0.5)
+
+    judge = build_force_closure_judge(0.5, wrench_regularization=0.0)
+    single_contact = [{"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])}]
+    assert not judge(single_contact)
+
+    zero_normal_contact = [{"position": np.zeros(3), "normal": np.zeros(3)}]
+    w_zero = compute_grasp_wrench_matrix(zero_normal_contact, 0.5)
+    assert w_zero.shape == (6, 4)

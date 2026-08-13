@@ -7,9 +7,14 @@ import pytest
 
 from grasping_ai.data.pointcloud_dataset import (
     discover_dataset_files,
+    generate_analytical_grasps,
     iterate_grasp_dataset,
     load_grasp_sample,
     resolve_ycb_object_id,
+)
+from grasping_ai.data.training_pairs import (
+    build_supervised_training_pairs,
+    validate_grasp_dataset,
 )
 from grasping_ai.data.transforms import (
     compose_transforms,
@@ -655,4 +660,74 @@ def test_merge_point_clouds_validation():
         merge_point_clouds("not_a_list")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="shape \\(N, 3\\)"):
         merge_point_clouds([np.random.randn(4, 2)])
+
+
+def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
+    with pytest.raises(TypeError, match="dataset_root must be"):
+        validate_grasp_dataset("not_a_path")  # type: ignore[arg-type]
+
+    empty_root = tmp_path / "empty_dataset"
+    empty_root.mkdir()
+    with pytest.raises(ValueError, match="No dataset record files"):
+        validate_grasp_dataset(empty_root)
+
+    with pytest.raises(TypeError, match="dataset_root must be"):
+        build_supervised_training_pairs("not_a_path")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="No dataset record files"):
+        build_supervised_training_pairs(empty_root)
+
+    dataset_dir = tmp_path / "valid_dataset"
+    dataset_dir.mkdir()
+    sample_file = dataset_dir / "sample_001.npy"
+    pc = np.random.randn(20, 3).astype(np.float32)
+    grasps = np.tile(np.eye(4, dtype=np.float32), (2, 1, 1))
+    np.save(sample_file, {"point_cloud": pc, "grasp_poses": grasps}, allow_pickle=True)
+
+    pairs = build_supervised_training_pairs(dataset_dir, augment=True, seed=42)
+    assert len(pairs) == 2
+    assert pairs[0][0].shape == (20, 3)
+    assert pairs[0][1].shape == (9,)
+
+    invalid_file = dataset_dir / "invalid_sample.npy"
+    np.save(invalid_file, {"point_cloud": "not_array", "grasp_poses": grasps}, allow_pickle=True)
+    with pytest.raises(TypeError, match="must be a numpy array"):
+        build_supervised_training_pairs(dataset_dir)
+
+
+def test_generate_analytical_grasps_validations_and_fallbacks() -> None:
+    pts = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.04]], dtype=np.float64)
+    normals = np.array([[0.0, 0.0, 1.0], [0.0, 0.0, -1.0]], dtype=np.float64)
+    rng = np.random.default_rng(42)
+
+    with pytest.raises(ValueError, match="points must be of shape"):
+        generate_analytical_grasps(np.zeros(3), normals, 2, 0.05, rng)
+
+    with pytest.raises(ValueError, match="normals must be of shape"):
+        generate_analytical_grasps(pts, np.zeros(3), 2, 0.05, rng)
+
+    with pytest.raises(ValueError, match="same length"):
+        generate_analytical_grasps(pts, normals[:1], 2, 0.05, rng)
+
+    with pytest.raises(TypeError, match="rng must be"):
+        generate_analytical_grasps(pts, normals, 2, 0.05, "not_rng")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="num_grasps must be positive"):
+        generate_analytical_grasps(pts, normals, 0, 0.05, rng)
+
+    with pytest.raises(TypeError, match="allow_relaxed"):
+        generate_analytical_grasps(pts, normals, 2, 0.05, rng, allow_relaxed="yes")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="relaxed_antipodal_dot"):
+        generate_analytical_grasps(pts, normals, 2, 0.05, rng, relaxed_antipodal_dot=2.0)
+
+    grasps = generate_analytical_grasps(pts, normals, num_grasps=2, gripper_width=0.05, rng=rng)
+    assert len(grasps) > 0
+    assert grasps[0].shape == (4, 4)
+
+    perp_normals = np.array([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64)
+    relaxed_grasps = generate_analytical_grasps(
+        pts, perp_normals, num_grasps=2, gripper_width=0.05, rng=rng, allow_relaxed=True, relaxed_antipodal_dot=-1.0
+    )
+    assert isinstance(relaxed_grasps, np.ndarray)
 
