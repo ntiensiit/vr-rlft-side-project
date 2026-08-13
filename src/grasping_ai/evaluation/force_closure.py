@@ -154,8 +154,9 @@ def compute_grasp_wrench_matrix(
 
         # Normalize normal
         norm_val = np.linalg.norm(normal)
-        if norm_val > 1e-8:
-            normal = normal / norm_val
+        if norm_val <= 1e-8:
+            continue
+        normal = normal / norm_val
 
         # Compute orthogonal tangents
         if np.abs(normal[0]) < 0.9:
@@ -164,9 +165,16 @@ def compute_grasp_wrench_matrix(
             other = np.array([0.0, 1.0, 0.0], dtype=np.float64)
 
         t1 = np.cross(normal, other)
-        t1 = t1 / np.linalg.norm(t1)
+        norm_t1 = np.linalg.norm(t1)
+        if norm_t1 <= 1e-8:
+            continue
+        t1 = t1 / norm_t1
+
         t2 = np.cross(normal, t1)
-        t2 = t2 / np.linalg.norm(t2)
+        norm_t2 = np.linalg.norm(t2)
+        if norm_t2 <= 1e-8:
+            continue
+        t2 = t2 / norm_t2
 
         # 4-sided pyramid approximation of friction cone
         forces = [

@@ -430,4 +430,26 @@ def test_force_closure_additional_rank_and_friction() -> None:
 
     zero_normal_contact = [{"position": np.zeros(3), "normal": np.zeros(3)}]
     w_zero = compute_grasp_wrench_matrix(zero_normal_contact, 0.5)
-    assert w_zero.shape == (6, 4)
+    assert w_zero.shape == (6, 0)
+
+
+def test_force_closure_degenerate_contacts_hull_fallback() -> None:
+    degenerate_contacts = [
+        {"position": np.array([i * 0.01, 0.0, 0.0]), "normal": np.array([0.0, 0.0, 1.0])}
+        for i in range(7)
+    ]
+    q_deg = compute_grasp_quality(degenerate_contacts, friction_coefficient=0.5)
+    assert q_deg == 0.0
+
+
+def test_aggregate_evaluation_results_partial_records() -> None:
+    per_obj = {
+        "empty_obj": [],
+        "partial_obj": [
+            {"collision_free": True},
+            {"force_closure": False, "grasp_quality": 0.0},
+        ],
+    }
+    agg = aggregate_evaluation_results(per_obj)
+    assert "success_rate" in agg
+    assert agg["success_rate"] == 0.0
