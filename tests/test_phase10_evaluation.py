@@ -453,3 +453,88 @@ def test_aggregate_evaluation_results_partial_records() -> None:
     agg = aggregate_evaluation_results(per_obj)
     assert "success_rate" in agg
     assert agg["success_rate"] == 0.0
+
+
+def test_force_closure_enclosing_origin_6d_hull() -> None:
+    contacts = [
+        {"position": np.array([0.05, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])},
+        {"position": np.array([-0.05, 0.0, 0.0]), "normal": np.array([1.0, 0.0, 0.0])},
+        {"position": np.array([0.0, 0.05, 0.0]), "normal": np.array([0.0, -1.0, 0.0])},
+        {"position": np.array([0.0, -0.05, 0.0]), "normal": np.array([0.0, 1.0, 0.0])},
+        {"position": np.array([0.0, 0.0, 0.05]), "normal": np.array([0.0, 0.0, -1.0])},
+        {"position": np.array([0.0, 0.0, -0.05]), "normal": np.array([0.0, 0.0, 1.0])},
+    ]
+    judge = build_force_closure_judge(0.5, wrench_regularization=0.0)
+    assert judge(contacts) is True
+    quality = compute_grasp_quality(contacts, 0.5)
+    assert quality > 0.0
+
+
+def test_load_contact_set_1d_array(tmp_path: Path) -> None:
+    payload = np.empty((), dtype=object)
+    payload[()] = {"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])}
+    path = tmp_path / "1d_contacts.npy"
+    np.save(path, payload, allow_pickle=True)
+    loaded = load_contact_set(path)
+    assert isinstance(loaded, dict)
+    assert "position" in loaded
+
+
+def test_evaluate_generated_grasps_validations_and_contact_path(tmp_path: Path) -> None:
+    obj_pc = np.array([[0.0, 0.0, 0.0]], dtype=np.float32)
+    grip_pc = np.array([[0.0, 0.0, 0.002]], dtype=np.float32)
+
+    with pytest.raises(ValueError, match="grasp_poses must have shape"):
+        evaluate_generated_grasps(np.zeros((2, 3)), obj_pc, grip_pc)
+
+    with pytest.raises(ValueError, match="friction_coefficient must be non-negative"):
+        evaluate_generated_grasps(np.eye(4), obj_pc, grip_pc, friction_coefficient=-0.1)
+
+    with pytest.raises(ValueError, match="lift_height_threshold must be non-negative"):
+        evaluate_generated_grasps(np.eye(4), obj_pc, grip_pc, lift_height_threshold=-0.1)
+
+    with pytest.raises(ValueError, match="clearance must be non-negative"):
+        evaluate_generated_grasps(np.eye(4), obj_pc, grip_pc, clearance=-0.1)
+
+    with pytest.raises(ValueError, match="wrench_regularization must be non-negative"):
+        evaluate_generated_grasps(np.eye(4), obj_pc, grip_pc, wrench_regularization=-0.1)
+
+    contact_path = tmp_path / "contacts.npy"
+    contacts_list = [{"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])}]
+    payload = np.empty((), dtype=object)
+    payload[()] = contacts_list
+    np.save(contact_path, payload, allow_pickle=True)
+
+    results = evaluate_generated_grasps(
+        np.eye(4), obj_pc, grip_pc, contact_path=contact_path
+    )
+    assert len(results) == 1
+
+
+def test_evaluate_generated_grasps_all_colliding_filtered() -> None:
+    obj_pc = np.zeros((10, 3), dtype=np.float32)
+    grip_pc = np.zeros((10, 3), dtype=np.float32)
+    grasps = np.eye(4)[None]
+
+    results = evaluate_generated_grasps(
+        grasps, obj_pc, grip_pc, clearance=0.05, filter_collisions=True
+    )
+    assert results == []
+
+
+def test_write_evaluation_report_tb_and_exceptions(tmp_path: Path) -> None:
+    from grasping_ai.pipelines.evaluate import write_evaluation_report
+
+    with pytest.raises(TypeError, match=r"report_path must be a pathlib\.Path"):
+        write_evaluation_report("not_a_path", {})  # type: ignore[arg-type]
+
+    report_file = tmp_path / "report.json"
+    tb_dir = tmp_path / "tb_events"
+    write_evaluation_report(report_file, {"metric": 0.95}, experiment_log_dir=tb_dir)
+    assert report_file.is_file()
+    assert tb_dir.exists()
+
+    dir_path = tmp_path / "is_a_dir"
+    dir_path.mkdir()
+    with pytest.raises(ValueError, match="Failed to write evaluation report"):
+        write_evaluation_report(dir_path, {})

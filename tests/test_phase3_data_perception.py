@@ -731,3 +731,57 @@ def test_generate_analytical_grasps_validations_and_fallbacks() -> None:
     )
     assert isinstance(relaxed_grasps, np.ndarray)
 
+
+def test_training_pairs_validations_and_error_paths(tmp_path: Path) -> None:
+    from grasping_ai.data.training_pairs import (
+        build_supervised_training_pairs,
+        validate_grasp_dataset,
+    )
+
+    with pytest.raises(TypeError, match="dataset_root"):
+        validate_grasp_dataset("invalid")  # type: ignore[arg-type]
+
+    empty_dir = tmp_path / "empty_ds"
+    empty_dir.mkdir()
+    with pytest.raises(ValueError, match=r"No dataset record files|contains no valid grasp samples"):
+        validate_grasp_dataset(empty_dir)
+
+    with pytest.raises(TypeError, match="dataset_root"):
+        build_supervised_training_pairs("invalid")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match=r"No dataset record files|Dataset is empty"):
+        build_supervised_training_pairs(empty_dir)
+
+    corrupt_ds = tmp_path / "corrupt_ds"
+    corrupt_ds.mkdir()
+    np.save(corrupt_ds / "sample_invalid_pc.npy", {"point_cloud": "not_an_array", "grasp_poses": np.eye(4)[None]}, allow_pickle=True)
+
+    with pytest.raises(TypeError, match=r"point_cloud.*must be a numpy array"):
+        build_supervised_training_pairs(corrupt_ds)
+
+    corrupt_ds2 = tmp_path / "corrupt_ds2"
+    corrupt_ds2.mkdir()
+    np.save(corrupt_ds2 / "sample_invalid_grasps.npy", {"point_cloud": np.zeros((10, 3)), "grasp_poses": "not_an_array"}, allow_pickle=True)
+
+    with pytest.raises(TypeError, match=r"grasp poses must be a numpy array"):
+        build_supervised_training_pairs(corrupt_ds2)
+
+    corrupt_ds3 = tmp_path / "corrupt_ds3"
+    corrupt_ds3.mkdir()
+    np.save(corrupt_ds3 / "sample_empty_grasps.npy", {"point_cloud": np.zeros((10, 3)), "grasp_poses": np.zeros((0, 4, 4))}, allow_pickle=True)
+
+    with pytest.raises(ValueError, match="has no target grasp poses"):
+        build_supervised_training_pairs(corrupt_ds3)
+
+
+def test_grasp_vector_invalid_inputs() -> None:
+    import torch
+
+    from grasping_ai.data.grasp_vector import se3_to_vec, vec_to_se3
+
+    with pytest.raises(ValueError, match="t_matrix must be a"):
+        se3_to_vec(np.zeros((3, 3)))
+
+    with pytest.raises(ValueError, match="x must have shape"):
+        vec_to_se3(torch.zeros(9))
+

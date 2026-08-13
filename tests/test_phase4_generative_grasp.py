@@ -891,3 +891,54 @@ def test_checkpoint_io_validations_and_infer_kinds(tmp_path: Path) -> None:
     assert diff_meta["kind"] == "diffusion"
     assert diff_meta["hidden_dim"] == 256
 
+
+def test_run_training_pipeline_validations_and_resume(tmp_path: Path) -> None:
+    from grasping_ai.pipelines.train import run_training_pipeline
+
+    with pytest.raises(TypeError, match="dataset_root"):
+        run_training_pipeline(
+            dataset_root="not_a_path",  # type: ignore[arg-type]
+            checkpoint_path=tmp_path / "model.pt",
+            feature_dim=8,
+            hidden_dim=8,
+            num_layers=2,
+            learning_rate=0.001,
+            num_epochs=1,
+            batch_size=1,
+            device="cpu",
+        )
+
+    from tests.test_phase4_flow_training import _make_dataset
+
+    dataset_root = _make_dataset(tmp_path, n_grasps=2, seed=123)
+    checkpoint_1 = tmp_path / "diff_ckpt1.pt"
+    run_training_pipeline(
+        dataset_root=dataset_root,
+        checkpoint_path=checkpoint_1,
+        feature_dim=8,
+        hidden_dim=8,
+        num_layers=2,
+        learning_rate=0.001,
+        num_epochs=1,
+        batch_size=1,
+        device="cpu",
+        seed=123,
+    )
+
+    checkpoint_2 = tmp_path / "diff_ckpt2.pt"
+    run_training_pipeline(
+        dataset_root=dataset_root,
+        checkpoint_path=checkpoint_2,
+        feature_dim=8,
+        hidden_dim=8,
+        num_layers=2,
+        learning_rate=0.001,
+        num_epochs=2,
+        batch_size=1,
+        device="cpu",
+        seed=123,
+        pretrained_encoder_path=checkpoint_1,
+        resume_checkpoint_path=checkpoint_1,
+    )
+    assert checkpoint_2.is_file()
+

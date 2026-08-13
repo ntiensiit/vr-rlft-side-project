@@ -194,3 +194,52 @@ def test_flow_training_cli(tmp_path):
         cmd, env=env, capture_output=True, text=True, check=True
     )
     assert checkpoint.is_file()
+
+
+def test_run_flow_training_pipeline_validations_and_resume(tmp_path: Path) -> None:
+    from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
+
+    with pytest.raises(TypeError, match="dataset_root"):
+        run_flow_training_pipeline(
+            dataset_root="not_a_path",  # type: ignore[arg-type]
+            checkpoint_path=tmp_path / "flow.pt",
+            feature_dim=8,
+            hidden_dim=8,
+            num_layers=2,
+            learning_rate=0.001,
+            num_epochs=1,
+            batch_size=1,
+            device="cpu",
+        )
+
+    dataset_root = _make_dataset(tmp_path, n_grasps=2, seed=42)
+    checkpoint_1 = tmp_path / "flow_ckpt1.pt"
+    run_flow_training_pipeline(
+        dataset_root=dataset_root,
+        checkpoint_path=checkpoint_1,
+        feature_dim=8,
+        hidden_dim=8,
+        num_layers=2,
+        learning_rate=0.001,
+        num_epochs=1,
+        batch_size=1,
+        device="cpu",
+        seed=42,
+    )
+
+    checkpoint_2 = tmp_path / "flow_ckpt2.pt"
+    run_flow_training_pipeline(
+        dataset_root=dataset_root,
+        checkpoint_path=checkpoint_2,
+        feature_dim=8,
+        hidden_dim=8,
+        num_layers=2,
+        learning_rate=0.001,
+        num_epochs=2,
+        batch_size=1,
+        device="cpu",
+        seed=42,
+        pretrained_encoder_path=checkpoint_1,
+        resume_checkpoint_path=checkpoint_1,
+    )
+    assert checkpoint_2.is_file()

@@ -607,3 +607,43 @@ def test_run_rl_training_pipeline_integration(tmp_path: Path) -> None:
     assert ckpt["observation_dim"] == obs_dim
     assert ckpt["action_dim"] == act_dim
 
+
+def test_run_rl_training_pipeline_validation_errors(tmp_path: Path) -> None:
+    valid_robot = tmp_path / "robot.xml"
+    valid_robot.write_text(MINIMAL_ACTUATED_ROBOT_XML, encoding="utf-8")
+    valid_ycb = tmp_path / "ycb"
+    valid_ycb.mkdir()
+
+    with pytest.raises(TypeError, match="robot_xml_path"):
+        run_rl_training_pipeline("invalid", valid_ycb, [], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 0.99, "cpu")  # type: ignore[arg-type]
+
+    with pytest.raises(FileNotFoundError, match="Robot XML file not found"):
+        run_rl_training_pipeline(tmp_path / "missing.xml", valid_ycb, [], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 0.99, "cpu")
+
+    with pytest.raises(TypeError, match="ycb_root"):
+        run_rl_training_pipeline(valid_robot, "invalid", ["obj1"], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 0.99, "cpu")  # type: ignore[arg-type]
+
+    with pytest.raises(FileNotFoundError, match="YCB root directory not found"):
+        run_rl_training_pipeline(valid_robot, tmp_path / "missing_ycb", ["obj1"], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 0.99, "cpu")
+
+    with pytest.raises(ValueError, match="observation_dim"):
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 0, 2, 16, 1e-3, 1, 0.99, "cpu")
+
+    with pytest.raises(ValueError, match="action_dim"):
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 4, 0, 16, 1e-3, 1, 0.99, "cpu")
+
+    with pytest.raises(ValueError, match="hidden_dim"):
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 4, 2, 0, 1e-3, 1, 0.99, "cpu")
+
+    with pytest.raises(ValueError, match="learning_rate"):
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 4, 2, 16, 0.0, 1, 0.99, "cpu")
+
+    with pytest.raises(ValueError, match="num_updates"):
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 4, 2, 16, 1e-3, 0, 0.99, "cpu")
+
+    with pytest.raises(ValueError, match="gamma"):
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 1.5, "cpu")
+
+    with pytest.raises(ValueError, match="object_ids must contain at most one object"):
+        run_rl_training_pipeline(valid_robot, valid_ycb, ["obj1", "obj2"], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 0.99, "cpu")
+

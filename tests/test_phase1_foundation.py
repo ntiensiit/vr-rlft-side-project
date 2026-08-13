@@ -288,3 +288,20 @@ def test_property_apply_transform(points, rotation, translation):
     t_inv = invert_transform(t)
     reverted = apply_transform(transformed, t_inv)
     assert np.allclose(reverted, points, atol=1e-6)
+
+
+def test_geometry_additional_validation_branches() -> None:
+    with pytest.raises(TypeError, match="Angle must be a float or integer"):
+        rotation_matrix_from_axis_angle(np.array([1.0, 0.0, 0.0]), "invalid_angle")  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="Translation must be a numpy array"):
+        make_transform(np.eye(3), "invalid_translation")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Rotation must have shape"):
+        make_transform(np.eye(4), np.zeros(3))
+
+    with pytest.raises(TypeError, match="Points must be a numpy array"):
+        apply_transform("invalid_points", np.eye(4))  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Transform must have shape"):
+        apply_transform(np.zeros((5, 3)), np.eye(3))
