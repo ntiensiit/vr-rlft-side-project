@@ -8,6 +8,7 @@ on:
 
 env:
   NODE_OPTIONS: "--no-deprecation"
+  UV_LINK_MODE: "copy"
 
 jobs:
   lint:
@@ -44,15 +45,15 @@ jobs:
       - name: Install uv
         run: pip install uv
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --frozen --group dev
       - name: Remove triton (segfaults on headless Linux via torch.optim)
         run: uv pip uninstall -y triton || true
       - name: Ruff
-        run: uv run ruff check src tests scripts
+        run: uv run --frozen ruff check src tests scripts
       - name: Mypy
-        run: uv run mypy src
+        run: uv run --frozen mypy src
       - name: Verify package import
-        run: uv run python -c "import grasping_ai; print('grasping_ai ok')"
+        run: uv run --frozen python -c "import grasping_ai; print('grasping_ai ok')"
 
   fast-tests:
     name: Fast tests and coverage
@@ -87,7 +88,7 @@ jobs:
       - name: Install uv
         run: pip install uv
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --frozen --group dev
       - name: Remove triton (segfaults on headless Linux via torch.optim)
         # Linux torch wheels depend on triton; Adam -> _disable_dynamo imports it
         # and segfaults on CPU-only runners. Local Windows uses torch+cpu (no triton).
@@ -95,6 +96,6 @@ jobs:
       - name: Pytest (excluding slow / artifact-chain tests)
         # Single process is safe once torch is CPU-pinned (no triton).
         run: >
-          xvfb-run -a uv run pytest -q -m "not slow"
+          xvfb-run -a uv run --frozen pytest -q -m "not slow"
           --cov=src/grasping_ai --cov-config=coverage.toml
           --cov-report=term-missing --cov-fail-under=80
