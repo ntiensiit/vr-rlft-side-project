@@ -51,7 +51,7 @@ jobs:
       - name: Ruff
         run: uv run --frozen ruff check src tests scripts
       - name: Mypy
-        run: uv run --frozen mypy src
+        run: uv run --frozen mypy --num-workers 0 --cache-dir .mypy_cache src
       - name: Verify package import
         run: uv run --frozen python -c "import grasping_ai; print('grasping_ai ok')"
 
