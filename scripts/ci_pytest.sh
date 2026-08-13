@@ -59,9 +59,14 @@ if ((${#coverage_files[@]} == 0)); then
 fi
 
 export COVERAGE_FILE=.coverage
+rm -f .coverage .coverage.*
+
 if ((${#coverage_files[@]} == 1)); then
   cp "${coverage_files[0]}" .coverage
 else
-  uv run coverage combine --rcfile=coverage.toml "${coverage_files[@]}"
+  cp "${coverage_files[0]}" .coverage
+  for fragment in "${coverage_files[@]:1}"; do
+    uv run coverage combine --rcfile=coverage.toml "${fragment}"
+  done
 fi
 uv run coverage report --rcfile=coverage.toml --fail-under=80

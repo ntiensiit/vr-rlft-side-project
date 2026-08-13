@@ -8,7 +8,7 @@ Open implementation and research tasks for the grasping-ai side project.
 | --- | --- | --- |
 | Local gate pass | Engineering verification on this machine | 226 passed, 85.74% coverage, ruff clean, mypy clean on 48 source files (2026-08-13) |
 | Record in this file | Repository-recorded verification | Same as local gate above |
-| GitHub Actions on current `dev` HEAD | GitHub CI verified | FAILED on `73220e9` (pytest exit 139 segfault); fix pushed pending re-run |
+| GitHub Actions on current `dev` HEAD | GitHub CI verified | Run #37 (`935a012`) pending confirmation; matrix run #30 proved all 12 fast modules pass on Linux |
 
 Local verify gate (run after each code change):
 
@@ -117,7 +117,7 @@ Verified: <YYYY-MM-DD>
 
 Then change the checklist item to `[x]`.
 
-**Latest run (2026-08-13):** `73220e9` run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31629980653 — Ruff/Mypy/import PASS; pytest FAIL (exit 139 segfault on headless Linux). Follow-up: per-file CI runner + EGL/OSMesa env.
+**Latest run (2026-08-13):** Matrix run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31640843518 — all 12 `Pytest tests/*` jobs PASS on Linux; coverage aggregation fixed in `935a012` (`scripts/ci_pytest.sh`).
 
 ---
 
