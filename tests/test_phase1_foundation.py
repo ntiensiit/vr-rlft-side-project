@@ -1,9 +1,12 @@
 import os
 
+import hypothesis.strategies as st
 import numpy as np
 import pytest
 import pytransform3d
 import scipy  # type: ignore[import-untyped]
+from hypothesis import HealthCheck, given, settings
+from hypothesis.extra.numpy import arrays
 
 import grasping_ai
 from grasping_ai.perception.geometry import (
@@ -162,3 +165,126 @@ def test_geometry_apply_transform():
     transformed = apply_transform(points, t)
     expected = points + translation
     assert np.allclose(transformed, expected)
+
+
+# --- Property-Based Testing (Hypothesis) ---
+
+
+@st.composite
+def unit_vectors(draw):
+    """Generate a 3D unit vector."""
+    vec = draw(
+        arrays(
+            np.float64,
+            (3,),
+            elements=st.floats(
+                min_value=-1.0, max_value=1.0, allow_nan=False, allow_infinity=False
+            ),
+        )
+    )
+    norm = np.linalg.norm(vec)
+    if norm < 1e-5:
+        return np.array([1.0, 0.0, 0.0])
+    return vec / norm
+
+
+@st.composite
+def rotation_matrices(draw):
+    """Generate a valid 3x3 rotation matrix using random axis and angle."""
+    axis = draw(unit_vectors())
+    angle = draw(
+        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False)
+    )
+    return rotation_matrix_from_axis_angle(axis, angle)
+
+
+translations = arrays(
+    np.float64,
+    (3,),
+    elements=st.floats(min_value=-1000.0, max_value=1000.0, allow_nan=False, allow_infinity=False),
+)
+
+
+@st.composite
+def point_clouds(draw):
+    """Generate a variable-length point cloud of shape (N, 3)."""
+    n = draw(st.integers(min_value=1, max_value=100))
+    return draw(
+        arrays(
+            np.float64,
+            (n, 3),
+            elements=st.floats(
+                min_value=-1000.0, max_value=1000.0, allow_nan=False, allow_infinity=False
+            ),
+        )
+    )
+
+
+@given(
+    axis=unit_vectors(),
+    angle=st.floats(
+        min_value=-2 * np.pi, max_value=2 * np.pi, allow_nan=False, allow_infinity=False
+    ),
+)
+@settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
+def test_property_rotation_matrix_validity(axis, angle):
+    """Property: rotation_matrix_from_axis_angle produces valid orthogonal matrix with det=1."""
+    r = rotation_matrix_from_axis_angle(axis, angle)
+    assert r.shape == (3, 3)
+    # Check orthogonality: r * r.T = I
+    assert np.allclose(np.matmul(r, r.T), np.eye(3), atol=1e-6)
+    # Check determinant is ~ 1.0
+    assert np.isclose(np.linalg.det(r), 1.0, atol=1e-6)
+
+
+@given(
+    axis=unit_vectors(),
+    angle=st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False),
+)
+@settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
+def test_property_rotation_matrix_axis_angle_roundtrip(axis, angle):
+    """Property: converting matrix back to axis-angle reconstructs the same rotation matrix."""
+    r = rotation_matrix_from_axis_angle(axis, angle)
+    rec_axis, rec_angle = rotation_matrix_to_axis_angle(r)
+    # Reconstruct matrix from recovered axis/angle and check equality with r
+    r_rec = rotation_matrix_from_axis_angle(rec_axis, rec_angle)
+    assert np.allclose(r, r_rec, atol=1e-6)
+
+
+@given(rotation=rotation_matrices(), translation=translations)
+@settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
+def test_property_make_and_invert_transform(rotation, translation):
+    """Property: make_transform and invert_transform roundtrip and grasp pose consistency."""
+    t = make_transform(rotation, translation)
+    assert t.shape == (4, 4)
+    assert np.allclose(t[:3, :3], rotation)
+    assert np.allclose(t[:3, 3], translation)
+    assert np.allclose(t[3, :], [0.0, 0.0, 0.0, 1.0])
+
+    t_grasp = grasp_pose_to_transform(rotation, translation)
+    assert np.allclose(t, t_grasp)
+
+    t_inv = invert_transform(t)
+    # Check roundtrip invert(invert(t)) = t
+    assert np.allclose(invert_transform(t_inv), t, atol=1e-6)
+    # Check matrix multiplication product is identity
+    assert np.allclose(np.matmul(t, t_inv), np.eye(4), atol=1e-6)
+    assert np.allclose(np.matmul(t_inv, t), np.eye(4), atol=1e-6)
+
+
+@given(points=point_clouds(), rotation=rotation_matrices(), translation=translations)
+@settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
+def test_property_apply_transform(points, rotation, translation):
+    """Property: apply_transform correctly transforms points and invert_transform reverts them."""
+    t = make_transform(rotation, translation)
+    transformed = apply_transform(points, t)
+    assert transformed.shape == points.shape
+
+    # Explicit computation: P * R^T + t^T
+    expected = np.matmul(points, rotation.T) + translation
+    assert np.allclose(transformed, expected, atol=1e-6)
+
+    # Inverted transform reverts the points
+    t_inv = invert_transform(t)
+    reverted = apply_transform(transformed, t_inv)
+    assert np.allclose(reverted, points, atol=1e-6)

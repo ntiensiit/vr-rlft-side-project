@@ -2,6 +2,8 @@
 
 import sys
 
+import pytest
+
 # Torch Optimizer.__init__ is wrapped by torch._compile._disable_dynamo, which
 # imports torch._dynamo -> triton. Official Linux torch wheels pull in triton;
 # importing it segfaults on headless GitHub runners. Blocking the import makes
@@ -12,3 +14,11 @@ sys.modules.setdefault("triton", None)
 # Open3D must initialize before NumPy/torch trigger alternate libGL loading on
 # headless Linux runners (GitHub Actions). See numpy#27589.
 import open3d as _open3d  # noqa: E402,F401
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "slow: end-to-end / artifact-chain tests that exercise full pipelines "
+        "and may take tens of seconds; skip with ``-m 'not slow'``.",
+    )
