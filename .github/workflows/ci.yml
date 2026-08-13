@@ -13,13 +13,13 @@ jobs:
     env:
       PYTHONPATH: src
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libgl1 libgl1-mesa-dri libglx-mesa0 libosmesa6 libegl1 libglib2.0-0 libgomp1 xvfb
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install uv
@@ -47,13 +47,13 @@ jobs:
       PYTHONFAULTHANDLER: "1"
       OMP_NUM_THREADS: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libgl1 libgl1-mesa-dri libglx-mesa0 libosmesa6 libegl1 libglib2.0-0 libgomp1 xvfb
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install uv
