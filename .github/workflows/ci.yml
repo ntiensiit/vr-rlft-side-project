@@ -65,4 +65,8 @@ jobs:
         # and segfaults on CPU-only runners. Local Windows uses torch+cpu (no triton).
         run: uv pip uninstall -y triton || true
       - name: Pytest (excluding slow / artifact-chain tests)
-        run: bash scripts/ci_pytest.sh
+        # Single process is safe once torch is CPU-pinned (no triton).
+        run: >
+          xvfb-run -a uv run pytest -q -m "not slow"
+          --cov=src/grasping_ai --cov-config=coverage.toml
+          --cov-report=term-missing --cov-fail-under=80
