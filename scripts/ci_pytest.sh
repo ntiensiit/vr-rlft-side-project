@@ -1,40 +1,42 @@
 #!/usr/bin/env bash
-# Run fast tests in two batches under xvfb, combine coverage, and tolerate
-# Open3D/MuJoCo teardown segfaults (exit 139) on headless Linux runners.
+# Run each fast test module in its own process under xvfb, combine coverage,
+# and tolerate Open3D/MuJoCo teardown segfaults (exit 139) on headless Linux.
 set -euo pipefail
+
+shopt -s nullglob
+test_files=(tests/test_*.py)
 
 export COVERAGE_FILE=.coverage.ci
 rm -f .coverage.ci
 
 run_batch() {
+  local test_file="$1"
   local rc=0
+  echo "=== ${test_file} ==="
   set +e
-  xvfb-run -a uv run coverage run --append --rcfile=coverage.toml -m pytest -q "$@" -m "not slow"
+  xvfb-run -a uv run coverage run --append --rcfile=coverage.toml -m pytest -q "${test_file}" -m "not slow"
   rc=$?
   set -e
-  if [[ "${rc}" -ne 0 && "${rc}" -ne 139 ]]; then
-    echo "pytest batch failed with exit ${rc}" >&2
-    exit "${rc}"
+  if [[ "${rc}" -eq 5 ]]; then
+    echo "No non-slow tests in ${test_file}; skipping."
+    return 0
   fi
   if [[ "${rc}" -eq 139 ]]; then
-    echo "Ignoring teardown segfault (139) for batch: $*" >&2
+    echo "Ignoring teardown segfault (139) for ${test_file}"
+    return 0
+  fi
+  if [[ "${rc}" -ne 0 ]]; then
+    echo "pytest failed for ${test_file} with exit ${rc}" >&2
+    exit "${rc}"
   fi
 }
 
-run_batch \
-  tests/test_grasp_io_runtime.py \
-  tests/test_phase1_foundation.py \
-  tests/test_phase2_sim_robotics.py \
-  tests/test_phase3_data_perception.py \
-  tests/test_phase4_flow_training.py \
-  tests/test_phase4_generative_grasp.py \
-  tests/test_phase5_rl_policy.py \
-  tests/test_phase6_orchestration.py
+for test_file in "${test_files[@]}"; do
+  if [[ "${test_file}" == "tests/test_artifact_chain.py" ]]; then
+    continue
+  fi
+  run_batch "${test_file}"
+done
 
-run_batch \
-  tests/test_phase7_synthetic_data.py \
-  tests/test_phase8_tracking.py \
-  tests/test_phase9_gymnasium_env.py \
-  tests/test_phase10_evaluation.py
-
+export COVERAGE_FILE=.coverage.ci
 uv run coverage report --rcfile=coverage.toml --fail-under=80
