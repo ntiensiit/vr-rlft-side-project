@@ -24,6 +24,20 @@ jobs:
           python-version: "3.12"
           cache: "pip"
           cache-dependency-path: "uv.lock"
+      - name: Cache uv store
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
+      - name: Cache mypy
+        uses: actions/cache@v4
+        with:
+          path: .mypy_cache
+          key: mypy-${{ runner.os }}-${{ hashFiles('uv.lock') }}-${{ github.sha }}
+          restore-keys: |
+            mypy-${{ runner.os }}-${{ hashFiles('uv.lock') }}-
       - name: Install uv
         run: pip install uv
       - name: Sync dependencies
@@ -60,6 +74,13 @@ jobs:
           python-version: "3.12"
           cache: "pip"
           cache-dependency-path: "uv.lock"
+      - name: Cache uv store
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
       - name: Install uv
         run: pip install uv
       - name: Sync dependencies
