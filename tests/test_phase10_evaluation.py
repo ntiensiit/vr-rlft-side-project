@@ -538,3 +538,93 @@ def test_write_evaluation_report_tb_and_exceptions(tmp_path: Path) -> None:
     dir_path.mkdir()
     with pytest.raises(ValueError, match="Failed to write evaluation report"):
         write_evaluation_report(dir_path, {})
+
+
+def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:
+    from grasping_ai.evaluation.force_closure import (
+        build_force_closure_judge,
+        compute_grasp_quality,
+        load_contact_set,
+    )
+
+    c1 = [{"position": np.array([0.01, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])}]
+    q1 = compute_grasp_quality(c1, friction_coefficient=0.5)
+    assert q1 == 0.0
+
+    c_zero_rank = [
+        {"position": np.array([0.0, 0.0, 0.0]), "normal": np.array([1.0, 0.0, 0.0])},
+        {"position": np.array([0.0, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])},
+    ]
+    judge = build_force_closure_judge(friction_coefficient=0.5, wrench_regularization=0.0)
+    is_fc = judge(c_zero_rank)
+    assert not is_fc
+
+    c_list = [
+        {"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])},
+        {"position": np.ones(3), "normal": np.array([0.0, 0.0, -1.0])},
+    ]
+    payload = np.empty((), dtype=object)
+    payload[()] = c_list
+    path = tmp_path / "multi_item.npy"
+    np.save(path, payload, allow_pickle=True)
+    loaded = load_contact_set(path)
+    assert len(loaded) == 2
+
+
+def test_force_closure_full_branch_coverage(monkeypatch) -> None:
+    import scipy.optimize
+
+    from grasping_ai.evaluation.force_closure import (
+        build_force_closure_judge,
+        compute_grasp_quality,
+    )
+
+    c_3pts = [
+        {"position": np.array([1.0, 0.0, 0.0]), "normal": np.array([0.0, 1.0, 0.0])},
+        {"position": np.array([0.0, 1.0, 0.0]), "normal": np.array([0.0, 0.0, 1.0])},
+        {"position": np.array([0.0, 0.0, 1.0]), "normal": np.array([1.0, 0.0, 0.0])},
+    ]
+    q = compute_grasp_quality(c_3pts, friction_coefficient=0.5)
+    assert q == 0.0
+
+    judge = build_force_closure_judge(0.5, wrench_regularization=0.0)
+
+    class FailedRes:
+        success = False
+
+    monkeypatch.setattr(scipy.optimize, "linprog", lambda *args, **kwargs: FailedRes())
+    assert not judge(c_3pts)
+
+    def raise_err(*args, **kwargs):
+        raise RuntimeError
+
+    monkeypatch.setattr(scipy.optimize, "linprog", raise_err)
+    assert not judge(c_3pts)
+
+
+def test_evaluate_additional_branch_coverage(tmp_path: Path) -> None:
+    import sys
+
+    eval_mod = sys.modules["grasping_ai.pipelines.evaluate"]
+    evaluate_generated_grasps = eval_mod.evaluate_generated_grasps
+    aggregate_evaluation_results = eval_mod.aggregate_evaluation_results
+    write_evaluation_report = eval_mod.write_evaluation_report
+
+    obj_pc = np.zeros((10, 3))
+    grip_pc = np.zeros((10, 3))
+    poses = np.eye(4)[None, ...]
+    res = evaluate_generated_grasps(
+        poses, obj_pc, grip_pc, filter_collisions=True, clearance=100.0
+    )
+    assert res == []
+
+    outcomes = {
+        "obj1": [{"grasp_success": False, "collision_free": False, "force_closure": False}]
+    }
+    summary = aggregate_evaluation_results(outcomes)
+    assert summary["mean_grasp_quality"] == 0.0
+
+    rep = tmp_path / "report_str.json"
+    tb = tmp_path / "tb"
+    write_evaluation_report(rep, {"str_key": "val", "num_key": 1.0}, experiment_log_dir=tb)
+    assert rep.is_file()

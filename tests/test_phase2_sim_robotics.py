@@ -1092,3 +1092,163 @@ def test_run_simulation_sweep_execution(monkeypatch, actuated_robot_xml, tmp_pat
     )
     assert len(outcomes) == 2
     assert outcomes[0]["success"]
+
+
+def test_ycb_all_helper_functions_and_discovery_paths(tmp_path: Path) -> None:
+    from grasping_ai.simulation.ycb import (
+        build_ycb_object_name_classifier,
+        find_ycb_mesh_file,
+        find_ycb_mjcf,
+        resolve_ycb_object_directory,
+        tokenize_ycb_object_name,
+    )
+
+    with pytest.raises(TypeError, match="object_name must be a string"):
+        tokenize_ycb_object_name(123)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match=r"ycb_root must be a pathlib\.Path"):
+        build_ycb_object_name_classifier("not_a_path")  # type: ignore[arg-type]
+
+    with pytest.raises(FileNotFoundError, match="YCB root directory"):
+        build_ycb_object_name_classifier(tmp_path / "missing_ycb")
+
+    empty_ycb = tmp_path / "empty_ycb"
+    empty_ycb.mkdir()
+    with pytest.raises(ValueError, match="No YCB objects found under"):
+        build_ycb_object_name_classifier(empty_ycb)
+
+    ycb_dir = tmp_path / "ycb_dir"
+    ycb_dir.mkdir()
+    mustard_dir = ycb_dir / "006_mustard_bottle"
+    mustard_dir.mkdir()
+    (mustard_dir / "textured.obj").write_text("mesh text", encoding="utf-8")
+    (mustard_dir / "model.xml").write_text("<xml/>", encoding="utf-8")
+
+    classifier = build_ycb_object_name_classifier(ycb_dir)
+    assert classifier("") is None
+    assert classifier("unmatched_xyz_token") is None
+    assert classifier("mustard_bottle") == "006_mustard_bottle"
+
+    plain_dir = ycb_dir / "banana"
+    plain_dir.mkdir()
+    assert resolve_ycb_object_directory(ycb_dir, "011_banana") == plain_dir
+
+    mesh1 = find_ycb_mesh_file(mustard_dir)
+    assert mesh1.name == "textured.obj"
+
+    obj_only_dir = ycb_dir / "obj_only"
+    obj_only_dir.mkdir()
+    (obj_only_dir / "other.obj").write_text("mesh obj", encoding="utf-8")
+    mesh2 = find_ycb_mesh_file(obj_only_dir)
+    assert mesh2.name == "other.obj"
+
+    ply_only_dir = ycb_dir / "ply_only"
+    ply_only_dir.mkdir()
+    (ply_only_dir / "other.ply").write_text("mesh ply", encoding="utf-8")
+    mesh3 = find_ycb_mesh_file(ply_only_dir)
+    assert mesh3.name == "other.ply"
+
+    nested_xml_dir = ycb_dir / "nested_xml"
+    nested_xml_dir.mkdir()
+    sub_dir = nested_xml_dir / "sub"
+    sub_dir.mkdir()
+    (sub_dir / "model.xml").write_text("<xml/>", encoding="utf-8")
+    mjcf_path = find_ycb_mjcf(nested_xml_dir)
+    assert mjcf_path.name == "model.xml"
+
+
+def test_scene_and_simulate_grasp_additional_coverage(monkeypatch, actuated_robot_xml, tmp_path: Path) -> None:
+    from grasping_ai.pipelines.simulate_grasp import run_simulation_sweep, simulate_grasp
+    from grasping_ai.simulation.scene import (
+        MuJoCoScene,
+        build_scene_xml,
+    )
+
+    object_xml = tmp_path / "obj.xml"
+    object_xml.write_text(
+        '<mujoco model="obj"><worldbody><body name="obj_body">'
+        '<geom type="box" size="0.05 0.05 0.05"/></body></worldbody></mujoco>',
+        encoding="utf-8",
+    )
+
+    table_xml = tmp_path / "table.xml"
+    table_xml.write_text(
+        '<mujoco model="table"><worldbody><body name="table_body">'
+        '<geom type="box" size="0.5 0.5 0.02"/></body></worldbody></mujoco>',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TypeError, match=r"output_dir must be a pathlib\.Path"):
+        build_scene_xml(actuated_robot_xml, object_xml, None, output_dir="invalid")  # type: ignore[arg-type]
+
+    scene_xml = build_scene_xml(
+        actuated_robot_xml, object_xml, table_xml, object_name="renamed_obj", output_dir=tmp_path / "out_scenes"
+    )
+    assert scene_xml.is_file()
+
+    bad_xml = tmp_path / "bad.xml"
+    bad_xml.write_text("<invalid_xml", encoding="utf-8")
+    with pytest.raises(ValueError, match="Failed to parse object XML file"):
+        build_scene_xml(actuated_robot_xml, bad_xml, None, object_name="bad")
+
+    nobody_xml = tmp_path / "nobody.xml"
+    nobody_xml.write_text('<mujoco model="nobody"/>', encoding="utf-8")
+    with pytest.raises(ValueError, match="No body element found in object XML"):
+        build_scene_xml(actuated_robot_xml, nobody_xml, None, object_name="nobody")
+
+    with pytest.raises(TypeError, match=r"object_xml_path must be a pathlib\.Path"):
+        MuJoCoScene(actuated_robot_xml, object_xml_path="invalid")  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match=r"table_xml_path must be a pathlib\.Path"):
+        MuJoCoScene(actuated_robot_xml, table_xml_path="invalid")  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match=r"scene_output_dir must be a pathlib\.Path"):
+        MuJoCoScene(actuated_robot_xml, scene_output_dir="invalid")  # type: ignore[arg-type]
+
+    missing_dir = tmp_path / "missing_body"
+    missing_dir.mkdir(exist_ok=True)
+    (missing_dir / "model.xml").write_text(
+        '<mujoco model="m"><worldbody><body name="other_body">'
+        '<geom type="box" size="0.05 0.05 0.05"/></body></worldbody></mujoco>',
+        encoding="utf-8",
+    )
+
+
+    monkeypatch.setattr(
+        "grasping_ai.simulation.scene._rename_object_body",
+        lambda obj_xml, obj_name, out_dir: obj_xml,
+    )
+    monkeypatch.setattr(
+        "grasping_ai.robotics.kinematics.solve_inverse_kinematics",
+        lambda *args, **kwargs: np.zeros(1),
+    )
+
+    with pytest.raises(ValueError, match="Body 'missing_body' not found in simulation model"):
+        simulate_grasp(
+            robot_xml_path=actuated_robot_xml,
+            grasp_pose=np.eye(4),
+            object_id="missing_body",
+            ycb_root=tmp_path,
+            table_xml_path=None,
+            num_simulation_steps=5,
+            gripper_close_command=np.zeros(1),
+        )
+
+    ycb_dir = tmp_path / "ycb_dir"
+    obj_dir = ycb_dir / "006_mustard_bottle"
+    obj_dir.mkdir(parents=True, exist_ok=True)
+    (obj_dir / "model.xml").write_text(
+        '<mujoco model="mustard"><worldbody><body name="mustard_bottle">'
+        '<geom type="box" size="0.05 0.05 0.05"/></body></worldbody></mujoco>',
+        encoding="utf-8",
+    )
+    outcomes = run_simulation_sweep(
+        grasp_poses=np.eye(4),
+        object_id="mustard_bottle",
+        ycb_root=ycb_dir,
+        robot_xml_path=actuated_robot_xml,
+        table_xml_path=None,
+        num_simulation_steps=2,
+        gripper_close_command=np.array([0.5, 0.8]),
+    )
+    assert len(outcomes) == 1

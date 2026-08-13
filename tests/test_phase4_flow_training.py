@@ -243,3 +243,16 @@ def test_run_flow_training_pipeline_validations_and_resume(tmp_path: Path) -> No
         resume_checkpoint_path=checkpoint_1,
     )
     assert checkpoint_2.is_file()
+
+
+def test_flow_network_builder_and_sampler_additional_coverage() -> None:
+    from grasping_ai.models.flow import (
+        FlowFieldNet,
+        load_flow_model_from_state,
+    )
+
+    net = FlowFieldNet(8, 16, 2)
+    assert isinstance(net, FlowFieldNet)
+
+    with pytest.raises(TypeError, match=r"checkpoint\['model_state_dict'\] must be a dictionary"):
+        load_flow_model_from_state({"model_state_dict": "not_a_dict"}, 8, 16, 2, "cpu")

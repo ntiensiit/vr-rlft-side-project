@@ -942,3 +942,108 @@ def test_run_training_pipeline_validations_and_resume(tmp_path: Path) -> None:
     )
     assert checkpoint_2.is_file()
 
+
+def test_trainer_additional_branches(tmp_path: Path) -> None:
+    from grasping_ai.models.diffusion import GraspGeneratorModel
+    from grasping_ai.training.losses import build_diffusion_score_loss
+    from grasping_ai.training.trainer import (
+        build_adam_optimizer,
+        build_training_step,
+        load_training_checkpoint,
+        run_training_loop,
+        save_training_checkpoint,
+    )
+
+    model = GraspGeneratorModel(4, 16, 2)
+    with pytest.raises(ValueError, match="learning_rate must be positive"):
+        build_adam_optimizer(model.parameters(), -0.01)
+
+    opt = build_adam_optimizer(model.parameters(), 0.001)
+
+    with pytest.raises(TypeError, match=r"checkpoint_path must be a pathlib\.Path"):
+        save_training_checkpoint(model, opt, 1, "not_a_path")  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match=r"checkpoint_path must be a pathlib\.Path"):
+        load_training_checkpoint("not_a_path", model, opt, "cpu")  # type: ignore[arg-type]
+
+    dir_path = tmp_path / "is_dir"
+    dir_path.mkdir()
+    with pytest.raises(ValueError, match="Failed to save checkpoint"):
+        save_training_checkpoint(model, opt, 1, dir_path)
+
+    ckpt_file = tmp_path / "train_save.pt"
+    save_training_checkpoint(model, opt, 5, ckpt_file)
+    epoch = load_training_checkpoint(ckpt_file, model, None, "cpu")
+    assert epoch == 5
+
+    tb_dir = tmp_path / "tb_logs"
+    dummy_input = torch.randn(2, 4)
+    dummy_target = torch.randn(2, 9)
+    dataloader = [(dummy_input, dummy_target)]
+
+    step_fn = build_training_step(model, build_diffusion_score_loss(), opt, "cpu", seed=42)
+
+    run_training_loop(
+        step_fn,
+        dataloader,
+        num_epochs=1,
+        checkpoint_path=tmp_path / "loop_ckpt.pt",
+        log_every=1,
+        experiment_log_dir=tb_dir,
+        metadata={"experiment": "test_run"},
+    )
+    assert tb_dir.exists()
+
+
+def test_equivariant_encoder_collinear_points_fallback() -> None:
+    from grasping_ai.models.equivariant_encoder import compute_se3_frame
+
+    collinear_pts = torch.tensor([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]], dtype=torch.float32)
+    frame, _centroid = compute_se3_frame(collinear_pts)
+    assert frame.shape == (1, 3, 3)
+    assert torch.allclose(torch.det(frame), torch.tensor([1.0]), atol=1e-5)
+
+
+def test_batch_conditioned_grasp_samples_validations() -> None:
+    from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
+
+    cond = torch.randn(2, 8)
+    rng = torch.Generator()
+    with pytest.raises(ValueError, match="num_samples must be a positive integer"):
+        batch_conditioned_grasp_samples(cond, 9, 0, rng, lambda x, c: x)
+
+
+def test_diffusion_and_score_network_additional_coverage() -> None:
+    from grasping_ai.models.diffusion import (
+        ScoreNetwork,
+        build_diffusion_sampler,
+        build_score_network,
+    )
+
+    net = build_score_network(8, 16, 2)
+    assert isinstance(net, ScoreNetwork)
+
+    sampler = build_diffusion_sampler(num_steps=3)
+    x0 = torch.randn(2, 9)
+    cond = torch.randn(2, 8)
+    sampled = sampler(x0, net, cond, rng=None)
+    assert sampled.shape == (2, 9)
+
+
+def test_trainer_checkpoint_saving_branch(tmp_path: Path) -> None:
+    from grasping_ai.training.trainer import run_training_loop
+
+    model = torch.nn.Linear(8, 2)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+    def dummy_step(inputs, targets):
+        return {"loss": 0.1}
+
+    dummy_step.model = model  # type: ignore[attr-defined]
+    dummy_step.optimizer = optimizer  # type: ignore[attr-defined]
+
+    ckpt_path = tmp_path / "auto_ckpt.pt"
+    dataloader = [(torch.randn(2, 8), torch.randn(2, 2))]
+    run_training_loop(dummy_step, dataloader, num_epochs=1, log_every=10, checkpoint_path=ckpt_path)
+    assert ckpt_path.is_file()
+

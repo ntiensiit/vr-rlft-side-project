@@ -785,3 +785,80 @@ def test_grasp_vector_invalid_inputs() -> None:
     with pytest.raises(ValueError, match="x must have shape"):
         vec_to_se3(torch.zeros(9))
 
+
+def test_transforms_additional_validations(tmp_path: Path) -> None:
+    from grasping_ai.data.transforms import make_translation_jitter, save_grasp_dataset_index
+
+    rng = np.random.default_rng(42)
+    trans = make_translation_jitter(rng, scale=0.01)
+
+    with pytest.raises(TypeError, match="points must be a numpy array"):
+        trans("not_array", None, None)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="points shape must be"):
+        trans(np.zeros((5, 2)), None, None)
+
+    with pytest.raises(ValueError, match="points must contain only finite values"):
+        trans(np.array([[np.nan, 0.0, 0.0]]), None, None)
+
+    dir_path = tmp_path / "is_dir"
+    dir_path.mkdir()
+    with pytest.raises(ValueError, match="Failed to write dataset index"):
+        save_grasp_dataset_index(dir_path, [{"record": "r1"}], filename="")
+
+
+def test_generate_analytical_grasps_degenerate_parallel_normals() -> None:
+    from grasping_ai.data.pointcloud_dataset import generate_analytical_grasps
+
+    rng = np.random.default_rng(42)
+    pts = np.array([[0.0, 0.0, 0.0], [0.02, 0.0, 0.0]], dtype=np.float64)
+    normals = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]], dtype=np.float64)
+
+    grasps = generate_analytical_grasps(pts, normals, num_grasps=1, gripper_width=0.05, rng=rng)
+    assert isinstance(grasps, np.ndarray)
+
+
+def test_pointcloud_sensor_additional_coverage(tmp_path: Path) -> None:
+    from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
+
+    mesh_file = tmp_path / "mesh.obj"
+    mesh_file.write_text("v 0 0 0\nv 0 0 0\nv 0 0 0\nf 1 2 3\n", encoding="utf-8")
+
+    rng = np.random.default_rng(42)
+
+    with pytest.raises(TypeError, match="rng must be a numpy random Generator"):
+        sample_point_cloud_from_mesh(mesh_file, 10, "not_rng")  # type: ignore[arg-type]
+
+    empty_mesh = tmp_path / "empty.obj"
+    empty_mesh.write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match="is empty or invalid"):
+        sample_point_cloud_from_mesh(empty_mesh, 10, rng)
+
+    no_tri = tmp_path / "no_tri.obj"
+    no_tri.write_text("v 0 0 0\n", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"is empty or invalid|has no triangles"):
+        sample_point_cloud_from_mesh(no_tri, 10, rng)
+
+    pc = sample_point_cloud_from_mesh(mesh_file, 5, rng)
+    assert pc.shape == (5, 3)
+
+
+def test_generate_analytical_grasps_relaxed_fallback_and_parallel_normals() -> None:
+    from grasping_ai.data.pointcloud_dataset import generate_analytical_grasps
+
+    rng = np.random.default_rng(42)
+
+    pts = np.array([[0.0, 0.0, 0.0], [0.02, 0.0, 0.0]])
+    normals = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]])
+
+    grasps = generate_analytical_grasps(
+        pts, normals, num_grasps=1, gripper_width=0.05, allow_relaxed=True, rng=rng
+    )
+    assert len(grasps) >= 1
+
+    pts_zero_dist = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+    grasps_empty = generate_analytical_grasps(
+        pts_zero_dist, normals, num_grasps=1, gripper_width=0.05, allow_relaxed=True, rng=rng
+    )
+    assert len(grasps_empty) == 0
+

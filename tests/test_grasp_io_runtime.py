@@ -230,3 +230,19 @@ def test_generate_grasps_type_and_value_errors(tmp_path: Path) -> None:
 
     with pytest.raises(TypeError, match="output_path must be"):
         write_generated_grasps_array("not_a_path", _sample_grasps(1))  # type: ignore[arg-type]
+
+
+def test_write_generated_grasps_exception_and_array_writer(monkeypatch, tmp_path: Path) -> None:
+    def bad_save(*args, **kwargs):
+        msg = "Disk write error"
+        raise OSError(msg)
+
+    monkeypatch.setattr(np, "save", bad_save)
+
+    with pytest.raises(ValueError, match="Failed to write generated grasps"):
+        write_generated_grasps(tmp_path / "out.npy", {"obj1": _sample_grasps(1)})
+
+    monkeypatch.undo()
+    arr_file = tmp_path / "grasps_plain.npy"
+    write_generated_grasps_array(arr_file, _sample_grasps(2))
+    assert arr_file.is_file()

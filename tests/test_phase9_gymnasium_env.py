@@ -363,3 +363,52 @@ def test_sb3_training_and_inference_compatibility(robot_xml, tmp_path):
     assert isinstance(action, np.ndarray)
     assert action.shape == (1,)
     assert np.isfinite(action).all()
+
+
+def test_mujoco_env_additional_coverage(tmp_path: Path) -> None:
+    import mujoco
+
+    from grasping_ai.simulation.mujoco_env import (
+        MuJoCoGraspingEnv,
+        create_simulation,
+        load_mujoco_model,
+    )
+
+    corrupt_xml = tmp_path / "corrupt.xml"
+    corrupt_xml.write_text("<invalid_xml_tag", encoding="utf-8")
+    with pytest.raises(ValueError, match="Failed to load MuJoCo model from XML"):
+        load_mujoco_model(corrupt_xml)
+
+    valid_xml = tmp_path / "valid.xml"
+    valid_xml.write_text(
+        '<mujoco model="test"><worldbody><body name="b"><joint name="j1" type="slide"/>'
+        '<geom type="box" size="0.1 0.1 0.1"/></body></worldbody>'
+        '<actuator><position joint="j1"/></actuator></mujoco>',
+        encoding="utf-8",
+    )
+    mj_model = mujoco.MjModel.from_xml_path(str(valid_xml))
+    _state, _step_fn, contacts_fn = create_simulation(mj_model)
+    assert contacts_fn() == []
+
+    with pytest.raises(TypeError, match=r"robot_xml_path must be a pathlib\.Path"):
+        MuJoCoGraspingEnv("not_a_path")  # type: ignore[arg-type]
+
+    no_act_xml = tmp_path / "no_act.xml"
+    no_act_xml.write_text(
+        '<mujoco model="no_act"><worldbody><body name="b">'
+        '<geom type="box" size="0.1 0.1 0.1"/></body></worldbody></mujoco>',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="MuJoCo model has zero actuators"):
+        MuJoCoGraspingEnv(no_act_xml)
+
+    ctrl_xml = tmp_path / "ctrl.xml"
+    ctrl_xml.write_text(
+        '<mujoco model="ctrl"><worldbody><body name="b"><joint name="j1" type="slide"/>'
+        '<geom type="box" size="0.1 0.1 0.1"/></body></worldbody>'
+        '<actuator><position joint="j1" ctrlrange="-0.5 0.5"/></actuator></mujoco>',
+        encoding="utf-8",
+    )
+    env = MuJoCoGraspingEnv(ctrl_xml)
+    assert env.action_space.low[0] == pytest.approx(-0.5)
+    assert env.action_space.high[0] == pytest.approx(0.5)
