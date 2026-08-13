@@ -1,11 +1,13 @@
 """Shared pytest configuration."""
 
-import os
+import sys
 
-# Disable Torch Dynamo / compile before any torch.optim construction. On headless
-# Linux CI, Adam.__init__ otherwise loads triton via torch._dynamo and segfaults.
-os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
-os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
+# Torch Optimizer.__init__ is wrapped by torch._compile._disable_dynamo, which
+# imports torch._dynamo -> triton. Official Linux torch wheels pull in triton;
+# importing it segfaults on headless GitHub runners. Blocking the import makes
+# has_triton_package() return False so Adam construction stays eager/CPU-safe.
+# (Windows local installs are torch+cpu and do not ship triton.)
+sys.modules.setdefault("triton", None)
 
 # Open3D must initialize before NumPy/torch trigger alternate libGL loading on
 # headless Linux runners (GitHub Actions). See numpy#27589.

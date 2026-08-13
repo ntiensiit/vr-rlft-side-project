@@ -26,6 +26,8 @@ jobs:
         run: pip install uv
       - name: Sync dependencies
         run: uv sync --group dev
+      - name: Remove triton (segfaults on headless Linux via torch.optim)
+        run: uv pip uninstall -y triton || true
       - name: Ruff
         run: uv run ruff check src tests scripts
       - name: Mypy
@@ -44,8 +46,6 @@ jobs:
       EGL_PLATFORM: surfaceless
       PYTHONFAULTHANDLER: "1"
       OMP_NUM_THREADS: "1"
-      TORCHDYNAMO_DISABLE: "1"
-      TORCH_COMPILE_DISABLE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
@@ -60,5 +60,9 @@ jobs:
         run: pip install uv
       - name: Sync dependencies
         run: uv sync --group dev
+      - name: Remove triton (segfaults on headless Linux via torch.optim)
+        # Linux torch wheels depend on triton; Adam -> _disable_dynamo imports it
+        # and segfaults on CPU-only runners. Local Windows uses torch+cpu (no triton).
+        run: uv pip uninstall -y triton || true
       - name: Pytest (excluding slow / artifact-chain tests)
         run: bash scripts/ci_pytest.sh

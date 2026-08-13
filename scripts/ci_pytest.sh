@@ -2,10 +2,6 @@
 # Run each fast test module in its own process under xvfb, then combine coverage.
 set -euo pipefail
 
-# Prevent Adam -> torch._dynamo -> triton segfaults on headless Linux runners.
-export TORCHDYNAMO_DISABLE=1
-export TORCH_COMPILE_DISABLE=1
-
 shopt -s nullglob
 test_files=(tests/test_*.py)
 coverage_files=()
