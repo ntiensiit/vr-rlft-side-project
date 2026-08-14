@@ -426,7 +426,10 @@ if __name__ == "__main__":
         if args.method == "flow":
             args.checkpoint = config_path(cfg, "flow", "checkpoint")
         if args.checkpoint is None:
-            parser.error("--checkpoint is required (set in configs/model/default.yaml or pass explicitly)")
+            parser.error(
+                "--checkpoint is required (set in configs/model/default.yaml "
+                "or pass explicitly)"
+            )
     if args.output_dir is None:
         parser.error(
             "--output-dir is required (set in configs/base.yaml paths.output_dir "

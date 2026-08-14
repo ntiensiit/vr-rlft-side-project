@@ -54,6 +54,12 @@ def test_data_config_file_exists():
     assert path.is_file()
 
 
+def test_object_config_file_exists():
+    """Verify object configuration file existence."""
+    path = Path("configs/object/default.yaml")
+    assert path.is_file()
+
+
 def test_prepare_data_creates_index_from_minimal_dataset(tmp_path):
     """Test discovering files and writing a JSON index."""
     dataset_root = tmp_path / "dataset"

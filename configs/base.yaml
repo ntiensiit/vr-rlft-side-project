@@ -7,7 +7,8 @@ tracking:
   entity: null
   mode: offline
 paths:
-  output_dir: artifacts
-  ycb_mjcf: data/processed/ycb_mjcf
-  observations: data/observations
-  tensorboard: artifacts/exports/tensorboard
+  input_dir: ${oc.env:MGS_INPUT_DIR,"data"}
+  output_dir: ${oc.env:MGS_OUTPUT_DIR,"artifacts"}
+  ycb_mjcf: ${oc.env:MGS_INPUT_DIR,"data"}/processed/ycb_mjcf
+  observations: ${oc.env:MGS_INPUT_DIR,"data"}/observations
+  tensorboard: ${oc.env:MGS_OUTPUT_DIR,"artifacts"}/exports/tensorboard

@@ -2,8 +2,9 @@ defaults:
   - base
   - model: default
   - data: default
-  - robot: default
-  - simulation: default
+  - gripper: default
+  - env: default
+  - object: default
   - training: default
   - evaluation: default
   - _self_

@@ -64,13 +64,13 @@ def test_phase1_package_import_remains_stable():
 
 def test_simulation_config_file_exists():
     """Verify simulation configuration file existence."""
-    path = Path("configs/simulation/default.yaml")
+    path = Path("configs/env/default.yaml")
     assert path.is_file()
 
 
 def test_robot_config_file_exists():
     """Verify robot configuration file existence."""
-    path = Path("configs/robot/default.yaml")
+    path = Path("configs/gripper/default.yaml")
     assert path.is_file()
 
 

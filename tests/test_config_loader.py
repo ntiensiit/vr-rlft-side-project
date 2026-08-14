@@ -19,7 +19,7 @@ def test_load_yaml_mapping_reads_base_config() -> None:
     cfg = load_yaml_mapping(Path("configs/base.yaml"))
     assert cfg["device"] == "cpu"
     assert cfg["seed"] == 42
-    assert config_get(cfg, "paths", "output_dir") == "artifacts"
+    assert config_get(cfg, "paths", "output_dir") == '${oc.env:MGS_OUTPUT_DIR,"artifacts"}'
 
 
 def test_load_project_yaml_config_merges_layers() -> None:

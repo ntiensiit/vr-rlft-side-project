@@ -108,10 +108,11 @@ def load_project_yaml_config(
             version_base=None,
         ):
             cfg = compose(config_name="config", overrides=overrides or [])
-        merged = OmegaConf.to_container(cfg, resolve=True)
-        if not isinstance(merged, dict):
+        container = OmegaConf.to_container(cfg, resolve=True)
+        if not isinstance(container, dict):
             raise TypeError("Hydra config root must be a mapping")
-        return merged
+        from typing import cast
+        return cast(dict[str, object], container)
 
     merged: dict[str, object] = {}
     for name in config_names:

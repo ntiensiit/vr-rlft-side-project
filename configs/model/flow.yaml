@@ -1,0 +1,9 @@
+# @package _global_
+default_method: flow
+architecture:
+  feature_dim: 64
+  hidden_dim: 64
+  num_layers: 3
+flow:
+  train_steps: 150
+  inference_steps: 10

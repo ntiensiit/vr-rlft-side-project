@@ -3,11 +3,7 @@ paths:
   dataset_root: data/processed
   ycb_root: data/raw/ycb
   output_index: data/processed/index.json
-objects:
-  ids:
-    - 003_cracker_box
-    - 004_sugar_box
-    - 006_mustard_bottle
+
 splits:
   train: train
   val: val
