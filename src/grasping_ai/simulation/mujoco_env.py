@@ -8,7 +8,8 @@ import mujoco  # type: ignore[import-untyped]
 import numpy as np
 
 from grasping_ai.config.yaml_loader import (
-    config_get,
+    config_bool,
+    config_float,
     load_project_yaml_config,
     parse_config_dir_from_argv,
 )
@@ -56,14 +57,14 @@ class RewardConfig:
             A RewardConfig instance populated with configured parameters.
         """
         return cls(
-            action_cost_weight=float(config_get(cfg, "rl", "reward", "action_cost_weight", default=0.01)),
-            survival_bonus=float(config_get(cfg, "rl", "reward", "survival_bonus", default=1.0)),
-            contact_reward=float(config_get(cfg, "rl", "reward", "contact_reward", default=0.0)),
-            lift_reward_weight=float(config_get(cfg, "rl", "reward", "lift_reward_weight", default=0.0)),
-            grasp_success_bonus=float(config_get(cfg, "rl", "reward", "grasp_success_bonus", default=0.0)),
-            lift_height_threshold=float(config_get(cfg, "rl", "reward", "lift_height_threshold", default=0.05)),
-            drop_height_threshold=float(config_get(cfg, "rl", "reward", "drop_height_threshold", default=0.1)),
-            terminate_on_non_finite=bool(config_get(cfg, "rl", "reward", "terminate_on_non_finite", default=True)),
+            action_cost_weight=config_float(cfg, "rl", "reward", "action_cost_weight", default=0.01),
+            survival_bonus=config_float(cfg, "rl", "reward", "survival_bonus", default=1.0),
+            contact_reward=config_float(cfg, "rl", "reward", "contact_reward", default=0.0),
+            lift_reward_weight=config_float(cfg, "rl", "reward", "lift_reward_weight", default=0.0),
+            grasp_success_bonus=config_float(cfg, "rl", "reward", "grasp_success_bonus", default=0.0),
+            lift_height_threshold=config_float(cfg, "rl", "reward", "lift_height_threshold", default=0.05),
+            drop_height_threshold=config_float(cfg, "rl", "reward", "drop_height_threshold", default=0.1),
+            terminate_on_non_finite=config_bool(cfg, "rl", "reward", "terminate_on_non_finite", default=True),
         )
 
 

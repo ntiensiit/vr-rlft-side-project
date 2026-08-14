@@ -27,12 +27,12 @@ class DiffusionSchedule:
         Returns:
             A DiffusionSchedule instance populated with configured parameters.
         """
-        from grasping_ai.config.yaml_loader import config_get
+        from grasping_ai.config.yaml_loader import config_float, config_int
 
         return cls(
-            beta_start=float(config_get(cfg, "diffusion", "beta_start", default=1e-4)),
-            beta_end=float(config_get(cfg, "diffusion", "beta_end", default=0.02)),
-            num_steps=int(config_get(cfg, "diffusion", "num_steps", default=100)),
+            beta_start=config_float(cfg, "diffusion", "beta_start", default=1e-4),
+            beta_end=config_float(cfg, "diffusion", "beta_end", default=0.02),
+            num_steps=config_int(cfg, "diffusion", "num_steps", default=100),
         )
 
 

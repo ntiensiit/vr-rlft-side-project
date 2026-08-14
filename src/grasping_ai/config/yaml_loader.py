@@ -266,6 +266,84 @@ def config_path(
     return Path(value)
 
 
+def config_float(
+    config: dict[str, object],
+    *keys: str,
+    default: float,
+) -> float:
+    """Read a nested float-valued config entry.
+
+    Args:
+        config: Loaded configuration mapping.
+        *keys: Nested mapping keys.
+        default: Value returned when the path is absent.
+
+    Returns:
+        The configured floating-point value, or ``default``.
+
+    Raises:
+        TypeError: If the configured value is not a number.
+    """
+    value = config_get(config, *keys, default=default)
+    if value is default:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError(f"Config path {'.'.join(keys)!r} must be a number")
+    return float(value)
+
+
+def config_int(
+    config: dict[str, object],
+    *keys: str,
+    default: int,
+) -> int:
+    """Read a nested integer-valued config entry.
+
+    Args:
+        config: Loaded configuration mapping.
+        *keys: Nested mapping keys.
+        default: Value returned when the path is absent.
+
+    Returns:
+        The configured integer value, or ``default``.
+
+    Raises:
+        TypeError: If the configured value is not a number.
+    """
+    value = config_get(config, *keys, default=default)
+    if value is default:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise TypeError(f"Config path {'.'.join(keys)!r} must be an integer")
+    return int(value)
+
+
+def config_bool(
+    config: dict[str, object],
+    *keys: str,
+    default: bool,
+) -> bool:
+    """Read a nested boolean-valued config entry.
+
+    Args:
+        config: Loaded configuration mapping.
+        *keys: Nested mapping keys.
+        default: Value returned when the path is absent.
+
+    Returns:
+        The configured boolean value, or ``default``.
+
+    Raises:
+        TypeError: If the configured value is not a boolean.
+    """
+    value = config_get(config, *keys, default=default)
+    if value is default:
+        return default
+    if not isinstance(value, bool):
+        raise TypeError(f"Config path {'.'.join(keys)!r} must be a boolean")
+    return value
+
+
 def config_str_list(
     config: dict[str, object],
     *keys: str,
