@@ -4,7 +4,9 @@ import numpy as np
 import pytest
 
 from grasping_ai.inference.grasp_generator import generate_candidate_grasps
-from grasping_ai.inference.grasp_inference_runtime import run_single_object_grasp_inference
+from grasping_ai.inference.grasp_inference_runtime import (
+    run_single_object_grasp_inference,
+)
 from grasping_ai.pipelines.generate_grasps import (
     load_generated_grasps,
     write_generated_grasps,
@@ -19,6 +21,7 @@ def _sample_grasps(count: int = 2) -> np.ndarray:
 
 
 def test_load_generated_grasps_plain_array(tmp_path: Path) -> None:
+    """Verify loading generated grasps from a plain numpy array file."""
     grasps = _sample_grasps(3)
     path = tmp_path / "grasps.npy"
     np.save(path, grasps)
@@ -29,6 +32,7 @@ def test_load_generated_grasps_plain_array(tmp_path: Path) -> None:
 
 
 def test_load_generated_grasps_single_object_dict(tmp_path: Path) -> None:
+    """Verify loading generated grasps from a dictionary containing a single object key."""
     grasps = _sample_grasps(2)
     path = tmp_path / "grasps.npy"
     write_generated_grasps(path, {"003_cracker_box": grasps})
@@ -38,6 +42,7 @@ def test_load_generated_grasps_single_object_dict(tmp_path: Path) -> None:
 
 
 def test_load_generated_grasps_multi_object_dict_requires_key(tmp_path: Path) -> None:
+    """Verify that loading multi-object dictionaries requires specifying a target object key."""
     path = tmp_path / "grasps.npy"
     write_generated_grasps(
         path,
@@ -55,6 +60,7 @@ def test_load_generated_grasps_multi_object_dict_requires_key(tmp_path: Path) ->
 
 
 def test_write_generated_grasps_array_validates_shape(tmp_path: Path) -> None:
+    """Verify that write_generated_grasps_array raises ValueError on invalid array shapes."""
     path = tmp_path / "grasps.npy"
     with pytest.raises(ValueError, match="grasp_poses must have shape"):
         write_generated_grasps_array(path, np.zeros((2, 3)))
@@ -63,6 +69,7 @@ def test_write_generated_grasps_array_validates_shape(tmp_path: Path) -> None:
 def test_run_single_object_grasp_inference_from_observation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Verify that grasp inference runtime executes correctly on input observation point cloud files."""
     obs_path = tmp_path / "obs.npy"
     np.save(obs_path, np.random.randn(64, 3).astype(np.float32))
 
@@ -102,6 +109,7 @@ def test_run_single_object_grasp_inference_from_observation(
 def test_run_single_object_grasp_inference_rejects_conflicting_inputs(
     tmp_path: Path,
 ) -> None:
+    """Verify that grasp inference runtime raises ValueError if both observation_path and YCB inputs are provided."""
     obs_path = tmp_path / "obs.npy"
     np.save(obs_path, np.zeros((8, 3)))
     ckpt_path = tmp_path / "ckpt.pt"
@@ -126,6 +134,7 @@ def test_run_single_object_grasp_inference_rejects_conflicting_inputs(
 def test_run_single_object_grasp_inference_rejects_unknown_method(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Verify that grasp inference runtime raises ValueError on unknown inference methods."""
     obs_path = tmp_path / "obs.npy"
     np.save(obs_path, np.zeros((8, 3)))
     ckpt_path = tmp_path / "ckpt.pt"
@@ -152,6 +161,7 @@ def test_run_single_object_grasp_inference_rejects_unknown_method(
 def test_run_single_object_grasp_inference_diffusion_and_flow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Verify that grasp inference runtime can run both diffusion and flow matching pipelines."""
     obs_path = tmp_path / "obs.npy"
     np.save(obs_path, np.zeros((32, 3)))
     ckpt_path = tmp_path / "ckpt.pt"
@@ -209,6 +219,7 @@ def test_run_single_object_grasp_inference_diffusion_and_flow(
 
 
 def test_run_single_object_grasp_inference_validations(tmp_path: Path) -> None:
+    """Verify that grasp inference runtime validates missing paths and invalid point cloud shapes."""
     ckpt_path = tmp_path / "ckpt.pt"
     ckpt_path.touch()
 
@@ -271,6 +282,7 @@ def test_run_single_object_grasp_inference_validations(tmp_path: Path) -> None:
 def test_run_single_object_grasp_inference_from_ycb_mesh(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Verify that grasp inference runtime successfully samples meshes for YCB objects to run inference."""
     ycb_dir = tmp_path / "ycb"
     ycb_dir.mkdir()
     fake_mesh_path = ycb_dir / "mesh.ply"
@@ -314,6 +326,7 @@ def test_run_single_object_grasp_inference_from_ycb_mesh(
 
 
 def test_generate_candidate_grasps_batch() -> None:
+    """Verify that generate_candidate_grasps successfully loops over point cloud batches."""
     pc1 = np.zeros((10, 3))
     pc2 = np.ones((10, 3))
 
@@ -326,11 +339,14 @@ def test_generate_candidate_grasps_batch() -> None:
 
 
 def test_generate_grasps_type_and_value_errors(tmp_path: Path) -> None:
+    """Verify error handling on loading/saving files with invalid paths, missing dictionary keys, or 4D formats."""
     with pytest.raises(TypeError, match="grasps_path must be"):
         load_generated_grasps("not_a_path")  # type: ignore[arg-type]
 
     dict_path = tmp_path / "dict_grasps.npy"
-    write_generated_grasps(dict_path, {"obj1": _sample_grasps(1), "obj2": _sample_grasps(1)})
+    write_generated_grasps(
+        dict_path, {"obj1": _sample_grasps(1), "obj2": _sample_grasps(1)}
+    )
     with pytest.raises(ValueError, match="Object key 'missing_key' not found"):
         load_generated_grasps(dict_path, object_key="missing_key")
 
@@ -346,7 +362,11 @@ def test_generate_grasps_type_and_value_errors(tmp_path: Path) -> None:
         write_generated_grasps_array("not_a_path", _sample_grasps(1))  # type: ignore[arg-type]
 
 
-def test_write_generated_grasps_exception_and_array_writer(monkeypatch, tmp_path: Path) -> None:
+def test_write_generated_grasps_exception_and_array_writer(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Verify that disk save failures raise custom ValueErrors, and that plain array saves function correctly."""
+
     def bad_save(*args, **kwargs):
         msg = "Disk write error"
         raise OSError(msg)

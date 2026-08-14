@@ -132,6 +132,11 @@ def run_flow_training_pipeline(
         experiment_log_dir: Optional path to write TensorBoard experiment events.
         pretrained_encoder_path: Optional checkpoint whose encoder weights warm-start
             the flow model before training.
+        resume_checkpoint_path: Optional path to a checkpoint to resume training from.
+        augment: Whether to apply data augmentation to training samples.
+        min_grasp_score: Minimum grasp score threshold for training samples.
+        score_repeat_factor: Number of times to repeat samples based on score.
+        score_repeat_power: Power scaling factor for score-based repetition.
     """
     if not isinstance(dataset_root, Path):
         raise TypeError("dataset_root must be a pathlib.Path instance")

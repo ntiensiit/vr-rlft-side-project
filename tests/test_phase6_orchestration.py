@@ -34,6 +34,7 @@ from grasping_ai.pipelines.simulate_grasp import simulate_grasp
 
 @pytest.fixture
 def minimal_ycb_root(tmp_path):
+    """Fixture providing a raw YCB root directory with a minimal mustard bottle MuJoCo XML."""
     obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
     obj_dir.mkdir(parents=True)
     xml_content = """
@@ -51,6 +52,7 @@ def minimal_ycb_root(tmp_path):
 
 @pytest.fixture
 def minimal_ycb_root_differing_body_name(tmp_path):
+    """Fixture providing a YCB root where the object body name differs from the object folder/file name."""
     obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
     obj_dir.mkdir(parents=True)
     xml_content = """
@@ -68,6 +70,7 @@ def minimal_ycb_root_differing_body_name(tmp_path):
 
 @pytest.fixture
 def minimal_ycb_root_at_height(tmp_path):
+    """Fixture providing a YCB root where the object is initialized at a specific height offset."""
     obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
     obj_dir.mkdir(parents=True)
     xml_content = """
@@ -85,6 +88,7 @@ def minimal_ycb_root_at_height(tmp_path):
 
 @pytest.fixture
 def minimal_ycb_root_freejoint(tmp_path):
+    """Fixture providing a YCB root where the object body contains a freejoint for dynamic simulation."""
     obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
     obj_dir.mkdir(parents=True)
     xml_content = """
@@ -152,7 +156,9 @@ def test_collision_metric_returns_valid_output():
 
 def test_force_closure_metric_returns_valid_output():
     """Verify force closure LP solver works."""
-    judge = build_force_closure_judge(friction_coefficient=0.5, wrench_regularization=1.0)
+    judge = build_force_closure_judge(
+        friction_coefficient=0.5, wrench_regularization=1.0
+    )
 
     # Empty contacts -> not force closed
     assert evaluate_force_closure(judge, []) is False
@@ -200,8 +206,13 @@ def test_run_simulation_rejects_missing_robot_xml(minimal_ycb_root):
     grasp = np.eye(4)
     with pytest.raises(FileNotFoundError):
         simulate_grasp(
-            grasp, "mustard_bottle", minimal_ycb_root,
-            Path("missing_robot.xml"), None, 10, np.zeros(1),
+            grasp,
+            "mustard_bottle",
+            minimal_ycb_root,
+            Path("missing_robot.xml"),
+            None,
+            10,
+            np.zeros(1),
         )
 
 
@@ -210,8 +221,13 @@ def test_run_simulation_creates_outcome_report(panda_robot_xml, minimal_ycb_root
     grasp = np.eye(4)
     grasp[:3, 3] = [0.0, 0.0, 0.3]
     outcome = simulate_grasp(
-        grasp, "mustard_bottle", minimal_ycb_root,
-        panda_robot_xml, None, 5, np.zeros(1),
+        grasp,
+        "mustard_bottle",
+        minimal_ycb_root,
+        panda_robot_xml,
+        None,
+        5,
+        np.zeros(1),
     )
     assert "success" in outcome
     assert "initial_height" in outcome
@@ -219,26 +235,43 @@ def test_run_simulation_creates_outcome_report(panda_robot_xml, minimal_ycb_root
     assert "contact_count" in outcome
 
 
-def test_run_simulation_validates_success_contract_params(panda_robot_xml, minimal_ycb_root):
+def test_run_simulation_validates_success_contract_params(
+    panda_robot_xml, minimal_ycb_root
+):
     """Verify simulate_grasp validates lift and stability thresholds."""
     grasp = np.eye(4)
     grasp[:3, 3] = [0.0, 0.0, 0.3]
     with pytest.raises(ValueError, match="lift_height_threshold"):
         simulate_grasp(
-            grasp, "mustard_bottle", minimal_ycb_root,
-            panda_robot_xml, None, 5, np.zeros(1),
+            grasp,
+            "mustard_bottle",
+            minimal_ycb_root,
+            panda_robot_xml,
+            None,
+            5,
+            np.zeros(1),
             lift_height_threshold=-0.01,
         )
     with pytest.raises(ValueError, match="max_linear_velocity"):
         simulate_grasp(
-            grasp, "mustard_bottle", minimal_ycb_root,
-            panda_robot_xml, None, 5, np.zeros(1),
+            grasp,
+            "mustard_bottle",
+            minimal_ycb_root,
+            panda_robot_xml,
+            None,
+            5,
+            np.zeros(1),
             max_linear_velocity=-0.1,
         )
     with pytest.raises(ValueError, match="max_angular_velocity"):
         simulate_grasp(
-            grasp, "mustard_bottle", minimal_ycb_root,
-            panda_robot_xml, None, 5, np.zeros(1),
+            grasp,
+            "mustard_bottle",
+            minimal_ycb_root,
+            panda_robot_xml,
+            None,
+            5,
+            np.zeros(1),
             max_angular_velocity=-0.1,
         )
 
@@ -251,12 +284,19 @@ def test_evaluate_creates_report_from_synthetic_inputs():
 
     def mock_contact_provider(pose):
         return [
-            {"position": np.array([0.05, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])},
+            {
+                "position": np.array([0.05, 0.0, 0.0]),
+                "normal": np.array([-1.0, 0.0, 0.0]),
+            },
         ]
 
     per_grasp = evaluate_generated_grasps(
-        grasps, obj_pc, grip_pc, mock_contact_provider,
-        friction_coefficient=0.5, lift_height_threshold=0.05,
+        grasps,
+        obj_pc,
+        grip_pc,
+        mock_contact_provider,
+        friction_coefficient=0.5,
+        lift_height_threshold=0.05,
     )
     assert len(per_grasp) == 2
     assert "collision_free" in per_grasp[0]
@@ -271,7 +311,9 @@ def test_evaluate_creates_report_from_synthetic_inputs():
         write_evaluation_report(report_path, aggregated)
         assert report_path.exists()
         records = read_jsonl_records(report_path)
-        summary = next(record for record in records if record.get("record_type") == "summary")
+        summary = next(
+            record for record in records if record.get("record_type") == "summary"
+        )
         assert "success_rate" in summary
 
 
@@ -281,12 +323,22 @@ def test_phase6_pipelines_do_not_leak_global_state(panda_robot_xml, minimal_ycb_
     grasp2 = np.eye(4)
     grasp2[0, 3] = 1.0
     outcome1 = simulate_grasp(
-        grasp1, "mustard_bottle", minimal_ycb_root,
-        panda_robot_xml, None, 5, np.zeros(1),
+        grasp1,
+        "mustard_bottle",
+        minimal_ycb_root,
+        panda_robot_xml,
+        None,
+        5,
+        np.zeros(1),
     )
     outcome2 = simulate_grasp(
-        grasp2, "mustard_bottle", minimal_ycb_root,
-        panda_robot_xml, None, 5, np.zeros(1),
+        grasp2,
+        "mustard_bottle",
+        minimal_ycb_root,
+        panda_robot_xml,
+        None,
+        5,
+        np.zeros(1),
     )
     assert np.allclose(outcome1["grasp_pose"], grasp1)
     assert np.allclose(outcome2["grasp_pose"], grasp2)
@@ -303,24 +355,33 @@ def test_simulate_grasp_renames_object_body_to_object_identifier(
             differs from the object identifier.
     """
     from grasping_ai.robotics.gripper import panda_hand_to_contact_transform
-    from grasping_ai.robotics.kinematics import build_forward_kinematics, load_robot_model
+    from grasping_ai.robotics.kinematics import (
+        build_forward_kinematics,
+        load_robot_model,
+    )
     from grasping_ai.robotics.transforms import transform_grasp_pose
 
     r_model = load_robot_model(str(panda_robot_xml))
-    q_home = np.array(
-        [0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853, 0.04, 0.04]
-    )
+    q_home = np.array([0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853, 0.04, 0.04])
     hand_pose = build_forward_kinematics(r_model)(q_home)
-    contact_grasp = transform_grasp_pose(
-        hand_pose, panda_hand_to_contact_transform()
-    )
+    contact_grasp = transform_grasp_pose(hand_pose, panda_hand_to_contact_transform())
     outcome = simulate_grasp(
-        contact_grasp, "mustard_bottle", minimal_ycb_root_differing_body_name,
-        panda_robot_xml, None, 5, np.zeros(1),
+        contact_grasp,
+        "mustard_bottle",
+        minimal_ycb_root_differing_body_name,
+        panda_robot_xml,
+        None,
+        5,
+        np.zeros(1),
     )
     assert set(outcome.keys()) == {
-        "success", "initial_height", "final_height",
-        "contact_count", "object_velocity", "grasp_pose", "fk_position_error",
+        "success",
+        "initial_height",
+        "final_height",
+        "contact_count",
+        "object_velocity",
+        "grasp_pose",
+        "fk_position_error",
     }
     assert outcome["initial_height"] == pytest.approx(0.5)
     assert outcome["final_height"] == pytest.approx(0.5)
@@ -334,8 +395,13 @@ def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(
     grasp = np.eye(4)
     grasp[:3, 3] = [0.0, 0.0, 1.0]
     outcome = simulate_grasp(
-        grasp, "mustard_bottle", minimal_ycb_root_at_height,
-        panda_robot_xml, None, 5, np.zeros(1),
+        grasp,
+        "mustard_bottle",
+        minimal_ycb_root_at_height,
+        panda_robot_xml,
+        None,
+        5,
+        np.zeros(1),
     )
     assert outcome["success"] is False
     assert outcome["initial_height"] == 0.0
@@ -352,8 +418,13 @@ def test_simulate_grasp_ik_failure_aligns_freejoint_object(
     grasp = np.eye(4)
     grasp[:3, 3] = [0.0, 0.0, 1.0]
     outcome = simulate_grasp(
-        grasp, "mustard_bottle", minimal_ycb_root_freejoint,
-        panda_robot_xml, None, 5, np.zeros(1),
+        grasp,
+        "mustard_bottle",
+        minimal_ycb_root_freejoint,
+        panda_robot_xml,
+        None,
+        5,
+        np.zeros(1),
     )
     assert outcome["success"] is False
     assert outcome["fk_position_error"] == float("inf")
@@ -370,6 +441,11 @@ def test_simulate_grasp_missing_object_body_reports_error(panda_robot_xml, tmp_p
     grasp = np.eye(4)
     with pytest.raises(ValueError, match="No body element found"):
         simulate_grasp(
-            grasp, "mustard_bottle", ycb_root,
-            panda_robot_xml, None, 5, np.zeros(1),
+            grasp,
+            "mustard_bottle",
+            ycb_root,
+            panda_robot_xml,
+            None,
+            5,
+            np.zeros(1),
         )

@@ -56,7 +56,11 @@ def test_pyproject_preserves_src_package_layout():
     """Verify pyproject.toml preserves src package layout."""
     with open("pyproject.toml", encoding="utf-8") as f:
         content = f.read()
-    assert 'packages = ["src"]' in content or "packages = ['src']" in content or '"src"' in content
+    assert (
+        'packages = ["src"]' in content
+        or "packages = ['src']" in content
+        or '"src"' in content
+    )
 
 
 def test_se3_primitive_identity_behavior():
@@ -193,7 +197,9 @@ def rotation_matrices(draw):
     """Generate a valid 3x3 rotation matrix using random axis and angle."""
     axis = draw(unit_vectors())
     angle = draw(
-        st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False)
+        st.floats(
+            min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False
+        )
     )
     return rotation_matrix_from_axis_angle(axis, angle)
 
@@ -201,7 +207,9 @@ def rotation_matrices(draw):
 translations = arrays(
     np.float64,
     (3,),
-    elements=st.floats(min_value=-1000.0, max_value=1000.0, allow_nan=False, allow_infinity=False),
+    elements=st.floats(
+        min_value=-1000.0, max_value=1000.0, allow_nan=False, allow_infinity=False
+    ),
 )
 
 
@@ -214,7 +222,10 @@ def point_clouds(draw):
             np.float64,
             (n, 3),
             elements=st.floats(
-                min_value=-1000.0, max_value=1000.0, allow_nan=False, allow_infinity=False
+                min_value=-1000.0,
+                max_value=1000.0,
+                allow_nan=False,
+                allow_infinity=False,
             ),
         )
     )
@@ -239,7 +250,9 @@ def test_property_rotation_matrix_validity(axis, angle):
 
 @given(
     axis=unit_vectors(),
-    angle=st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False),
+    angle=st.floats(
+        min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False
+    ),
 )
 @settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
 def test_property_rotation_matrix_axis_angle_roundtrip(axis, angle):
@@ -291,6 +304,7 @@ def test_property_apply_transform(points, rotation, translation):
 
 
 def test_geometry_additional_validation_branches() -> None:
+    """Verify validation checks on invalid rotations, translations, axes, angles, and transform shapes."""
     with pytest.raises(TypeError, match="Angle must be a float or integer"):
         rotation_matrix_from_axis_angle(np.array([1.0, 0.0, 0.0]), "invalid_angle")  # type: ignore[arg-type]
 

@@ -17,6 +17,11 @@ DATA_OBSERVATIONS = ROOT / "data" / "observations"
 
 @pytest.fixture(scope="module")
 def chain_run():
+    """Fixture to run the full artifact pipeline and return the subprocess result.
+
+    Skips the tests if YCB assets are missing, and fails if the script runner is absent
+    or if the execution returns a non-zero exit code.
+    """
     if not YCB_ROOT.is_dir():
         pytest.skip(f"YCB root not found: {YCB_ROOT}")
     if not RUNNER.is_file():
@@ -37,15 +42,17 @@ def chain_run():
     )
     if completed.returncode != 0:
         pytest.fail(
-            "Artifact chain failed:\n"
-            f"stdout:\n{completed.stdout}\n"
-            f"stderr:\n{completed.stderr}"
+            f"Artifact chain failed:\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
         )
     return completed
 
 
 @pytest.mark.slow
 def test_manifest_records_retained_artifacts(chain_run):
+    """Verify that the manifest file correctly logs retained artifacts and execution commands.
+
+    Ensures command logs use relative paths and that all referenced artifacts exist on disk.
+    """
     manifest_path = ARTIFACTS / "manifest.jsonl"
     assert manifest_path.is_file(), "manifest.jsonl was not produced"
     records = read_jsonl_records(manifest_path)
@@ -66,6 +73,11 @@ def test_manifest_records_retained_artifacts(chain_run):
 
 @pytest.mark.slow
 def test_artifact_chain_produces_key_files(chain_run):
+    """Verify that executing the full artifact pipeline produces all expected outputs.
+
+    Checks for the existence of checkpoints, dataset exports, reports, processed
+    objects, and observed state files.
+    """
     expected = [
         ARTIFACTS / "manifest.jsonl",
         ARTIFACTS / "checkpoints" / "diffusion_grasp_generator.pt",
@@ -84,6 +96,10 @@ def test_artifact_chain_produces_key_files(chain_run):
 
 @pytest.mark.slow
 def test_evaluation_report_uses_grasp_success_key(chain_run):
+    """Verify that the generated evaluation summary includes expected success metrics.
+
+    Checks that success_rate, collision_free_rate, and force_closure_rate are logged.
+    """
     records = read_jsonl_records(
         ARTIFACTS / "reports" / "diffusion_analytical_evaluation_report.jsonl"
     )

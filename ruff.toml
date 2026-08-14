@@ -1,5 +1,5 @@
 target-version = "py312"
-line-length = 100
+line-length = 88
 src = ["src", "tests"]
 extend-exclude = [".venv", "build", "dist", "notebooks"]
 
@@ -23,8 +23,12 @@ select = [
     "FURB",
     "LOG",
     "G",
+    "D",
 ]
-ignore = ["PLR2004"]
+ignore = ["PLR2004", "D100", "D104", "D107"]
+
+[lint.pydocstyle]
+convention = "google"
 
 [lint.per-file-ignores]
 "tests/**/*.py" = ["PLR2004", "S101", "ARG", "FBT", "PLC0415", "PLR0915", "PT011", "PT012", "E501"]
@@ -58,8 +62,6 @@ ignore = ["PLR2004"]
 "src/grasping_ai/data/**/*.py" = ["TRY003", "PERF401", "TRY300", "PLR0912", "PLR0915", "PLC0415", "PLR0913", "PLR0917"]
 "src/grasping_ai/perception/**/*.py" = ["TRY003", "PERF401", "TRY300"]
 "src/grasping_ai/evaluation/**/*.py" = ["TRY003", "PERF401", "TRY300", "SIM108"]
-
-
 
 [format]
 quote-style = "double"

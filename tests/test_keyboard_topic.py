@@ -5,6 +5,7 @@ from grasping_ai.pipelines.visualize_robot import run_keyboard_tui
 
 
 def _bind_topic_socket() -> socket.socket:
+    """Bind a UDP socket to local loopback on an ephemeral port for testing."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", 0))
@@ -13,6 +14,7 @@ def _bind_topic_socket() -> socket.socket:
 
 
 def _drain_topic_keycodes(sock: socket.socket) -> list[int]:
+    """Receive and parse keycode messages from a bound socket."""
     topic = "robot/keyboard"
     keycodes: list[int] = []
     while True:
@@ -37,6 +39,7 @@ def _drain_topic_keycodes(sock: socket.socket) -> list[int]:
 
 
 def test_keyboard_topic_round_trip() -> None:
+    """Verify that a keyboard topic message sent over UDP is correctly received and parsed."""
     topic_sock = _bind_topic_socket()
     port = int(topic_sock.getsockname()[1])
     pub_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -57,6 +60,7 @@ def test_keyboard_topic_round_trip() -> None:
 
 
 def test_run_keyboard_tui_publishes_then_quits() -> None:
+    """Verify that the keyboard TUI publishes parsed keycodes and terminates on exit indicator."""
     topic_sock = _bind_topic_socket()
     port = int(topic_sock.getsockname()[1])
     keys = [72, -1]

@@ -55,12 +55,14 @@ from grasping_ai.simulation.ycb import (
 def test_mujoco_runtime_dependency_available():
     """Verify that mujoco package can be imported."""
     import mujoco
+
     assert mujoco.__version__ is not None
 
 
 def test_phase1_package_import_remains_stable():
     """Verify that the package remains importable."""
     import grasping_ai
+
     assert grasping_ai.__name__ == "grasping_ai"
 
 
@@ -78,6 +80,7 @@ def test_robot_config_file_exists():
 
 @pytest.fixture
 def minimal_gripper_xml(tmp_path):
+    """Fixture providing a path to a minimal MuJoCo gripper XML model for testing."""
     xml_content = """
     <mujoco model="minimal_gripper">
         <worldbody>
@@ -101,6 +104,7 @@ def minimal_gripper_xml(tmp_path):
 
 @pytest.fixture
 def minimal_object_xml(tmp_path):
+    """Fixture providing a path to a minimal MuJoCo object XML model for testing."""
     xml_content = """
     <mujoco model="minimal_object">
         <worldbody>
@@ -129,6 +133,7 @@ SCENE_OBJECT_XML = """\
 
 @pytest.fixture
 def scene_object_xml(tmp_path):
+    """Fixture writing and providing a path to a scene object XML model with a freejoint."""
     path = tmp_path / "object.xml"
     path.write_text(SCENE_OBJECT_XML, encoding="utf-8")
     return path
@@ -136,6 +141,7 @@ def scene_object_xml(tmp_path):
 
 @pytest.fixture
 def ycb_root_with_object(tmp_path):
+    """Fixture providing a temporary YCB asset root directory populated with a dummy object model."""
     obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
     obj_dir.mkdir(parents=True)
     (obj_dir / "mustard_bottle.xml").write_text(SCENE_OBJECT_XML, encoding="utf-8")
@@ -272,6 +278,7 @@ def test_make_open_close_commands(minimal_gripper_xml):
 def test_build_gripper_controller(minimal_gripper_xml):
     """Verify command limits, mapping, and application to ctrl array."""
     import mujoco
+
     g_model = load_gripper_model(str(minimal_gripper_xml))
     controller = build_gripper_controller(g_model)
 
@@ -474,6 +481,7 @@ def test_robotics_error_handling(minimal_gripper_xml, panda_robot_xml):
 
 
 def test_gripper_controller_uses_shared_command_path(minimal_gripper_xml):
+    """Verify that gripper controllers correctly command actuator inputs through shared state mappings."""
     import mujoco
 
     g_model = load_gripper_model(str(minimal_gripper_xml))
@@ -494,6 +502,7 @@ def test_gripper_controller_uses_shared_command_path(minimal_gripper_xml):
 
 
 def test_gripper_controller_requires_bound_simulation(minimal_gripper_xml):
+    """Verify that the gripper controller raises a RuntimeError if invoked before binding to active simulation state."""
     g_model = load_gripper_model(str(minimal_gripper_xml))
     controller = build_gripper_controller(g_model)
     with pytest.raises(RuntimeError, match="not bound"):
@@ -634,21 +643,14 @@ def test_build_scene_xml_renames_object_body_when_name_supplied(
     model_named = load_mujoco_model(scene_named)
     mj_model_named = model_named["mj_model"]
     assert (
-        mujoco.mj_name2id(mj_model_named, mujoco.mjtObj.mjOBJ_BODY, "my_object")
-        != -1
+        mujoco.mj_name2id(mj_model_named, mujoco.mjtObj.mjOBJ_BODY, "my_object") != -1
     )
-    assert (
-        mujoco.mj_name2id(mj_model_named, mujoco.mjtObj.mjOBJ_BODY, "object")
-        == -1
-    )
+    assert mujoco.mj_name2id(mj_model_named, mujoco.mjtObj.mjOBJ_BODY, "object") == -1
 
     scene_default = build_scene_xml(panda_robot_xml, minimal_object_xml, None)
     model_default = load_mujoco_model(scene_default)
     mj_model_default = model_default["mj_model"]
-    assert (
-        mujoco.mj_name2id(mj_model_default, mujoco.mjtObj.mjOBJ_BODY, "object")
-        != -1
-    )
+    assert mujoco.mj_name2id(mj_model_default, mujoco.mjtObj.mjOBJ_BODY, "object") != -1
 
     with pytest.raises(TypeError):
         build_scene_xml(panda_robot_xml, minimal_object_xml, None, 123)  # type: ignore[arg-type]
@@ -656,20 +658,21 @@ def test_build_scene_xml_renames_object_body_when_name_supplied(
 
 def test_contact_filtering():
     """Verify contact report filtering logic."""
+
     def dummy_reporter():
         return [
             {
                 "position": np.zeros(3),
                 "normal": np.array([0, 0, 1]),
                 "force": np.zeros(6),
-                "body_names": np.array(["bodyA", "bodyB"], dtype=object)
+                "body_names": np.array(["bodyA", "bodyB"], dtype=object),
             },
             {
                 "position": np.ones(3),
                 "normal": np.array([0, 1, 0]),
                 "force": np.zeros(6),
-                "body_names": np.array(["bodyC", "bodyD"], dtype=object)
-            }
+                "body_names": np.array(["bodyC", "bodyD"], dtype=object),
+            },
         ]
 
     filtered = collect_contacts(dummy_reporter, {"bodyB", "bodyX"})
@@ -769,7 +772,9 @@ def test_simulation_error_handling(panda_robot_xml, tmp_path):
     with pytest.raises(FileNotFoundError):
         build_scene_xml(panda_robot_xml, Path("non_existent_obj.xml"), None)
     with pytest.raises(FileNotFoundError):
-        build_scene_xml(panda_robot_xml, panda_robot_xml, Path("non_existent_table.xml"))
+        build_scene_xml(
+            panda_robot_xml, panda_robot_xml, Path("non_existent_table.xml")
+        )
 
     # 6. attach_object_to_scene validations
     with pytest.raises(TypeError, match="state"):
@@ -832,6 +837,7 @@ def test_simulation_error_handling(panda_robot_xml, tmp_path):
 
 
 def test_find_ycb_mjcf_discovery(ycb_root_with_object):
+    """Verify find_ycb_mjcf finds the mustard bottle XML model file in YCB paths."""
     object_dir = resolve_ycb_object_directory(ycb_root_with_object, "mustard_bottle")
     mjcf = find_ycb_mjcf(object_dir)
     assert mjcf.is_file()
@@ -839,6 +845,7 @@ def test_find_ycb_mjcf_discovery(ycb_root_with_object):
 
 
 def test_find_ycb_mjcf_recursive_discovery(tmp_path):
+    """Verify that find_ycb_mjcf recursively finds MJCF XML configuration files in subdirectories."""
     obj_dir = tmp_path / "obj"
     nested = obj_dir / "meshes"
     nested.mkdir(parents=True)
@@ -848,6 +855,7 @@ def test_find_ycb_mjcf_recursive_discovery(tmp_path):
 
 
 def test_find_ycb_mjcf_validation(tmp_path):
+    """Verify that find_ycb_mjcf raises appropriate exceptions for non-existent directories or invalid inputs."""
     with pytest.raises(TypeError):
         find_ycb_mjcf("not-a-path")  # type: ignore[arg-type]
     with pytest.raises(FileNotFoundError):
@@ -859,6 +867,7 @@ def test_find_ycb_mjcf_validation(tmp_path):
 
 
 def test_mujoco_scene_robot_only(panda_robot_xml):
+    """Verify that MuJoCoScene initializes correctly with robot model and steps control commands successfully."""
     scene = MuJoCoScene(panda_robot_xml)
     assert scene.state is not None
     assert scene.model.nu == 8
@@ -872,20 +881,20 @@ def test_mujoco_scene_robot_only(panda_robot_xml):
 
 
 def test_mujoco_scene_with_object_renames_body(panda_robot_xml, scene_object_xml):
+    """Verify that MuJoCoScene properly renames body names to match object identifiers on loading."""
     import mujoco
 
     scene = MuJoCoScene(panda_robot_xml, scene_object_xml, object_name="obj_001")
     mj_model = scene.model
-    assert (
-        mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "obj_001") != -1
-    )
-    assert (
-        mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "object") == -1
-    )
+    assert mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "obj_001") != -1
+    assert mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "object") == -1
     assert scene.body_pose("obj_001")[2, 3] == pytest.approx(0.5)
 
 
-def test_mujoco_scene_snapshot_reset_restores_initial_state(panda_robot_xml, scene_object_xml):
+def test_mujoco_scene_snapshot_reset_restores_initial_state(
+    panda_robot_xml, scene_object_xml
+):
+    """Verify that calling reset on MuJoCoScene restores the state snapshot without rebuilding physics models."""
     scene = MuJoCoScene(panda_robot_xml, scene_object_xml, object_name="obj_001")
     initial_height = scene.body_pose("obj_001")[2, 3]
 
@@ -899,7 +908,10 @@ def test_mujoco_scene_snapshot_reset_restores_initial_state(panda_robot_xml, sce
     assert scene.body_pose("obj_001")[2, 3] == pytest.approx(initial_height)
 
 
-def test_mujoco_scene_reset_does_not_rebuild_xml(panda_robot_xml, scene_object_xml, monkeypatch):
+def test_mujoco_scene_reset_does_not_rebuild_xml(
+    panda_robot_xml, scene_object_xml, monkeypatch
+):
+    """Verify that reset on MuJoCoScene resets qpos and qvel using snapshots instead of rebuilding model trees."""
     import grasping_ai.simulation.scene as scene_module
 
     calls = []
@@ -920,6 +932,7 @@ def test_mujoco_scene_reset_does_not_rebuild_xml(panda_robot_xml, scene_object_x
 
 
 def test_mujoco_scene_step_validates_controls(panda_robot_xml):
+    """Verify that stepping MuJoCoScene validates control inputs for shape, types, and finite values."""
     scene = MuJoCoScene(panda_robot_xml)
     with pytest.raises(ValueError, match="finite"):
         scene.step(np.array([np.nan]), 0.002)
@@ -930,6 +943,7 @@ def test_mujoco_scene_step_validates_controls(panda_robot_xml):
 
 
 def test_mujoco_scene_validation(panda_robot_xml, scene_object_xml):
+    """Verify constructor parameters, robot XML paths, and object XML paths in MuJoCoScene."""
     with pytest.raises(TypeError, match="robot_xml_path"):
         MuJoCoScene("not-a-path")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="object_name"):
@@ -940,7 +954,10 @@ def test_mujoco_scene_validation(panda_robot_xml, scene_object_xml):
         MuJoCoScene(panda_robot_xml, Path("non_existent_object.xml"))
 
 
-def test_mujoco_scene_attach_object_refreshes_snapshot(panda_robot_xml, scene_object_xml):
+def test_mujoco_scene_attach_object_refreshes_snapshot(
+    panda_robot_xml, scene_object_xml
+):
+    """Verify that attaching new objects dynamically to MuJoCoScene updates active state snapshot ranges."""
     scene = MuJoCoScene(panda_robot_xml)
     scene.attach_object(scene_object_xml, "attached_obj")
     assert scene.body_pose("attached_obj")[2, 3] == pytest.approx(0.5)
@@ -953,6 +970,7 @@ def test_mujoco_scene_attach_object_refreshes_snapshot(panda_robot_xml, scene_ob
 def test_mujoco_scene_is_consistent_with_functional_primitives(
     panda_robot_xml, scene_object_xml
 ):
+    """Verify that functional primitive simulation utilities yield outputs consistent with scene-based steps."""
     scene = MuJoCoScene(panda_robot_xml, scene_object_xml, object_name="obj_001")
     model = load_mujoco_model(scene.state.get("model_xml_path", panda_robot_xml))
     # The scene wraps the same model used by the functional primitives.
@@ -962,6 +980,7 @@ def test_mujoco_scene_is_consistent_with_functional_primitives(
 
 
 def test_set_actuator_controls_writes_ctrl(panda_robot_xml):
+    """Verify that set_actuator_controls correctly updates control registers in active MuJoCo simulation states."""
     model = load_mujoco_model(panda_robot_xml)
     state, _step, _contacts = create_simulation(model)
     set_actuator_controls(state, np.array([0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
@@ -970,6 +989,7 @@ def test_set_actuator_controls_writes_ctrl(panda_robot_xml):
 
 
 def test_set_actuator_controls_validation(panda_robot_xml):
+    """Verify that set_actuator_controls raises errors for non-finite values or control dimensionality mismatches."""
     model = load_mujoco_model(panda_robot_xml)
     state, _step, _contacts = create_simulation(model)
 
@@ -984,6 +1004,7 @@ def test_set_actuator_controls_validation(panda_robot_xml):
 
 
 def test_simulate_grasp_and_sweep_validations(panda_robot_xml, tmp_path: Path) -> None:
+    """Verify shape and boundary validation checks on input parameters for grasp simulation pipelines."""
     ycb_dir = tmp_path / "ycb"
     ycb_dir.mkdir()
 
@@ -1090,7 +1111,10 @@ def test_simulate_grasp_and_sweep_validations(panda_robot_xml, tmp_path: Path) -
         )
 
 
-def test_run_simulation_sweep_execution(monkeypatch, panda_robot_xml, tmp_path: Path) -> None:
+def test_run_simulation_sweep_execution(
+    monkeypatch, panda_robot_xml, tmp_path: Path
+) -> None:
+    """Verify that running a simulation sweep yields outputs for all input grasp poses in the batch."""
     ycb_dir = tmp_path / "ycb"
     ycb_dir.mkdir()
 
@@ -1098,6 +1122,7 @@ def test_run_simulation_sweep_execution(monkeypatch, panda_robot_xml, tmp_path: 
         return {"success": True, "grasp_pose": kwargs["grasp_pose"]}
 
     import sys
+
     sim_mod = sys.modules["grasping_ai.pipelines.simulate_grasp"]
     monkeypatch.setattr(sim_mod, "simulate_grasp", dummy_simulate_grasp)
 
@@ -1116,6 +1141,7 @@ def test_run_simulation_sweep_execution(monkeypatch, panda_robot_xml, tmp_path: 
 
 
 def test_ycb_all_helper_functions_and_discovery_paths(tmp_path: Path) -> None:
+    """Verify that YCB helper tools classify names, resolve asset dirs, and discover mesh files correctly."""
     from grasping_ai.simulation.ycb import (
         build_ycb_object_name_classifier,
         find_ycb_mesh_file,
@@ -1178,8 +1204,14 @@ def test_ycb_all_helper_functions_and_discovery_paths(tmp_path: Path) -> None:
     assert mjcf_path.name == "model.xml"
 
 
-def test_scene_and_simulate_grasp_additional_coverage(monkeypatch, panda_robot_xml, tmp_path: Path) -> None:
-    from grasping_ai.pipelines.simulate_grasp import run_simulation_sweep, simulate_grasp
+def test_scene_and_simulate_grasp_additional_coverage(
+    monkeypatch, panda_robot_xml, tmp_path: Path
+) -> None:
+    """Verify that scene construction validation and simulate_grasp robustly handles malformed XML files and missing bodies."""
+    from grasping_ai.pipelines.simulate_grasp import (
+        run_simulation_sweep,
+        simulate_grasp,
+    )
     from grasping_ai.simulation.scene import (
         MuJoCoScene,
         build_scene_xml,
@@ -1203,7 +1235,11 @@ def test_scene_and_simulate_grasp_additional_coverage(monkeypatch, panda_robot_x
         build_scene_xml(panda_robot_xml, object_xml, None, output_dir="invalid")  # type: ignore[arg-type]
 
     scene_xml = build_scene_xml(
-        panda_robot_xml, object_xml, table_xml, object_name="renamed_obj", output_dir=tmp_path / "out_scenes"
+        panda_robot_xml,
+        object_xml,
+        table_xml,
+        object_name="renamed_obj",
+        output_dir=tmp_path / "out_scenes",
     )
     assert scene_xml.is_file()
 
@@ -1234,7 +1270,6 @@ def test_scene_and_simulate_grasp_additional_coverage(monkeypatch, panda_robot_x
         encoding="utf-8",
     )
 
-
     monkeypatch.setattr(
         "grasping_ai.simulation.scene._rename_object_body",
         lambda obj_xml, obj_name, out_dir: obj_xml,
@@ -1244,7 +1279,9 @@ def test_scene_and_simulate_grasp_additional_coverage(monkeypatch, panda_robot_x
         lambda *args, **kwargs: np.zeros(9),
     )
 
-    with pytest.raises(ValueError, match="Body 'missing_body' not found in simulation model"):
+    with pytest.raises(
+        ValueError, match="Body 'missing_body' not found in simulation model"
+    ):
         simulate_grasp(
             robot_xml_path=panda_robot_xml,
             grasp_pose=np.eye(4),
@@ -1391,7 +1428,9 @@ def test_gripper_actuator_indices_detects_finger_and_tendon(
     assert gripper_actuator_indices(tendon_model) == [0]
 
 
-def test_simulate_grasp_uses_fallback_timestep(monkeypatch, panda_robot_xml, tmp_path: Path) -> None:
+def test_simulate_grasp_uses_fallback_timestep(
+    monkeypatch, panda_robot_xml, tmp_path: Path
+) -> None:
     """Use a default physics timestep when the model reports a non-positive ``dt``.
 
     Args:

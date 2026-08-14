@@ -27,6 +27,7 @@ from grasping_ai.pipelines.train_rl import (
 
 
 def _write_ycb_object_xml(tmp_path: Path) -> Path:
+    """Helper function to write a minimal YCB object MJCF XML file for testing."""
     object_dir = tmp_path / "ycb" / "006_mustard_bottle"
     object_dir.mkdir(parents=True)
     xml_content = """\
@@ -52,6 +53,7 @@ def test_phase1_package_import_remains_stable():
 def test_stable_baselines_dependency_available():
     """Verify that Stable-Baselines3 can be imported."""
     import stable_baselines3
+
     assert stable_baselines3.__version__ is not None
 
 
@@ -152,8 +154,9 @@ def test_run_rl_pipeline_validates_observation_dim(panda_robot_xml: Path):
     Args:
         panda_robot_xml: Path to ``deploy/robot.xml``.
     """
-    with tempfile.TemporaryDirectory() as tmp_dir, pytest.raises(
-        ValueError, match="observation_dim"
+    with (
+        tempfile.TemporaryDirectory() as tmp_dir,
+        pytest.raises(ValueError, match="observation_dim"),
     ):
         run_rl_training_pipeline(
             robot_xml_path=panda_robot_xml,
@@ -176,8 +179,9 @@ def test_run_rl_pipeline_validates_action_dim(panda_robot_xml: Path):
     Args:
         panda_robot_xml: Path to ``deploy/robot.xml``.
     """
-    with tempfile.TemporaryDirectory() as tmp_dir, pytest.raises(
-        ValueError, match="action_dim"
+    with (
+        tempfile.TemporaryDirectory() as tmp_dir,
+        pytest.raises(ValueError, match="action_dim"),
     ):
         run_rl_training_pipeline(
             robot_xml_path=panda_robot_xml,
@@ -343,12 +347,19 @@ def test_rl_pipeline_tracks_object_and_enables_grasp_rewards(
 
 
 def test_save_rl_policy_checkpoint_writes_metadata():
+    """Verify that save_rl_policy_checkpoint writes valid metadata and formats state dict properly."""
     policy = build_policy_network(4, 2, 16, 2)
     with tempfile.TemporaryDirectory() as tmp_dir:
         checkpoint_path = Path(tmp_dir) / "policy.pt"
         save_rl_policy_checkpoint(
-            policy, checkpoint_path, epoch=5, observation_dim=4, action_dim=2,
-            hidden_dim=16, num_layers=2, seed=42,
+            policy,
+            checkpoint_path,
+            epoch=5,
+            observation_dim=4,
+            action_dim=2,
+            hidden_dim=16,
+            num_layers=2,
+            seed=42,
         )
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         assert checkpoint["format_version"] == RL_CHECKPOINT_FORMAT_VERSION
@@ -374,11 +385,18 @@ def test_save_rl_policy_checkpoint_writes_metadata():
 
 
 def test_read_rl_policy_metadata():
+    """Verify that read_rl_policy_metadata successfully parses dimensions and layers from standard checkpoints."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         checkpoint_path = Path(tmp_dir) / "policy.pt"
         policy = build_policy_network(3, 1, 8, 2)
         save_rl_policy_checkpoint(
-            policy, checkpoint_path, 1, 3, 1, 8, 2,
+            policy,
+            checkpoint_path,
+            1,
+            3,
+            1,
+            8,
+            2,
         )
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         metadata = read_rl_policy_metadata(checkpoint)
@@ -386,17 +404,25 @@ def test_read_rl_policy_metadata():
 
 
 def test_read_rl_policy_metadata_legacy_checkpoint_returns_none():
+    """Verify that read_rl_policy_metadata returns None for legacy checkpoints lacking explicit metadata headers."""
     assert read_rl_policy_metadata({}) is None
     assert read_rl_policy_metadata({"model_state_dict": {}}) is None
     assert read_rl_policy_metadata("not-a-dict") is None  # type: ignore[arg-type]
 
 
 def test_runner_loads_standard_checkpoint():
+    """Verify that the policy runner can load and execute inference on standard checkpoints with metadata."""
     policy = build_policy_network(4, 2, 16, 2)
     with tempfile.TemporaryDirectory() as tmp_dir:
         checkpoint_path = Path(tmp_dir) / "policy.pt"
         save_rl_policy_checkpoint(
-            policy, checkpoint_path, 1, 4, 2, 16, 2,
+            policy,
+            checkpoint_path,
+            1,
+            4,
+            2,
+            16,
+            2,
         )
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         runner = build_rl_policy_runner(checkpoint, 4, 2, "cpu")
@@ -407,11 +433,18 @@ def test_runner_loads_standard_checkpoint():
 
 
 def test_runner_rejects_dimension_mismatch():
+    """Verify that the policy runner raises ValueError if observation or action dimensions mismatch the checkpoint metadata."""
     policy = build_policy_network(4, 2, 16, 2)
     with tempfile.TemporaryDirectory() as tmp_dir:
         checkpoint_path = Path(tmp_dir) / "policy.pt"
         save_rl_policy_checkpoint(
-            policy, checkpoint_path, 1, 4, 2, 16, 2,
+            policy,
+            checkpoint_path,
+            1,
+            4,
+            2,
+            16,
+            2,
         )
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         with pytest.raises(ValueError, match="observation_dim"):
@@ -421,6 +454,7 @@ def test_runner_rejects_dimension_mismatch():
 
 
 def test_runner_loads_legacy_checkpoint_without_metadata():
+    """Verify that policy runner can load legacy checkpoints that lack explicit metadata using inferred sizes."""
     # A legacy checkpoint (model_state_dict only) is still loadable by
     # inferring architecture from parameter names.
     policy = build_policy_network(4, 2, 8, 2)
@@ -432,6 +466,7 @@ def test_runner_loads_legacy_checkpoint_without_metadata():
 
 
 def test_save_rl_policy_checkpoint_validation():
+    """Verify that saving checkpoints validates path types, observation, and action dimensions strictly."""
     policy = build_policy_network(4, 2, 16, 2)
     with pytest.raises(ValueError, match="observation_dim"):
         save_rl_policy_checkpoint(policy, Path("p.pt"), 1, 0, 2, 16, 2)
@@ -442,18 +477,26 @@ def test_save_rl_policy_checkpoint_validation():
 
 
 def test_select_action_noise_scale_controls_exploration():
+    """Verify that select_action noise scale controls stochastic exploration vs deterministic policy execution."""
     policy = build_policy_network(4, 2, 16, 2)
     obs = torch.randn(3, 4)
 
-    with_noise = select_action(policy, obs, torch.Generator().manual_seed(1), noise_scale=0.1)
-    with_more_noise = select_action(policy, obs, torch.Generator().manual_seed(1), noise_scale=0.5)
+    with_noise = select_action(
+        policy, obs, torch.Generator().manual_seed(1), noise_scale=0.1
+    )
+    with_more_noise = select_action(
+        policy, obs, torch.Generator().manual_seed(1), noise_scale=0.5
+    )
     assert not torch.allclose(with_noise, with_more_noise)
 
-    deterministic = select_action(policy, obs, torch.Generator().manual_seed(1), noise_scale=0.0)
+    deterministic = select_action(
+        policy, obs, torch.Generator().manual_seed(1), noise_scale=0.0
+    )
     assert torch.allclose(deterministic, policy(obs))
 
 
 def test_select_action_rejects_negative_noise_scale():
+    """Verify that negative noise scale values raise a ValueError in select_action."""
     policy = build_policy_network(4, 2, 16, 2)
     obs = torch.randn(2, 4)
     rng = torch.Generator()
@@ -462,6 +505,7 @@ def test_select_action_rejects_negative_noise_scale():
 
 
 def test_build_rl_policy_runner_additional_branches(tmp_path: Path) -> None:
+    """Verify that build_rl_policy_runner handles stochastic execution, action bounds, and shape validations correctly."""
     policy = build_policy_network(4, 2, 16, 2)
     checkpoint_path = tmp_path / "policy.pt"
     save_rl_policy_checkpoint(policy, checkpoint_path, 1, 4, 2, 16, 2)
@@ -498,6 +542,7 @@ def test_build_rl_policy_runner_additional_branches(tmp_path: Path) -> None:
 
 
 def test_load_rl_policy_checkpoint_validations(tmp_path: Path) -> None:
+    """Verify that load_rl_policy_checkpoint raises appropriate errors for invalid checkpoint paths or missing files."""
     with pytest.raises(TypeError, match="checkpoint_path must be"):
         load_rl_policy_checkpoint("invalid_path", "cpu")  # type: ignore[arg-type]
 
@@ -507,6 +552,8 @@ def test_load_rl_policy_checkpoint_validations(tmp_path: Path) -> None:
 
 
 def test_run_policy_step_execution() -> None:
+    """Verify that run_policy_step correctly invokes policy runners on numpy observation vectors."""
+
     def dummy_runner(obs: np.ndarray) -> np.ndarray:
         return np.array([0.1, -0.1], dtype=np.float32)
 
@@ -517,6 +564,7 @@ def test_run_policy_step_execution() -> None:
 
 
 def test_rl_policy_additional_validations(tmp_path: Path) -> None:
+    """Verify metadata reading, value network construction, and parameter boundary validations in RL policy components."""
     policy = build_policy_network(4, 2, 16, 2)
     checkpoint_path = tmp_path / "policy.pt"
 
@@ -562,7 +610,10 @@ def test_rl_policy_additional_validations(tmp_path: Path) -> None:
         select_action(policy, obs, "not_a_generator")  # type: ignore[arg-type]
 
 
-def test_run_rl_training_pipeline_integration(tmp_path: Path, panda_robot_xml: Path) -> None:
+def test_run_rl_training_pipeline_integration(
+    tmp_path: Path, panda_robot_xml: Path
+) -> None:
+    """Verify end-to-end execution of the RL training pipeline and subsequent checkpoint metadata persistence."""
     ycb_dir = tmp_path / "ycb"
     ycb_dir.mkdir()
     policy_ckpt = tmp_path / "trained_policy.pt"
@@ -595,41 +646,165 @@ def test_run_rl_training_pipeline_integration(tmp_path: Path, panda_robot_xml: P
     assert ckpt["action_dim"] == act_dim
 
 
-def test_run_rl_training_pipeline_validation_errors(tmp_path: Path, panda_robot_xml: Path) -> None:
+def test_run_rl_training_pipeline_validation_errors(
+    tmp_path: Path, panda_robot_xml: Path
+) -> None:
+    """Verify validation checks on inputs (invalid paths, out of range values) for the RL training pipeline parameters."""
     valid_robot = panda_robot_xml
     valid_ycb = tmp_path / "ycb"
     valid_ycb.mkdir()
 
     with pytest.raises(TypeError, match="robot_xml_path"):
-        run_rl_training_pipeline("invalid", valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")  # type: ignore[arg-type]
+        run_rl_training_pipeline(
+            "invalid", valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu"
+        )  # type: ignore[arg-type]
 
     with pytest.raises(FileNotFoundError, match="Robot XML file not found"):
-        run_rl_training_pipeline(tmp_path / "missing.xml", valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(
+            tmp_path / "missing.xml",
+            valid_ycb,
+            [],
+            tmp_path / "c.pt",
+            18,
+            8,
+            16,
+            1e-3,
+            1,
+            0.99,
+            "cpu",
+        )
 
     with pytest.raises(TypeError, match="ycb_root"):
-        run_rl_training_pipeline(valid_robot, "invalid", ["obj1"], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")  # type: ignore[arg-type]
+        run_rl_training_pipeline(
+            valid_robot,
+            "invalid",
+            ["obj1"],
+            tmp_path / "c.pt",
+            18,
+            8,
+            16,
+            1e-3,
+            1,
+            0.99,
+            "cpu",
+        )  # type: ignore[arg-type]
 
     with pytest.raises(FileNotFoundError, match="YCB root directory not found"):
-        run_rl_training_pipeline(valid_robot, tmp_path / "missing_ycb", ["obj1"], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(
+            valid_robot,
+            tmp_path / "missing_ycb",
+            ["obj1"],
+            tmp_path / "c.pt",
+            18,
+            8,
+            16,
+            1e-3,
+            1,
+            0.99,
+            "cpu",
+        )
 
     with pytest.raises(ValueError, match="observation_dim"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 0, 8, 16, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(
+            valid_robot,
+            valid_ycb,
+            [],
+            tmp_path / "c.pt",
+            0,
+            8,
+            16,
+            1e-3,
+            1,
+            0.99,
+            "cpu",
+        )
 
     with pytest.raises(ValueError, match="action_dim"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 18, 0, 16, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(
+            valid_robot,
+            valid_ycb,
+            [],
+            tmp_path / "c.pt",
+            18,
+            0,
+            16,
+            1e-3,
+            1,
+            0.99,
+            "cpu",
+        )
 
     with pytest.raises(ValueError, match="hidden_dim"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 18, 8, 0, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(
+            valid_robot,
+            valid_ycb,
+            [],
+            tmp_path / "c.pt",
+            18,
+            8,
+            0,
+            1e-3,
+            1,
+            0.99,
+            "cpu",
+        )
 
     with pytest.raises(ValueError, match="learning_rate"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 0.0, 1, 0.99, "cpu")
+        run_rl_training_pipeline(
+            valid_robot,
+            valid_ycb,
+            [],
+            tmp_path / "c.pt",
+            18,
+            8,
+            16,
+            0.0,
+            1,
+            0.99,
+            "cpu",
+        )
 
     with pytest.raises(ValueError, match="num_updates"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 0, 0.99, "cpu")
+        run_rl_training_pipeline(
+            valid_robot,
+            valid_ycb,
+            [],
+            tmp_path / "c.pt",
+            18,
+            8,
+            16,
+            1e-3,
+            0,
+            0.99,
+            "cpu",
+        )
 
     with pytest.raises(ValueError, match="gamma"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 1.5, "cpu")
+        run_rl_training_pipeline(
+            valid_robot,
+            valid_ycb,
+            [],
+            tmp_path / "c.pt",
+            18,
+            8,
+            16,
+            1e-3,
+            1,
+            1.5,
+            "cpu",
+        )
 
     with pytest.raises(ValueError, match="object_ids must contain at most one object"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, ["obj1", "obj2"], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")
-
+        run_rl_training_pipeline(
+            valid_robot,
+            valid_ycb,
+            ["obj1", "obj2"],
+            tmp_path / "c.pt",
+            18,
+            8,
+            16,
+            1e-3,
+            1,
+            0.99,
+            "cpu",
+        )

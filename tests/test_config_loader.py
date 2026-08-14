@@ -17,13 +17,17 @@ from grasping_ai.config.yaml_loader import (
 
 
 def test_load_yaml_mapping_reads_base_config() -> None:
+    """Verify that load_yaml_mapping correctly parses the default base.yaml configuration."""
     cfg = load_yaml_mapping(Path("configs/base.yaml"))
     assert cfg["device"] == "cpu"
     assert cfg["seed"] == 42
-    assert config_get(cfg, "paths", "output_dir") == '${oc.env:MGS_OUTPUT_DIR,"artifacts"}'
+    assert (
+        config_get(cfg, "paths", "output_dir") == '${oc.env:MGS_OUTPUT_DIR,"artifacts"}'
+    )
 
 
 def test_load_project_yaml_config_merges_layers() -> None:
+    """Verify that load_project_yaml_config merges all configuration layers correctly."""
     cfg = load_project_yaml_config(Path("configs"))
     assert cfg["device"] == "cpu"
     assert config_get(cfg, "architecture", "feature_dim") == 32
@@ -36,6 +40,7 @@ def test_load_project_yaml_config_merges_layers() -> None:
 
 
 def test_load_project_yaml_config_applies_hydra_overrides() -> None:
+    """Verify that load_project_yaml_config applies command-line Hydra overrides correctly."""
     cfg = load_project_yaml_config(
         Path("configs"),
         overrides=["seed=100"],
@@ -44,6 +49,7 @@ def test_load_project_yaml_config_applies_hydra_overrides() -> None:
 
 
 def test_merge_yaml_mappings_deep_merges_nested_objects() -> None:
+    """Verify that merge_yaml_mappings recursively deep-merges nested dictionaries."""
     merged = merge_yaml_mappings(
         {"rl": {"checkpoint": "a.pt", "observation_dim": 31}},
         {"rl": {"learning_rate": 0.001}},
@@ -58,11 +64,13 @@ def test_merge_yaml_mappings_deep_merges_nested_objects() -> None:
 
 
 def test_merge_yaml_mappings_overrides_scalar_keys() -> None:
+    """Verify that merge_yaml_mappings overrides scalar keys left-to-right."""
     merged = merge_yaml_mappings({"a": 1, "b": 2}, {"b": 3, "c": 4})
     assert merged == {"a": 1, "b": 3, "c": 4}
 
 
 def test_config_path_and_list_helpers() -> None:
+    """Verify that path and list utility functions retrieve typed configuration values."""
     cfg = load_project_yaml_config(Path("configs"))
     assert config_path(cfg, "paths", "dataset_root") == Path("data/processed")
     assert config_str_list(cfg, "objects", "ids") == [
@@ -73,6 +81,7 @@ def test_config_path_and_list_helpers() -> None:
 
 
 def test_require_config_value_raises_for_missing_key() -> None:
+    """Verify that require_config_value raises a ValueError when a required key is missing."""
     with pytest.raises(ValueError, match="missing"):
         require_config_value({}, "missing", "key")
 
@@ -163,7 +172,9 @@ def test_config_path_returns_default_for_missing_value() -> None:
 
 def test_config_path_returns_default_for_none_value() -> None:
     """Return the default when a path-valued key is explicitly ``None``."""
-    assert config_path({"paths": {"root": None}}, "paths", "root", default=Path("x")) == Path("x")
+    assert config_path(
+        {"paths": {"root": None}}, "paths", "root", default=Path("x")
+    ) == Path("x")
 
 
 def test_config_path_rejects_empty_string() -> None:
@@ -203,13 +214,17 @@ def test_config_float_list_rejects_non_list() -> None:
 def test_config_float_list_rejects_bool_items() -> None:
     """Reject bool entries in float-list config values."""
     with pytest.raises(TypeError, match="must be a list of numbers"):
-        config_float_list({"gripper": {"close_command": [True]}}, "gripper", "close_command")
+        config_float_list(
+            {"gripper": {"close_command": [True]}}, "gripper", "close_command"
+        )
 
 
 def test_config_float_list_rejects_non_numeric_items() -> None:
     """Reject non-numeric entries in float-list config values."""
     with pytest.raises(TypeError, match="must be a list of numbers"):
-        config_float_list({"gripper": {"close_command": ["bad"]}}, "gripper", "close_command")
+        config_float_list(
+            {"gripper": {"close_command": ["bad"]}}, "gripper", "close_command"
+        )
 
 
 def test_config_float_list_converts_integers() -> None:

@@ -12,7 +12,10 @@ from grasping_ai.training.trainer import (
 
 
 class DummyModel(torch.nn.Module):
+    """A simple, un-parameterized dummy model to simulate neural net structures during testing."""
+
     def __init__(self):
+        """Initialize DummyModel with standard fully connected layers and dimensions."""
         super().__init__()
         self.fc = torch.nn.Linear(9, 9)
         self.feature_dim = 128
@@ -20,10 +23,12 @@ class DummyModel(torch.nn.Module):
         self.num_layers = 4
 
     def forward(self, x, t, cond):
+        """Perform a dummy forward pass returning the linear mapping of the input."""
         return self.fc(x)
 
 
 def test_build_training_step_seeding():
+    """Verify that the built training step functions produce identical outputs given the same seed."""
     model = DummyModel()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn = torch.nn.MSELoss()
@@ -43,6 +48,7 @@ def test_build_training_step_seeding():
 
 
 def test_training_loop_tracking(tmp_path):
+    """Verify that training loop processes logs to Tensorboard and checkpoints parameters under correct keys."""
     model = DummyModel()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn = torch.nn.MSELoss()
@@ -54,8 +60,14 @@ def test_training_loop_tracking(tmp_path):
 
     metadata = {"lr": 1e-3, "batch_size": 2}
     run_training_loop(
-        step, dataloader, num_epochs=1, checkpoint_path=checkpoint_path,
-        log_every=1, experiment_log_dir=log_dir, metadata=metadata, seed=42
+        step,
+        dataloader,
+        num_epochs=1,
+        checkpoint_path=checkpoint_path,
+        log_every=1,
+        experiment_log_dir=log_dir,
+        metadata=metadata,
+        seed=42,
     )
 
     assert checkpoint_path.is_file()
@@ -68,6 +80,7 @@ def test_training_loop_tracking(tmp_path):
 
 
 def test_evaluation_tracking(tmp_path):
+    """Verify that evaluation reports log the expected summary records and push events to Tensorboard."""
     from grasping_ai.pipelines.evaluate import read_jsonl_records
 
     report_path = tmp_path / "report.jsonl"
@@ -95,6 +108,7 @@ def test_evaluation_tracking(tmp_path):
 
 
 def test_supervised_reproducibility(tmp_path):
+    """Verify that supervised model training is reproducible with matching seeds and stochastic with different seeds."""
     dataset_root = tmp_path / "mock_dataset"
     dataset_root.mkdir()
 
@@ -161,4 +175,6 @@ def test_supervised_reproducibility(tmp_path):
         if not torch.allclose(chk1["model_state_dict"][k], chk3["model_state_dict"][k]):
             diff = True
             break
-    assert diff, "Different seeds should produce different model initialization and noise"
+    assert diff, (
+        "Different seeds should produce different model initialization and noise"
+    )

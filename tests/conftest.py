@@ -18,6 +18,10 @@ with contextlib.suppress(Exception):
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    """Register custom markers for the pytest suite.
+
+    Adds the 'slow' marker to identify long-running end-to-end tests.
+    """
     config.addinivalue_line(
         "markers",
         "slow: end-to-end / artifact-chain tests that exercise full pipelines "
