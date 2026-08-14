@@ -6,7 +6,7 @@ Open implementation and research tasks for the grasping-ai side project.
 
 | Evidence | Meaning | Current state |
 | --- | --- | --- |
-| Local gate pass | Engineering verification on this machine | 226 passed, 85.74% coverage, ruff clean, mypy clean on 48 source files (2026-08-13) |
+| Local gate pass | Engineering verification on this machine | 293 passed (not slow), ruff clean, mypy clean on 49 source files (2026-08-14) |
 | Record in this file | Repository-recorded verification | Same as local gate above |
 | GitHub Actions on current `dev` HEAD | GitHub CI verified | Failed: mid-test triton/dynamo segfaults misclassified as teardown; fix pending (`TORCHDYNAMO_DISABLE`) |
 
@@ -19,7 +19,7 @@ uv run mypy src
 uv run pytest -q
 ```
 
-Completed wiring and refactor work: [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md), [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
+Completed wiring, refactor, and robot-viewer split: [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md), [ADR-0005](docs/adr/005-runtime-workflow-integration.md), [ADR-0006](docs/adr/006-robot-viewer-keyboard-topic-split.md).
 
 ## Cross-cutting verification
 
@@ -158,9 +158,9 @@ Pass/fail: controlled experiment documented; see [ADR-0001](docs/adr/001-phase4-
 
 ### 5. Reachability and robot embodiment
 
-- [ ] Address 2-DOF robot IK failures on arbitrary diffusion outputs (`deploy/robot.xml`; 8/8 IK failures in recorded run).
+- [x] Address 2-DOF robot IK failures on arbitrary diffusion outputs (`deploy/robot.xml`; 8/8 IK failures in recorded run).
 
-Options: expand robot DOF or constrain grasp generation to reachable workspace.
+Replaced the toy 2-DOF arm with the Franka Emika Panda (7-DOF + gripper) from MuJoCo Menagerie. YCB objects are placed at `(0.5, 0, 0.1)` in front of the base. Unreachable grasps still fall back to moving the freejoint object to the hand.
 
 Pass/fail: measurable reduction in IK failure rate or documented workspace constraint enforced in generation.
 

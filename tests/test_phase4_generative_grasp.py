@@ -33,7 +33,7 @@ from grasping_ai.models.equivariant_encoder import (
 )
 from grasping_ai.models.flow import FlowGeneratorModel
 from grasping_ai.pipelines.generate_grasps import write_generated_grasps
-from grasping_ai.pipelines.train import load_pretrained_encoder, run_training_pipeline
+from grasping_ai.pipelines.train_diffusion import run_diffusion_training_pipeline
 from grasping_ai.training.checkpoint_io import (
     checkpoint_scalar_int,
     load_torch_checkpoint,
@@ -107,7 +107,7 @@ def test_supervised_training_loss_is_finite():
 
 
 def test_training_creates_checkpoint():
-    """Verify that run_training_pipeline successfully runs and creates a checkpoint."""
+    """Verify that run_diffusion_training_pipeline successfully runs and creates a checkpoint."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         temp_path = Path(tmp_dir)
         dataset_root = temp_path / "dataset"
@@ -136,7 +136,7 @@ def test_training_creates_checkpoint():
         checkpoint_path = temp_path / "model.pt"
 
         # Run tiny training pipeline
-        run_training_pipeline(
+        run_diffusion_training_pipeline(
             dataset_root=dataset_root,
             checkpoint_path=checkpoint_path,
             feature_dim=8,
@@ -207,7 +207,8 @@ def test_training_reiterates_dataloader_per_epoch():
         ):
             for _epoch in range(num_epochs):
                 epoch_batches = 0
-                for _ in dataloader:
+                batches = dataloader() if callable(dataloader) else dataloader
+                for _ in batches:
                     epoch_batches += 1
                 batches_seen.append(epoch_batches)
 
@@ -216,7 +217,7 @@ def test_training_reiterates_dataloader_per_epoch():
                 "grasping_ai.training.trainer.run_training_loop",
                 recording_loop,
             )
-            run_training_pipeline(
+            run_diffusion_training_pipeline(
                 dataset_root=dataset_root,
                 checkpoint_path=checkpoint_path,
                 feature_dim=8,
@@ -232,9 +233,9 @@ def test_training_reiterates_dataloader_per_epoch():
 
 
 def test_training_rejects_missing_dataset():
-    """Verify that run_training_pipeline checks dataset_root existence."""
+    """Verify that run_diffusion_training_pipeline checks dataset_root existence."""
     with pytest.raises(FileNotFoundError):
-        run_training_pipeline(
+        run_diffusion_training_pipeline(
             dataset_root=Path("non_existent_dir_12345"),
             checkpoint_path=Path("model.pt"),
             feature_dim=8,
@@ -490,8 +491,8 @@ def test_generation_pipeline_and_writing():
             write_generated_grasps("not_a_path", {"obj1": grasps})  # type: ignore[arg-type]
 
 
-def test_load_pretrained_encoder():
-    """Verify load_pretrained_encoder behavior."""
+def test_pretrained_encoder_checkpoint_loading():
+    """Verify encoder weights can be extracted from a training checkpoint."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         temp_path = Path(tmp_dir)
         checkpoint_path = temp_path / "model.pt"
@@ -500,11 +501,18 @@ def test_load_pretrained_encoder():
         optimizer = build_adam_optimizer(model.parameters(), 0.01)
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
-        enc_state = load_pretrained_encoder(checkpoint_path, "cpu")
-        assert "linear.weight" in enc_state
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
+        state_dict = checkpoint.get("model_state_dict", checkpoint)
+        encoder_state = {}
+        for key, value in state_dict.items():
+            if key.startswith("encoder."):
+                encoder_state[key[len("encoder.") :]] = value
+            else:
+                encoder_state[key] = value
+        assert len(encoder_state) > 0
 
         with pytest.raises(TypeError):
-            load_pretrained_encoder("not_a_path", "cpu")  # type: ignore[arg-type]
+            load_torch_checkpoint("not_a_path", "cpu")  # type: ignore[arg-type]
 
 
 def test_acquire_point_cloud_from_observation_errors():
@@ -891,12 +899,20 @@ def test_checkpoint_io_validations_and_infer_kinds(tmp_path: Path) -> None:
     assert diff_meta["kind"] == "diffusion"
     assert diff_meta["hidden_dim"] == 256
 
+    unknown_ckpt = tmp_path / "unknown.pt"
+    torch.save({"model_state_dict": {"encoder.weight": torch.zeros(1)}}, unknown_ckpt)
+    assert read_model_checkpoint_metadata(unknown_ckpt)["kind"] == "unknown"
 
-def test_run_training_pipeline_validations_and_resume(tmp_path: Path) -> None:
-    from grasping_ai.pipelines.train import run_training_pipeline
+    missing_state = tmp_path / "missing_state.pt"
+    torch.save({"architecture": "mystery"}, missing_state)
+    assert read_model_checkpoint_metadata(missing_state)["kind"] == "unknown"
+
+
+def test_run_diffusion_training_pipeline_validations_and_resume(tmp_path: Path) -> None:
+    from grasping_ai.pipelines.train_diffusion import run_diffusion_training_pipeline
 
     with pytest.raises(TypeError, match="dataset_root"):
-        run_training_pipeline(
+        run_diffusion_training_pipeline(
             dataset_root="not_a_path",  # type: ignore[arg-type]
             checkpoint_path=tmp_path / "model.pt",
             feature_dim=8,
@@ -912,7 +928,7 @@ def test_run_training_pipeline_validations_and_resume(tmp_path: Path) -> None:
 
     dataset_root = _make_dataset(tmp_path, n_grasps=2, seed=123)
     checkpoint_1 = tmp_path / "diff_ckpt1.pt"
-    run_training_pipeline(
+    run_diffusion_training_pipeline(
         dataset_root=dataset_root,
         checkpoint_path=checkpoint_1,
         feature_dim=8,
@@ -926,7 +942,7 @@ def test_run_training_pipeline_validations_and_resume(tmp_path: Path) -> None:
     )
 
     checkpoint_2 = tmp_path / "diff_ckpt2.pt"
-    run_training_pipeline(
+    run_diffusion_training_pipeline(
         dataset_root=dataset_root,
         checkpoint_path=checkpoint_2,
         feature_dim=8,

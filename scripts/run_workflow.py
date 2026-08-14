@@ -1,29 +1,13 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
-
-ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
-
-
-def _venv_python() -> str:
-    return sys.executable
-
-
-def _env() -> dict[str, str]:
-    return {**os.environ, "PYTHONPATH": str(SRC)}
-
-
-def _run(cmd: list[str]) -> None:
-    print(">>>", " ".join(cmd))
-    subprocess.run(cmd, cwd=ROOT, env=_env(), check=True, capture_output=False)
+from grasping_ai.pipelines.evaluate import read_jsonl_records
 
 
 def run_workflow_main(
@@ -61,8 +45,8 @@ def run_workflow_main(
     stdout summary.
 
     Args:
-        checkpoint_path: Trained grasp-generation checkpoint (``grasp_generation.pt``
-            or ``flow_grasp.pt``).
+        checkpoint_path: Trained grasp-generation checkpoint (``diffusion_grasp_generator.pt``
+            or ``flow_grasp_generator.pt``).
         output_dir: Destination directory for all generated artifacts.
         method: ``"diffusion"`` or ``"flow"``; must match the trained checkpoint.
         feature_dim: Conditioning feature dimension expected by the model.
@@ -97,14 +81,22 @@ def run_workflow_main(
         contact_clearance: Clearance threshold used by contact detection.
         wrench_regularization: Wrench regularization used by force closure.
     """
+    root = Path(__file__).resolve().parents[1]
+    src = root / "src"
+    workflow_env = {
+        **os.environ,
+        "PYTHONPATH": str(src),
+        "PYTHONPYCACHEPREFIX": str(root / ".pycache"),
+    }
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    grasps_path = output_dir / "generated_grasps.npy"
-    sim_path = output_dir / "simulation_outcomes.json"
-    eval_path = output_dir / "evaluation_report.json"
+    grasps_path = output_dir / f"{method}_grasp_candidates.npy"
+    sim_path = output_dir / f"{method}_simulation_outcomes.jsonl"
+    eval_path = output_dir / f"{method}_analytical_evaluation_report.jsonl"
 
     # Stage 1: generate grasps.
     grasp_inference_cmd: list[str] = [
-        _venv_python(),
+        sys.executable,
         "scripts/run_grasp_inference.py",
         "--checkpoint",
         str(checkpoint_path),
@@ -127,21 +119,21 @@ def run_workflow_main(
         grasp_inference_cmd += ["--observation", str(observation_path)]
     else:
         if ycb_root_raw is None or object_id is None:
-            raise ValueError(
-                "Provide --observation or both --ycb-root and --object-id"
-            )
+            raise ValueError("Provide --observation or both --ycb-root and --object-id")
         grasp_inference_cmd += [
             "--ycb-root",
             str(ycb_root_raw),
             "--object-id",
             object_id,
         ]
-    _run(grasp_inference_cmd)
+    print(">>>", " ".join(grasp_inference_cmd))
+    subprocess.run(
+        grasp_inference_cmd, cwd=root, env=workflow_env, check=True, capture_output=False
+    )
 
-    # Stage 2: simulate in MuJoCo (only if a robot + MJCF-wrapped YCB are given).
     if robot_xml_path is not None and ycb_root_mjcf is not None and object_id is not None:
         sim_cmd: list[str] = [
-            _venv_python(),
+            sys.executable,
             "scripts/run_simulation.py",
             "--grasps",
             str(grasps_path),
@@ -162,11 +154,11 @@ def run_workflow_main(
         ]
         if table_xml_path is not None:
             sim_cmd += ["--table-xml", str(table_xml_path)]
-        _run(sim_cmd)
+        print(">>>", " ".join(sim_cmd))
+        subprocess.run(sim_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
     else:
         print(
-            "skipping MuJoCo simulation stage: "
-            "robot-xml / ycb-mjcf / object-id not fully provided"
+            "skipping MuJoCo simulation stage: robot-xml / ycb-mjcf / object-id not fully provided"
         )
 
     # Stage 3: analytical evaluation.
@@ -194,7 +186,7 @@ def run_workflow_main(
         )
 
     eval_cmd: list[str] = [
-        _venv_python(),
+        sys.executable,
         "scripts/evaluate.py",
         "--grasps",
         str(grasps_path),
@@ -215,10 +207,10 @@ def run_workflow_main(
         "--wrench-regularization",
         str(wrench_regularization),
     ]
-    _run(eval_cmd)
+    print(">>>", " ".join(eval_cmd))
+    subprocess.run(eval_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
 
-    # Stage 4: optional RL rollout.
-    rl_path = output_dir / "rl_evaluation.json"
+    rl_path = output_dir / "rl_grasp_rollout_report.jsonl"
     if rl_policy_checkpoint_path is not None:
         if (
             robot_xml_path is None
@@ -235,7 +227,7 @@ def run_workflow_main(
                 "--rl-episodes, --rl-max-steps"
             )
         rl_cmd: list[str] = [
-            _venv_python(),
+            sys.executable,
             "scripts/run_rl_evaluation.py",
             "--policy-checkpoint",
             str(rl_policy_checkpoint_path),
@@ -262,57 +254,60 @@ def run_workflow_main(
         ]
         if table_xml_path is not None:
             rl_cmd += ["--table-xml", str(table_xml_path)]
-        _run(rl_cmd)
+        print(">>>", " ".join(rl_cmd))
+        subprocess.run(rl_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
 
-    # Stage 5: print combined summary.
-    _print_summary(eval_path, sim_path, rl_path)
-
-
-def _print_summary(
-    eval_path: Path, sim_path: Path, rl_path: Path
-) -> None:
     summary: dict[str, float] = {}
     if eval_path.is_file():
         try:
-            with eval_path.open() as fp:
-                report = json.load(fp)
-            for key in ("success_rate", "collision_free_rate", "force_closure_rate"):
-                if key in report:
-                    summary[f"analytical_{key}"] = float(report[key])
-            if "object_success_rate" in report:
-                summary["analytical_object_success_rate"] = float(
-                    report["object_success_rate"]
-                )
-        except (OSError, json.JSONDecodeError):
+            for record in read_jsonl_records(eval_path):
+                if record.get("record_type") != "summary":
+                    continue
+                for key in ("success_rate", "collision_free_rate", "force_closure_rate"):
+                    if key in record:
+                        summary[f"analytical_{key}"] = float(record[key])
+                if "object_success_rate" in record:
+                    summary["analytical_object_success_rate"] = float(
+                        record["object_success_rate"]
+                    )
+                break
+        except (OSError, ValueError):
             pass
     if sim_path.is_file():
         try:
-            with sim_path.open() as fp:
-                outcomes = json.load(fp)
-            if isinstance(outcomes, list) and outcomes:
+            outcomes = [
+                record
+                for record in read_jsonl_records(sim_path)
+                if record.get("record_type") == "grasp_outcome"
+            ]
+            if outcomes:
                 n = len(outcomes)
                 successes = sum(
-                    1 for o in outcomes if isinstance(o, dict) and o.get("success")
+                    1 for outcome in outcomes if bool(outcome.get("success"))
                 )
                 summary["simulated_success_rate"] = float(successes / n)
                 summary["simulated_object_success_rate"] = aggregate_grasp_success_rate(
                     {"object_0": successes > 0}
                 )
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
             pass
     if rl_path.is_file():
         try:
-            with rl_path.open() as fp:
-                rl_report = json.load(fp)
-            episodes = rl_report.get("episodes", []) if isinstance(rl_report, dict) else []
+            episodes = [
+                record
+                for record in read_jsonl_records(rl_path)
+                if record.get("record_type") == "episode"
+            ]
             if episodes:
                 mean_return = sum(
-                    e["summary"]["return_total"] for e in episodes
+                    float(record["summary"]["return_total"]) for record in episodes
                 ) / len(episodes)
-                mean_len = sum(e["summary"]["length"] for e in episodes) / len(episodes)
+                mean_len = sum(
+                    float(record["summary"]["length"]) for record in episodes
+                ) / len(episodes)
                 summary["rl_mean_return"] = float(mean_return)
                 summary["rl_mean_length"] = float(mean_len)
-        except (OSError, json.JSONDecodeError, KeyError):
+        except (OSError, ValueError, KeyError, TypeError):
             pass
 
     print("workflow summary:")
@@ -321,40 +316,125 @@ def _print_summary(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Run the end-to-end runtime workflow on a single object"
+    from grasping_ai.config.yaml_loader import (
+        config_float_list,
+        config_get,
+        config_path,
+        load_project_yaml_config,
+        parse_config_dir_from_argv,
     )
-    parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
+
+    config_dir = parse_config_dir_from_argv()
+    cfg = load_project_yaml_config(
+        config_dir, "base", "data", "model", "training", "evaluation", "robot", "simulation"
+    )
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
+    parser = argparse.ArgumentParser(
+        description="Run the end-to-end runtime workflow on a single object",
+        parents=[pre_parser],
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=config_path(cfg, "diffusion", "checkpoint"),
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=config_path(cfg, "paths", "output_dir"),
+    )
     parser.add_argument(
         "--method",
         type=str,
         choices=["diffusion", "flow"],
-        default="diffusion",
+        default=str(config_get(cfg, "default_method")),
     )
-    parser.add_argument("--feature-dim", type=int, required=True)
-    parser.add_argument("--num-steps", type=int, required=True)
-    parser.add_argument("--num-grasps", type=int, required=True)
-    parser.add_argument("--device", type=str, required=True)
-    parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument(
+        "--feature-dim",
+        type=int,
+        default=int(config_get(cfg, "architecture", "feature_dim")),
+    )
+    parser.add_argument(
+        "--num-steps",
+        type=int,
+        default=int(config_get(cfg, "diffusion", "inference_steps")),
+    )
+    parser.add_argument(
+        "--num-grasps",
+        type=int,
+        default=int(config_get(cfg, "architecture", "num_grasps")),
+    )
+    parser.add_argument("--device", type=str, default=str(config_get(cfg, "device")))
+    parser.add_argument("--seed", type=int, default=int(config_get(cfg, "seed")))
     parser.add_argument("--observation", type=Path, default=None)
-    parser.add_argument("--ycb-root", type=Path, default=None)
-    parser.add_argument("--ycb-mjcf", type=Path, default=None)
+    parser.add_argument(
+        "--ycb-root",
+        type=Path,
+        default=config_path(cfg, "paths", "ycb_root"),
+    )
+    parser.add_argument(
+        "--ycb-mjcf",
+        type=Path,
+        default=config_path(cfg, "paths", "ycb_mjcf"),
+    )
     parser.add_argument("--object-id", type=str, default=None)
-    parser.add_argument("--robot-xml", type=Path, default=None)
+    parser.add_argument(
+        "--robot-xml",
+        type=Path,
+        default=config_path(cfg, "robot", "description"),
+    )
     parser.add_argument("--observation-dim", type=int, default=None)
     parser.add_argument("--action-dim", type=int, default=None)
     parser.add_argument("--rl-policy-checkpoint", type=Path, default=None)
     parser.add_argument("--rl-episodes", type=int, default=None)
     parser.add_argument("--rl-max-steps", type=int, default=None)
     parser.add_argument("--table-xml", type=Path, default=None)
-    parser.add_argument("--num-simulation-steps", type=int, default=50)
-    parser.add_argument("--gripper-close-command", type=float, default=0.02)
-    parser.add_argument("--friction-coefficient", type=float, default=0.5)
-    parser.add_argument("--lift-height-threshold", type=float, default=0.05)
-    parser.add_argument("--contact-clearance", type=float, default=0.005)
-    parser.add_argument("--wrench-regularization", type=float, default=1.0)
+    parser.add_argument(
+        "--num-simulation-steps",
+        type=int,
+        default=int(config_get(cfg, "num_steps")),
+    )
+    close_default = config_float_list(cfg, "robot", "gripper", "close_command") or [0.0]
+    parser.add_argument(
+        "--gripper-close-command",
+        type=float,
+        default=close_default[0],
+    )
+    parser.add_argument(
+        "--friction-coefficient",
+        type=float,
+        default=float(config_get(cfg, "metrics", "friction_coefficient")),
+    )
+    parser.add_argument(
+        "--lift-height-threshold",
+        type=float,
+        default=float(config_get(cfg, "metrics", "lift_height_threshold")),
+    )
+    parser.add_argument(
+        "--contact-clearance",
+        type=float,
+        default=float(config_get(cfg, "metrics", "collision_clearance")),
+    )
+    parser.add_argument(
+        "--wrench-regularization",
+        type=float,
+        default=float(config_get(cfg, "metrics", "wrench_regularization")),
+    )
     args = parser.parse_args()
+    if args.checkpoint is None:
+        if args.method == "flow":
+            args.checkpoint = config_path(cfg, "flow", "checkpoint")
+        if args.checkpoint is None:
+            parser.error("--checkpoint is required (set in configs/model.yaml or pass explicitly)")
+    if args.output_dir is None:
+        parser.error(
+            "--output-dir is required (set in configs/base.yaml paths.output_dir "
+            "or pass explicitly)"
+        )
+    diffusion_steps = int(config_get(cfg, "diffusion", "inference_steps"))
+    if args.method == "flow" and args.num_steps == diffusion_steps:
+        args.num_steps = int(config_get(cfg, "flow", "inference_steps"))
     run_workflow_main(
         checkpoint_path=args.checkpoint,
         output_dir=args.output_dir,

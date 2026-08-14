@@ -1,4 +1,3 @@
-"""Phase 4 — flow-matching training pipeline regression test."""
 import os
 import subprocess
 import sys
@@ -27,6 +26,21 @@ def _make_dataset(tmp_path: Path, *, n_grasps: int, seed: int) -> Path:
         allow_pickle=True,
     )
     return dataset_root
+
+
+def test_flow_model_forward_delegates_to_flow_field() -> None:
+    """Verify ``FlowGeneratorModel.forward`` returns flow-field predictions.
+
+    Returns:
+        None. Asserts output shape matches the input grasp batch.
+    """
+    from grasping_ai.models.flow import FlowGeneratorModel
+
+    model = FlowGeneratorModel(feature_dim=8, hidden_dim=8, num_layers=1)
+    x = torch.zeros(2, 9)
+    cond = torch.zeros(2, 8)
+    out = model.forward(x, cond)
+    assert out.shape == (2, 9)
 
 
 def test_flow_checkpoint_persists_encoder_and_flow_field(tmp_path):

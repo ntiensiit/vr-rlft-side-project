@@ -1,19 +1,11 @@
-"""Artifact-chain verification test.
-
-Runs ``scripts/run_artifacts.py`` from a clean working tree (except for the
-shipped raw YCB assets) and asserts that the documented retained artifacts
-are produced and contain valid content.
-
-Marked ``slow`` so it can be skipped during fast iteration with
-``pytest -m 'not slow'``.
-"""
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from grasping_ai.pipelines.evaluate import read_jsonl_records
 
 ROOT = Path(__file__).resolve().parents[1]
 YCB_ROOT = ROOT / "data" / "raw" / "ycb"
@@ -30,7 +22,11 @@ def chain_run():
     if not RUNNER.is_file():
         pytest.fail(f"Artifact runner missing: {RUNNER}")
 
-    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(ROOT / "src"),
+        "PYTHONPYCACHEPREFIX": str(ROOT / ".pycache"),
+    }
     completed = subprocess.run(
         [sys.executable, str(RUNNER)],
         cwd=ROOT,
@@ -50,26 +46,33 @@ def chain_run():
 
 @pytest.mark.slow
 def test_manifest_records_retained_artifacts(chain_run):
-    manifest_path = ARTIFACTS / "manifest.json"
-    assert manifest_path.is_file(), "manifest.json was not produced"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert "generated" in manifest
-    assert isinstance(manifest["generated"], list)
-    assert "retained_artifacts" in manifest
-    assert len(manifest["retained_artifacts"]) >= 10
-    for rel in manifest["retained_artifacts"]:
+    manifest_path = ARTIFACTS / "manifest.jsonl"
+    assert manifest_path.is_file(), "manifest.jsonl was not produced"
+    records = read_jsonl_records(manifest_path)
+    manifest_headers = [r for r in records if r.get("record_type") == "manifest"]
+    commands = [r for r in records if r.get("record_type") == "command"]
+    retained = [r for r in records if r.get("record_type") == "retained_artifact"]
+    assert manifest_headers
+    assert len(commands) >= 8
+    assert len(retained) >= 10
+    root_posix = ROOT.as_posix()
+    for record in commands:
+        assert record["cwd"] == "."
+        assert root_posix not in str(record["command"]).replace("\\", "/")
+    for record in retained:
+        rel = str(record["path"])
         assert (ROOT / rel).is_file(), f"manifest references missing artifact: {rel}"
 
 
 @pytest.mark.slow
 def test_artifact_chain_produces_key_files(chain_run):
     expected = [
-        ARTIFACTS / "manifest.json",
-        ARTIFACTS / "checkpoints" / "grasp_generation.pt",
-        ARTIFACTS / "checkpoints" / "rl_policy.pt",
-        ARTIFACTS / "exports" / "generated_grasps.npy",
-        ARTIFACTS / "reports" / "evaluation_report.json",
-        ARTIFACTS / "reports" / "simulation_cracker.json",
+        ARTIFACTS / "manifest.jsonl",
+        ARTIFACTS / "checkpoints" / "diffusion_grasp_generator.pt",
+        ARTIFACTS / "checkpoints" / "rl_grasp_policy.pt",
+        ARTIFACTS / "exports" / "diffusion_grasp_candidates_by_object.npy",
+        ARTIFACTS / "reports" / "diffusion_analytical_evaluation_report.jsonl",
+        ARTIFACTS / "reports" / "diffusion_simulation_outcomes_003_cracker_box.jsonl",
         DATA_PROCESSED / "index.json",
         DATA_PROCESSED / "ycb_mjcf" / "003_cracker_box" / "object.xml",
         DATA_OBSERVATIONS / "003_cracker_box.npy",
@@ -81,11 +84,13 @@ def test_artifact_chain_produces_key_files(chain_run):
 
 @pytest.mark.slow
 def test_evaluation_report_uses_grasp_success_key(chain_run):
-    report = json.loads(
-        (ARTIFACTS / "reports" / "evaluation_report.json").read_text(
-            encoding="utf-8"
-        )
+    records = read_jsonl_records(
+        ARTIFACTS / "reports" / "diffusion_analytical_evaluation_report.jsonl"
     )
+    object_records = [r for r in records if r.get("record_type") == "object"]
+    summary_records = [r for r in records if r.get("record_type") == "summary"]
+    assert len(object_records) >= 3
+    report = summary_records[0]
     assert "success_rate" in report
     assert "collision_free_rate" in report
     assert "force_closure_rate" in report

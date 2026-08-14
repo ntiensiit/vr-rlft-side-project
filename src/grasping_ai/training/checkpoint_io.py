@@ -17,7 +17,7 @@ def load_torch_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
     Raises:
         TypeError: If ``checkpoint_path`` is not a ``pathlib.Path`` instance.
         FileNotFoundError: If the checkpoint file does not exist.
-        ValueError: If ``torch.load`` fails.
+        ValueError: If ``torch.load`` fails or the payload is not a dictionary.
     """
     if not isinstance(checkpoint_path, Path):
         raise TypeError("checkpoint_path must be a pathlib.Path instance")
@@ -37,7 +37,17 @@ def load_torch_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
 
 
 def checkpoint_scalar_int(value: object) -> int:
-    """Coerce a checkpoint scalar value to ``int``."""
+    """Coerce a checkpoint scalar value to ``int``.
+
+    Args:
+        value: Scalar stored in a checkpoint dictionary.
+
+    Returns:
+        Integer representation of ``value``.
+
+    Raises:
+        TypeError: If ``value`` is not a supported numeric type.
+    """
     if isinstance(value, torch.Tensor):
         return int(value.item())
     if isinstance(value, bool):
@@ -47,32 +57,6 @@ def checkpoint_scalar_int(value: object) -> int:
     if isinstance(value, float):
         return int(value)
     raise TypeError(f"Expected numeric checkpoint scalar, got {type(value)!r}")
-
-
-def checkpoint_dict_int(checkpoint: dict[str, object], key: str) -> int:
-    """Read and coerce an integer field from a checkpoint dictionary."""
-    return checkpoint_scalar_int(checkpoint[key])
-
-
-_checkpoint_scalar_int = checkpoint_scalar_int
-
-
-def _infer_checkpoint_kind(checkpoint: dict[str, Any]) -> str:
-    """Infer the high-level checkpoint family from its stored fields."""
-    from grasping_ai.models.rl_policy import read_rl_policy_metadata
-
-    if read_rl_policy_metadata(checkpoint) is not None:
-        return "rl_policy"
-
-    state_dict = checkpoint.get("model_state_dict")
-    if isinstance(state_dict, dict):
-        keys = list(state_dict.keys())
-        if any(key.startswith("flow_field.") for key in keys):
-            return "flow"
-        if any(key.startswith("score_net.") for key in keys):
-            return "diffusion"
-
-    return "unknown"
 
 
 def read_model_checkpoint_metadata(
@@ -93,7 +77,24 @@ def read_model_checkpoint_metadata(
         addition to ``hidden_dim`` and ``num_layers``.
     """
     checkpoint = load_torch_checkpoint(checkpoint_path, device)
-    kind = _infer_checkpoint_kind(checkpoint)
+
+    from grasping_ai.models.rl_policy import read_rl_policy_metadata
+
+    rl_metadata = read_rl_policy_metadata(checkpoint)
+    if rl_metadata is not None:
+        kind = "rl_policy"
+    else:
+        state_dict = checkpoint.get("model_state_dict")
+        if isinstance(state_dict, dict):
+            keys = list(state_dict.keys())
+            if any(key.startswith("flow_field.") for key in keys):
+                kind = "flow"
+            elif any(key.startswith("score_net.") for key in keys):
+                kind = "diffusion"
+            else:
+                kind = "unknown"
+        else:
+            kind = "unknown"
 
     metadata: dict[str, int | str | None] = {
         "checkpoint_path": str(checkpoint_path),
@@ -104,9 +105,6 @@ def read_model_checkpoint_metadata(
         if key in checkpoint:
             metadata[key] = checkpoint_scalar_int(checkpoint[key])
 
-    from grasping_ai.models.rl_policy import read_rl_policy_metadata
-
-    rl_metadata = read_rl_policy_metadata(checkpoint)
     if rl_metadata is not None:
         obs_dim, action_dim, hidden_dim, num_layers = rl_metadata
         metadata["observation_dim"] = obs_dim

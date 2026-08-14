@@ -1,7 +1,11 @@
-# Documentation/default reference only; runtime pipelines accept parameters via CLI arguments.
-robot_description_path: deploy/robot.xml
-gripper_description_path: deploy/gripper.xml
-gripper_close_command: []
-gripper_open_command: []
-ik_max_iterations: 100
-ik_tolerance: 0.001
+robot:
+  description: deploy/robot.xml
+  gripper:
+    description: deploy/robot.xml
+    close_command:
+      - 0.0
+    open_command:
+      - 0.04
+  ik:
+    max_iterations: 400
+    tolerance: 0.001

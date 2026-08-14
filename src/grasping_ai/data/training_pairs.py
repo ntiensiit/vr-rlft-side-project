@@ -15,7 +15,18 @@ from grasping_ai.robotics.transforms import invert_rigid_transform
 
 
 def validate_grasp_dataset(dataset_root: Path) -> int:
-    """Validate that a dataset root yields readable grasp samples."""
+    """Validate that a dataset root yields readable grasp samples.
+
+    Args:
+        dataset_root: Root directory containing ``.npy`` grasp dataset records.
+
+    Returns:
+        Number of valid grasp samples discovered under ``dataset_root``.
+
+    Raises:
+        TypeError: If ``dataset_root`` is not a ``pathlib.Path`` instance.
+        ValueError: If no valid grasp samples are found.
+    """
     if not isinstance(dataset_root, Path):
         raise TypeError("dataset_root must be a pathlib.Path instance")
     count = sum(1 for _ in iterate_grasp_dataset(dataset_root))
@@ -42,6 +53,12 @@ def build_supervised_training_pairs(
 
     Returns:
         List of ``(point_cloud, grasp_vector)`` tensor pairs.
+
+    Raises:
+        TypeError: If ``dataset_root`` is not a ``pathlib.Path`` instance, or a
+            record field has an invalid type.
+        ValueError: If the dataset is empty, a record has no grasp poses, or
+            augmentation removes all grasp poses for a record.
     """
     if not isinstance(dataset_root, Path):
         raise TypeError("dataset_root must be a pathlib.Path instance")

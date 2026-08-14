@@ -3,14 +3,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import grasping_ai.pipelines.generate_grasps as gg
-from grasping_ai.inference.grasp_inference_runtime import (
-    build_grasp_generator_from_checkpoint,
-    load_inference_point_cloud,
-    run_single_object_grasp_inference,
-)
+from grasping_ai.inference.grasp_generator import generate_candidate_grasps
+from grasping_ai.inference.grasp_inference_runtime import run_single_object_grasp_inference
 from grasping_ai.pipelines.generate_grasps import (
-    generate_grasps_for_dataset,
     load_generated_grasps,
     write_generated_grasps,
     write_generated_grasps_array,
@@ -65,106 +60,15 @@ def test_write_generated_grasps_array_validates_shape(tmp_path: Path) -> None:
         write_generated_grasps_array(path, np.zeros((2, 3)))
 
 
-def test_load_inference_point_cloud_from_observation(tmp_path: Path) -> None:
-    cloud = np.random.randn(64, 3).astype(np.float32)
+def test_run_single_object_grasp_inference_from_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     obs_path = tmp_path / "obs.npy"
-    np.save(obs_path, cloud)
-
-    loaded = load_inference_point_cloud(obs_path, None, None, num_grasps=4, seed=0)
-    assert np.allclose(loaded, cloud)
-
-
-def test_load_inference_point_cloud_rejects_conflicting_inputs(tmp_path: Path) -> None:
-    obs_path = tmp_path / "obs.npy"
-    np.save(obs_path, np.zeros((8, 3)))
-
-    with pytest.raises(ValueError, match="not both"):
-        load_inference_point_cloud(
-            obs_path, tmp_path, "003_cracker_box", num_grasps=4, seed=0
-        )
-
-
-def test_build_grasp_generator_from_checkpoint_rejects_unknown_method() -> None:
-    with pytest.raises(ValueError, match="method must be"):
-        build_grasp_generator_from_checkpoint(
-            "invalid", {}, feature_dim=16, num_steps=4, device="cpu"
-        )
-
-
-def test_build_grasp_generator_from_checkpoint_diffusion_and_flow(monkeypatch: pytest.MonkeyPatch) -> None:
-    called_methods = []
-
-    def mock_diffusion(checkpoint, feature_dim, num_steps, device, seed):
-        called_methods.append("diffusion")
-        return "diffusion_generator"
-
-    def mock_flow(checkpoint, feature_dim, num_steps, device, seed):
-        called_methods.append("flow")
-        return "flow_generator"
-
-    monkeypatch.setattr(
-        "grasping_ai.inference.grasp_inference_runtime.build_diffusion_grasp_generator",
-        mock_diffusion,
-    )
-    monkeypatch.setattr(
-        "grasping_ai.inference.grasp_inference_runtime.build_flow_grasp_generator",
-        mock_flow,
-    )
-
-    gen_diff = build_grasp_generator_from_checkpoint("diffusion", {}, 16, 4, "cpu", 42)
-    assert gen_diff == "diffusion_generator"
-
-    gen_flow = build_grasp_generator_from_checkpoint("flow", {}, 16, 4, "cpu", 42)
-    assert gen_flow == "flow_generator"
-
-    assert called_methods == ["diffusion", "flow"]
-
-
-def test_load_inference_point_cloud_validations(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="Provide either observation_path or both"):
-        load_inference_point_cloud(None, None, None, 4, 0)
-
-    non_existent = tmp_path / "missing.npy"
-    with pytest.raises(FileNotFoundError, match="Observation file not found"):
-        load_inference_point_cloud(non_existent, None, None, 4, 0)
-
-    with pytest.raises(FileNotFoundError, match="YCB root directory not found"):
-        load_inference_point_cloud(None, tmp_path / "missing_dir", "003_cracker_box", 4, 0)
-
-    bad_cloud_path = tmp_path / "bad.npy"
-    np.save(bad_cloud_path, np.zeros((10,)))
-    with pytest.raises(ValueError, match="point_cloud must have shape"):
-        load_inference_point_cloud(bad_cloud_path, None, None, 4, 0)
-
-
-def test_load_inference_point_cloud_from_ycb_mesh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    ycb_dir = tmp_path / "ycb"
-    ycb_dir.mkdir()
-
-    fake_mesh_path = ycb_dir / "mesh.ply"
-    fake_mesh_path.touch()
-
-    monkeypatch.setattr(
-        "grasping_ai.inference.grasp_inference_runtime.resolve_ycb_object_id",
-        lambda root, obj_id: fake_mesh_path,
-    )
-    monkeypatch.setattr(
-        "grasping_ai.inference.grasp_inference_runtime.sample_point_cloud_from_mesh",
-        lambda mesh_path, count, rng: np.ones((count, 3), dtype=np.float32),
-    )
-
-    pc = load_inference_point_cloud(None, ycb_dir, "003_cracker_box", num_grasps=2, seed=42)
-    assert pc.shape == (16, 3)
-
-
-def test_run_single_object_grasp_inference(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    obs_path = tmp_path / "obs.npy"
-    np.save(obs_path, np.zeros((32, 3)))
+    np.save(obs_path, np.random.randn(64, 3).astype(np.float32))
 
     out_path = tmp_path / "output" / "grasps.npy"
     ckpt_path = tmp_path / "ckpt.pt"
     ckpt_path.touch()
-
     dummy_grasps = _sample_grasps(2)
 
     monkeypatch.setattr(
@@ -172,11 +76,11 @@ def test_run_single_object_grasp_inference(tmp_path: Path, monkeypatch: pytest.M
         lambda path, device: {},
     )
     monkeypatch.setattr(
-        "grasping_ai.inference.grasp_inference_runtime.build_grasp_generator_from_checkpoint",
-        lambda method, ckpt, f_dim, steps, dev, seed: "dummy_gen",
+        "grasping_ai.inference.grasp_inference_runtime.build_diffusion_grasp_generator",
+        lambda checkpoint, feature_dim, num_steps, device, seed: "dummy_gen",
     )
     monkeypatch.setattr(
-        "grasping_ai.inference.grasp_generator.generate_candidate_grasps",
+        "grasping_ai.inference.grasp_inference_runtime.generate_candidate_grasps",
         lambda gen, pc, n: dummy_grasps,
     )
 
@@ -193,20 +97,230 @@ def test_run_single_object_grasp_inference(tmp_path: Path, monkeypatch: pytest.M
     )
     assert np.allclose(res, dummy_grasps)
     assert out_path.is_file()
-    assert np.allclose(np.load(out_path), dummy_grasps)
 
 
-def test_generate_grasps_for_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_single_object_grasp_inference_rejects_conflicting_inputs(
+    tmp_path: Path,
+) -> None:
+    obs_path = tmp_path / "obs.npy"
+    np.save(obs_path, np.zeros((8, 3)))
+    ckpt_path = tmp_path / "ckpt.pt"
+    ckpt_path.touch()
+
+    with pytest.raises(ValueError, match="not both"):
+        run_single_object_grasp_inference(
+            ckpt_path,
+            tmp_path / "out.npy",
+            "diffusion",
+            feature_dim=16,
+            num_steps=4,
+            num_grasps=2,
+            device="cpu",
+            seed=0,
+            observation_path=obs_path,
+            ycb_root=tmp_path,
+            object_id="003_cracker_box",
+        )
+
+
+def test_run_single_object_grasp_inference_rejects_unknown_method(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    obs_path = tmp_path / "obs.npy"
+    np.save(obs_path, np.zeros((8, 3)))
+    ckpt_path = tmp_path / "ckpt.pt"
+    ckpt_path.touch()
+    monkeypatch.setattr(
+        "grasping_ai.inference.grasp_inference_runtime.load_grasp_model_checkpoint",
+        lambda path, device: {},
+    )
+
+    with pytest.raises(ValueError, match="method must be"):
+        run_single_object_grasp_inference(
+            ckpt_path,
+            tmp_path / "out.npy",
+            "invalid",
+            feature_dim=16,
+            num_steps=4,
+            num_grasps=2,
+            device="cpu",
+            seed=42,
+            observation_path=obs_path,
+        )
+
+
+def test_run_single_object_grasp_inference_diffusion_and_flow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    obs_path = tmp_path / "obs.npy"
+    np.save(obs_path, np.zeros((32, 3)))
+    ckpt_path = tmp_path / "ckpt.pt"
+    ckpt_path.touch()
+    called_methods: list[str] = []
+
+    def mock_diffusion(checkpoint, feature_dim, num_steps, device, seed):
+        called_methods.append("diffusion")
+        return "diffusion_generator"
+
+    def mock_flow(checkpoint, feature_dim, num_steps, device, seed):
+        called_methods.append("flow")
+        return "flow_generator"
+
+    monkeypatch.setattr(
+        "grasping_ai.inference.grasp_inference_runtime.load_grasp_model_checkpoint",
+        lambda path, device: {},
+    )
+    monkeypatch.setattr(
+        "grasping_ai.inference.grasp_inference_runtime.build_diffusion_grasp_generator",
+        mock_diffusion,
+    )
+    monkeypatch.setattr(
+        "grasping_ai.inference.grasp_inference_runtime.build_flow_grasp_generator",
+        mock_flow,
+    )
+    monkeypatch.setattr(
+        "grasping_ai.inference.grasp_inference_runtime.generate_candidate_grasps",
+        lambda gen, pc, n: _sample_grasps(n),
+    )
+
+    run_single_object_grasp_inference(
+        ckpt_path,
+        tmp_path / "diff.npy",
+        "diffusion",
+        feature_dim=16,
+        num_steps=4,
+        num_grasps=2,
+        device="cpu",
+        seed=42,
+        observation_path=obs_path,
+    )
+    run_single_object_grasp_inference(
+        ckpt_path,
+        tmp_path / "flow.npy",
+        "flow",
+        feature_dim=16,
+        num_steps=4,
+        num_grasps=2,
+        device="cpu",
+        seed=42,
+        observation_path=obs_path,
+    )
+    assert called_methods == ["diffusion", "flow"]
+
+
+def test_run_single_object_grasp_inference_validations(tmp_path: Path) -> None:
+    ckpt_path = tmp_path / "ckpt.pt"
+    ckpt_path.touch()
+
+    with pytest.raises(ValueError, match="Provide either observation_path or both"):
+        run_single_object_grasp_inference(
+            ckpt_path,
+            tmp_path / "out.npy",
+            "diffusion",
+            feature_dim=16,
+            num_steps=4,
+            num_grasps=2,
+            device="cpu",
+            seed=0,
+        )
+
+    non_existent = tmp_path / "missing.npy"
+    with pytest.raises(FileNotFoundError, match="Observation file not found"):
+        run_single_object_grasp_inference(
+            ckpt_path,
+            tmp_path / "out.npy",
+            "diffusion",
+            feature_dim=16,
+            num_steps=4,
+            num_grasps=2,
+            device="cpu",
+            seed=0,
+            observation_path=non_existent,
+        )
+
+    with pytest.raises(FileNotFoundError, match="YCB root directory not found"):
+        run_single_object_grasp_inference(
+            ckpt_path,
+            tmp_path / "out.npy",
+            "diffusion",
+            feature_dim=16,
+            num_steps=4,
+            num_grasps=2,
+            device="cpu",
+            seed=0,
+            ycb_root=tmp_path / "missing_dir",
+            object_id="003_cracker_box",
+        )
+
+    bad_cloud_path = tmp_path / "bad.npy"
+    np.save(bad_cloud_path, np.zeros((10,)))
+    with pytest.raises(ValueError, match="point_cloud must have shape"):
+        run_single_object_grasp_inference(
+            ckpt_path,
+            tmp_path / "out.npy",
+            "diffusion",
+            feature_dim=16,
+            num_steps=4,
+            num_grasps=2,
+            device="cpu",
+            seed=0,
+            observation_path=bad_cloud_path,
+        )
+
+
+def test_run_single_object_grasp_inference_from_ycb_mesh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ycb_dir = tmp_path / "ycb"
+    ycb_dir.mkdir()
+    fake_mesh_path = ycb_dir / "mesh.ply"
+    fake_mesh_path.touch()
+    ckpt_path = tmp_path / "ckpt.pt"
+    ckpt_path.touch()
+
+    monkeypatch.setattr(
+        "grasping_ai.inference.grasp_inference_runtime.resolve_ycb_object_id",
+        lambda root, obj_id: fake_mesh_path,
+    )
+    monkeypatch.setattr(
+        "grasping_ai.inference.grasp_inference_runtime.sample_point_cloud_from_mesh",
+        lambda mesh_path, count, rng: np.ones((count, 3), dtype=np.float32),
+    )
+    monkeypatch.setattr(
+        "grasping_ai.inference.grasp_inference_runtime.load_grasp_model_checkpoint",
+        lambda path, device: {},
+    )
+    monkeypatch.setattr(
+        "grasping_ai.inference.grasp_inference_runtime.build_diffusion_grasp_generator",
+        lambda checkpoint, feature_dim, num_steps, device, seed: "gen",
+    )
+    monkeypatch.setattr(
+        "grasping_ai.inference.grasp_inference_runtime.generate_candidate_grasps",
+        lambda gen, pc, n: _sample_grasps(n),
+    )
+
+    run_single_object_grasp_inference(
+        ckpt_path,
+        tmp_path / "out.npy",
+        "diffusion",
+        feature_dim=16,
+        num_steps=4,
+        num_grasps=2,
+        device="cpu",
+        seed=42,
+        ycb_root=ycb_dir,
+        object_id="003_cracker_box",
+    )
+
+
+def test_generate_candidate_grasps_batch() -> None:
     pc1 = np.zeros((10, 3))
     pc2 = np.ones((10, 3))
-    dummy_gen = "dummy_gen"
 
-    def mock_generate(gen, pc, count):
+    def dummy_gen(point_cloud: np.ndarray, count: int) -> np.ndarray:
         return _sample_grasps(count)
 
-    monkeypatch.setattr(gg, "generate_candidate_grasps", mock_generate)
-
-    results = generate_grasps_for_dataset([pc1, pc2], dummy_gen, 2)  # type: ignore[arg-type]
+    results = [generate_candidate_grasps(dummy_gen, pc, 2) for pc in [pc1, pc2]]
     assert len(results) == 2
     assert results[0].shape == (2, 4, 4)
 

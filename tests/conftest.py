@@ -1,7 +1,6 @@
-"""Shared pytest configuration."""
-
 import contextlib
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -24,3 +23,19 @@ def pytest_configure(config: pytest.Config) -> None:
         "slow: end-to-end / artifact-chain tests that exercise full pipelines "
         "and may take tens of seconds; skip with ``-m 'not slow'``.",
     )
+
+
+@pytest.fixture(scope="session")
+def panda_robot_xml() -> Path:
+    """Return the shipped Franka Emika Panda MJCF used by runtime scripts.
+
+    Returns:
+        Path to ``deploy/robot.xml``.
+
+    Raises:
+        pytest.skip.Exception: If the Panda MJCF is not present in the tree.
+    """
+    path = Path(__file__).resolve().parents[1] / "deploy" / "robot.xml"
+    if not path.is_file():
+        pytest.skip(f"Franka Panda MJCF not found: {path}")
+    return path

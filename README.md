@@ -5,7 +5,7 @@
 ## Repository Layout
 
 ```text
-configs/                       Documentation-only experiment templates (CLI args are authoritative)
+configs/                       YAML defaults loaded by CLI scripts (--config-dir to override)
 scripts/                       Thin CLI entry points
 notebooks/archive/             Retired exploratory notebooks (see README there)
 src/grasping_ai/
@@ -52,12 +52,13 @@ simulation -> pipelines.train_rl (SB3 PPO + Gymnasium) -> exported legacy checkp
 | Script | Purpose |
 | --- | --- |
 | `scripts/prepare_data.py` | Build the dataset index from raw records. |
-| `scripts/train.py` | Train a diffusion grasp-generation model (`--resume`, `--augment`). |
+| `scripts/train_diffusion.py` | Train a diffusion grasp-generation model (`--resume`, `--augment`). |
 | `scripts/train_flow.py` | Train a flow-matching grasp-generation model (`--resume`, `--augment`). |
 | `scripts/train_rl.py` | Train an RL grasping/interaction policy. |
 | `scripts/generate_grasps.py` | Multi-object diffusion inference; writes a **dict** `.npy` (artifact chain). |
 | `scripts/run_grasp_inference.py` | Single-object diffusion/flow inference; writes a plain `(K, 4, 4)` array. |
-| `scripts/run_simulation.py` | Execute generated grasps in MuJoCo on YCB objects. |
+| `scripts/run_simulation.py` | Execute generated grasps in MuJoCo on YCB objects (headless). |
+| `scripts/visualize_robot.py` | MuJoCo viewer; listens on UDP topic `robot/keyboard`. Run `python -m grasping_ai.pipelines.visualize_robot --keyboard-tui` in a second terminal for teleoperation. |
 | `scripts/evaluate.py` | Evaluate generated grasps and write a report. |
 | `scripts/run_artifacts.py` | End-to-end CPU-friendly artifact-chain smoke test. |
 | `scripts/run_workflow.py` | Runtime workflow: inference → simulation → evaluation. |

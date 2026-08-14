@@ -22,7 +22,7 @@ import from pipelines or training.
 
 | Subsystem     | Source root                              | Responsibility |
 | ------------- | ---------------------------------------- | -------------- |
-| Config        | `configs/`                               | Documentation/default templates only; CLI arguments are authoritative. |
+| Config        | `configs/`                               | YAML defaults merged by CLI scripts; flags override. |
 | Data          | `src/grasping_ai/data/`                  | Dataset discovery, serialized-sample loading, point-cloud preprocessing. |
 | Perception    | `src/grasping_ai/perception/`            | Point-cloud sampling, normalization, SE(3) frame construction. |
 | Models        | `src/grasping_ai/models/`                | Diffusion/flow grasp generation, equivariant encoder, RL policy. |
@@ -54,7 +54,7 @@ Users must understand which one they are loading.
   SB3 PPO MLP weights (`mlp_extractor.policy_net[0/2]` and `action_net`)
   into a `build_policy_network(obs_dim, act_dim, hidden_dim, 2)` instance.
 * Saved via `save_rl_policy_checkpoint` to the path passed as
-  `--policy-checkpoint` (e.g., `artifacts/checkpoints/rl_policy.pt`).
+  `--policy-checkpoint` (e.g., `artifacts/checkpoints/rl_grasp_policy.pt`).
 * Loaded by `load_rl_policy_checkpoint` + `build_rl_policy_runner`
   (in `src/grasping_ai/inference/policy_runner.py`) into a deterministic
   `Sequential` MLP that returns a single mean action per observation.

@@ -3,6 +3,10 @@ from pathlib import Path
 
 import torch
 
+BatchSource = (
+    Iterable[tuple[torch.Tensor, torch.Tensor]]
+    | Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]]
+)
 OptimizerFactory = Callable[[Iterator[torch.nn.Parameter]], torch.optim.Optimizer]
 TrainingStep = Callable[[torch.Tensor, torch.Tensor], dict[str, float]]
 LossForward = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
@@ -98,7 +102,7 @@ def build_training_step(
 
 def run_training_loop(
     training_step: TrainingStep,
-    dataloader: Iterable[tuple[torch.Tensor, torch.Tensor]],
+    dataloader: BatchSource,
     num_epochs: int,
     checkpoint_path: Path,
     log_every: int,
@@ -111,6 +115,7 @@ def run_training_loop(
     Args:
         training_step: Callable returned by ``build_training_step``.
         dataloader: Iterable yielding ``(inputs, targets)`` batches, refreshed for each epoch.
+            May be an iterable or a zero-argument callable returning a fresh iterator.
         num_epochs: Number of full passes over the dataloader.
         checkpoint_path: Path where the final checkpoint should be written.
         log_every: Logging interval measured in training steps.
@@ -131,9 +136,12 @@ def run_training_loop(
         step_count = 0
         # To support both iterator and iterable dataloaders
         for epoch in range(num_epochs):
-            # Retrieve or copy the dataloader for this epoch if iterable
-            batches = dataloader
-            if not hasattr(dataloader, "__next__") and hasattr(dataloader, "__iter__"):
+            batches: Iterable[tuple[torch.Tensor, torch.Tensor]]
+            if callable(dataloader):
+                batches = dataloader()
+            elif hasattr(dataloader, "__next__"):
+                batches = dataloader
+            else:
                 batches = iter(dataloader)
 
             for inputs, targets in batches:

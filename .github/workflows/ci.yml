@@ -66,6 +66,7 @@ jobs:
       EGL_PLATFORM: surfaceless
       PYTHONFAULTHANDLER: "1"
       OMP_NUM_THREADS: "1"
+      PYTHONPYCACHEPREFIX: .pycache
     steps:
       - uses: actions/checkout@v6
       - name: Install system dependencies
@@ -104,4 +105,4 @@ jobs:
         run: >
           xvfb-run -a uv run --frozen pytest -n auto -q -m "not slow"
           --cov=src/grasping_ai --cov-config=coverage.toml
-          --cov-report=term-missing --cov-fail-under=80
+          --cov-report=term-missing --cov-fail-under=97

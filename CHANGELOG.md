@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- ADRs [0001](docs/adr/001-phase4-canonicalization-vs-equivariant.md)–[0005](docs/adr/005-runtime-workflow-integration.md); CI; artifact-chain script (`run_artifacts.py`) and runtime workflow scripts — [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
+- ADRs [0001](docs/adr/001-phase4-canonicalization-vs-equivariant.md)–[0006](docs/adr/006-robot-viewer-keyboard-topic-split.md); CI; artifact-chain script (`run_artifacts.py`) and runtime workflow scripts — [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
+- `scripts/visualize_robot.py` and keyboard TUI in `pipelines/visualize_robot.py` (``python -m grasping_ai.pipelines.visualize_robot --keyboard-tui``) with UDP topic `robot/keyboard` — [ADR-0006](docs/adr/006-robot-viewer-keyboard-topic-split.md).
 - Flow training/inference (`FlowGeneratorModel`, `scripts/train_flow.py`).
 - Shared modules from dedup/refactor: `grasp_vector`, `training_pairs`, `grasp_sampling`, `checkpoint_io`, `supervised_training`, `grasp_sampling_batch`, `grasp_inference_runtime` — [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md), [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
 - Training flags `--augment` / `--resume`; unified grasp I/O (`load_generated_grasps`); `tests/test_grasp_io_runtime.py`.
@@ -22,11 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Analytical metric `lift_success` → `grasp_success`; 9D grasp representation in configs.
 - Dead helpers wired; duplicate training/checkpoint/SE(3) paths consolidated — [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md).
 - Dual inference CLIs share runtime helpers; artifact and runtime grasp formats reconciled — [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
-- Simulation pre-grasp open phase; docs/README for CLI contracts and YAML-as-docs-only.
+- Diffusion training entry points renamed (`scripts/train_diffusion.py`, `pipelines/train_diffusion.py`); artifact outputs use method-specific filenames (`diffusion_grasp_generator.pt`, `flow_grasp_generator.pt`, `rl_grasp_policy.pt`, `{method}_grasp_candidates.npy`, etc.).
+- `configs/*.yaml` aligned with runtime defaults; nested object-style keys (`diffusion.checkpoint`, `paths.output_dir`, `supervised.batch_size`); CLI scripts load YAML via `grasping_ai.config.yaml_loader` (`--config-dir`, explicit flags override).
+- Franka Emika Panda replaces toy 2-DOF arm in `deploy/robot.xml`; robot viewer/control consolidated in `pipelines/visualize_robot.py` — [ADR-0006](docs/adr/006-robot-viewer-keyboard-topic-split.md).
 
 ### Removed
 
 - Empty repo placeholders; obsolete notebooks (`notebooks/archive/README.md`); dead wrappers and test-only public exports from refactor audit — [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md).
+- `run_simulation.py --render`; `pipelines/control_robot.py`, `grasping_ai.control` package, `GraspCommandPlayer`, and unused table-pick automation — [ADR-0006](docs/adr/006-robot-viewer-keyboard-topic-split.md).
 
 ### Fixed
 

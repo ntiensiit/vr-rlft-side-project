@@ -1,4 +1,5 @@
 __pycache__/
+.pycache/
 *.pyc
 *.pyo
 .pytest_cache/
@@ -11,11 +12,13 @@ MUJOCO_LOG.TXT
 build/
 dist/
 .venv/
+.env
 
 artifacts/checkpoints/*.pt
 artifacts/exports/*.npy
 artifacts/exports/tensorboard/
-artifacts/reports/*.json
+artifacts/reports/*.jsonl
+artifacts/manifest.jsonl
 artifacts/rl_inference_smoke.py
 data/processed/*.npy
 data/processed/index.json

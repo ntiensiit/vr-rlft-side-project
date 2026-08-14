@@ -12,7 +12,17 @@ def iter_supervised_training_batches(
     device: str,
     seed: int | None,
 ) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-    """Yield shuffled ``(point_clouds, targets)`` batches for supervised training."""
+    """Yield shuffled ``(point_clouds, targets)`` batches for supervised training.
+
+    Args:
+        pairs: Training samples as ``(point_cloud, grasp_vector)`` tuples.
+        batch_size: Maximum number of samples per yielded batch.
+        device: Torch device string passed to ``Tensor.to``.
+        seed: Optional shuffle seed; defaults to ``42`` when omitted.
+
+    Yields:
+        Batched ``(point_clouds, targets)`` tensors on ``device``.
+    """
     num_samples = len(pairs)
     indices = list(range(num_samples))
     local_random = random.Random(seed if seed is not None else 42)
@@ -25,47 +35,27 @@ def iter_supervised_training_batches(
         yield point_clouds, targets
 
 
-class SupervisedTrainingDataloader:
-    """Iterable dataloader that emits ``(pcs, targets)`` batches per epoch."""
+def iter_conditioned_training_batches(
+    pairs: list[tuple[torch.Tensor, torch.Tensor]],
+    batch_size: int,
+    device: str,
+    seed: int | None,
+    encoder: torch.nn.Module,
+) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    """Yield shuffled ``(conditioning, targets)`` batches for diffusion training.
 
-    def __init__(
-        self,
-        pairs: list[tuple[torch.Tensor, torch.Tensor]],
-        batch_size: int,
-        device: str,
-        seed: int | None,
-    ) -> None:
-        self.pairs = pairs
-        self.batch_size = batch_size
-        self.device = device
-        self.seed = seed
+    Args:
+        pairs: Training samples as ``(point_cloud, grasp_vector)`` tuples.
+        batch_size: Maximum number of samples per yielded batch.
+        device: Torch device string passed to ``Tensor.to``.
+        seed: Optional shuffle seed forwarded to ``iter_supervised_training_batches``.
+        encoder: Equivariant encoder used to precompute conditioning features.
 
-    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-        return iter_supervised_training_batches(
-            self.pairs, self.batch_size, self.device, self.seed
-        )
-
-
-class ConditionedTrainingDataloader:
-    """Iterable dataloader that pre-encodes point clouds into conditioning features."""
-
-    def __init__(
-        self,
-        pairs: list[tuple[torch.Tensor, torch.Tensor]],
-        batch_size: int,
-        device: str,
-        seed: int | None,
-        encoder: torch.nn.Module,
-    ) -> None:
-        self.pairs = pairs
-        self.batch_size = batch_size
-        self.device = device
-        self.seed = seed
-        self.encoder = encoder
-
-    def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-        for point_clouds, targets in iter_supervised_training_batches(
-            self.pairs, self.batch_size, self.device, self.seed
-        ):
-            conditioning, _, _ = encode_grasp_conditioning(self.encoder, point_clouds)
-            yield conditioning, targets
+    Yields:
+        Batched ``(conditioning, targets)`` tensors on ``device``.
+    """
+    for point_clouds, targets in iter_supervised_training_batches(
+        pairs, batch_size, device, seed
+    ):
+        conditioning, _, _ = encode_grasp_conditioning(encoder, point_clouds)
+        yield conditioning, targets

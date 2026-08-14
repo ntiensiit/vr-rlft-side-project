@@ -1,10 +1,8 @@
-import json
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import pytest
-from scripts.evaluate import evaluate_main
 
 from grasping_ai.evaluation.collision import (
     build_collision_checker,
@@ -29,7 +27,10 @@ from grasping_ai.evaluation.metrics import (
 from grasping_ai.pipelines.evaluate import (
     aggregate_evaluation_results,
     evaluate_generated_grasps,
+    read_jsonl_records,
+    write_evaluation_report,
 )
+from grasping_ai.pipelines.generate_grasps import load_generated_grasps
 
 
 @pytest.fixture
@@ -57,7 +58,7 @@ def temp_files():
         grasps_dict_path = tmp_path / "grasps_dict.npy"
         np.save(grasps_dict_path, grasps_dict, allow_pickle=True)
 
-        report_path = tmp_path / "report.json"
+        report_path = tmp_path / "report.jsonl"
 
         yield {
             "obj_path": obj_path,
@@ -194,38 +195,56 @@ def test_aggregate_evaluation_results():
 
 
 def test_evaluate_script_plain_array(temp_files):
-    evaluate_main(
-        grasps_path=temp_files["grasps_arr_path"],
-        object_id="default",
-        object_point_cloud_path=temp_files["obj_path"],
-        gripper_point_cloud_path=temp_files["grip_path"],
-        report_path=temp_files["report_path"],
+    grasps = load_generated_grasps(temp_files["grasps_arr_path"], object_key="default")
+    object_point_cloud = np.load(temp_files["obj_path"])
+    gripper_point_cloud = np.load(temp_files["grip_path"])
+    per_grasp = evaluate_generated_grasps(
+        grasp_poses=grasps,
+        object_point_cloud=object_point_cloud,
+        gripper_point_cloud=gripper_point_cloud,
         friction_coefficient=0.5,
         lift_height_threshold=0.05,
     )
+    write_evaluation_report(
+        temp_files["report_path"],
+        aggregate_evaluation_results({"default": per_grasp}),
+    )
 
     assert temp_files["report_path"].is_file()
-    with open(temp_files["report_path"]) as f:
-        report = json.load(f)
+    report = next(
+        record
+        for record in read_jsonl_records(temp_files["report_path"])
+        if record.get("record_type") == "summary"
+    )
 
     assert "success_rate" in report
     assert "mean_grasp_quality" in report
 
 
 def test_evaluate_script_dictionary(temp_files):
-    evaluate_main(
-        grasps_path=temp_files["grasps_dict_path"],
-        object_id="mustard_bottle",
-        object_point_cloud_path=temp_files["obj_path"],
-        gripper_point_cloud_path=temp_files["grip_path"],
-        report_path=temp_files["report_path"],
+    grasps = load_generated_grasps(
+        temp_files["grasps_dict_path"], object_key="mustard_bottle"
+    )
+    object_point_cloud = np.load(temp_files["obj_path"])
+    gripper_point_cloud = np.load(temp_files["grip_path"])
+    per_grasp = evaluate_generated_grasps(
+        grasp_poses=grasps,
+        object_point_cloud=object_point_cloud,
+        gripper_point_cloud=gripper_point_cloud,
         friction_coefficient=0.5,
         lift_height_threshold=0.05,
     )
+    write_evaluation_report(
+        temp_files["report_path"],
+        aggregate_evaluation_results({"mustard_bottle": per_grasp}),
+    )
 
     assert temp_files["report_path"].is_file()
-    with open(temp_files["report_path"]) as f:
-        report = json.load(f)
+    report = next(
+        record
+        for record in read_jsonl_records(temp_files["report_path"])
+        if record.get("record_type") == "summary"
+    )
 
     assert "success_rate" in report
     assert "mean_grasp_quality" in report
@@ -325,6 +344,16 @@ def test_collision_and_evaluate_pipeline_validations() -> None:
 
     with pytest.raises(ValueError, match="grasp_poses must have shape"):
         filter_collision_free_grasps(checker, np.zeros((10, 2)))
+
+    with pytest.raises(ValueError, match="grasp_poses must have shape"):
+        filter_collision_free_grasps(checker, np.zeros((2, 3, 4)))
+
+    with pytest.raises(ValueError, match="grasp_poses must have shape"):
+        evaluate_generated_grasps(
+            np.zeros((2, 3)),
+            np.zeros((10, 3)),
+            np.zeros((5, 3)),
+        )
 
     empty_filtered = filter_collision_free_grasps(checker, np.zeros((0, 4, 4)))
     assert empty_filtered.shape == (0, 4, 4)
@@ -523,21 +552,73 @@ def test_evaluate_generated_grasps_all_colliding_filtered() -> None:
 
 
 def test_write_evaluation_report_tb_and_exceptions(tmp_path: Path) -> None:
-    from grasping_ai.pipelines.evaluate import write_evaluation_report
+    from grasping_ai.pipelines.evaluate import read_jsonl_records, write_evaluation_report
 
     with pytest.raises(TypeError, match=r"report_path must be a pathlib\.Path"):
         write_evaluation_report("not_a_path", {})  # type: ignore[arg-type]
 
-    report_file = tmp_path / "report.json"
+    report_file = tmp_path / "report.jsonl"
     tb_dir = tmp_path / "tb_events"
     write_evaluation_report(report_file, {"metric": 0.95}, experiment_log_dir=tb_dir)
     assert report_file.is_file()
     assert tb_dir.exists()
+    records = read_jsonl_records(report_file)
+    assert records[0]["record_type"] == "summary"
+    assert records[0]["metric"] == 0.95
 
     dir_path = tmp_path / "is_a_dir"
     dir_path.mkdir()
-    with pytest.raises(ValueError, match="Failed to write evaluation report"):
+    with pytest.raises(ValueError, match="Failed to write JSONL records"):
         write_evaluation_report(dir_path, {})
+
+
+def test_jsonl_io_validation_and_error_paths(tmp_path: Path) -> None:
+    """Validate JSONL read/write helpers and their error handling.
+
+    Args:
+        tmp_path: Temporary directory for JSONL fixture files.
+
+    Returns:
+        None. Asserts type, parse, and mapping validation failures are raised.
+    """
+    from grasping_ai.pipelines.evaluate import read_jsonl_records, write_jsonl_records
+
+    with pytest.raises(TypeError, match=r"output_path must be a pathlib\.Path"):
+        write_jsonl_records("bad", [])  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match=r"input_path must be a pathlib\.Path"):
+        read_jsonl_records("bad")  # type: ignore[arg-type]
+
+    records_path = tmp_path / "records.jsonl"
+    write_jsonl_records(records_path, [{"record_type": "summary", "ok": True}])
+    assert read_jsonl_records(records_path)[0]["ok"] is True
+
+    with_blank = tmp_path / "blank.jsonl"
+    with_blank.write_text("\n\n{\"record_type\": \"summary\"}\n\n", encoding="utf-8")
+    assert read_jsonl_records(with_blank)[0]["record_type"] == "summary"
+
+    bad_json = tmp_path / "bad.jsonl"
+    bad_json.write_text("{not json}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Failed to read JSONL records"):
+        read_jsonl_records(bad_json)
+
+    non_mapping = tmp_path / "non_mapping.jsonl"
+    non_mapping.write_text("[1, 2, 3]\n", encoding="utf-8")
+    with pytest.raises(TypeError, match="must be a mapping"):
+        read_jsonl_records(non_mapping)
+
+    missing = tmp_path / "missing.jsonl"
+    with pytest.raises(ValueError, match="Failed to read JSONL records"):
+        read_jsonl_records(missing)
+
+    write_evaluation_report(
+        tmp_path / "multi.jsonl",
+        {"success_rate": 0.5},
+        per_object_results={"obj_a": {"success_rate": 0.0}},
+    )
+    multi_records = read_jsonl_records(tmp_path / "multi.jsonl")
+    assert multi_records[0]["record_type"] == "object"
+    assert multi_records[1]["record_type"] == "summary"
 
 
 def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:

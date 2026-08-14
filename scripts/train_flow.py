@@ -1,60 +1,71 @@
 from pathlib import Path
 
+from grasping_ai.config.yaml_loader import (
+    config_get,
+    config_path,
+    load_project_yaml_config,
+    parse_config_dir_from_argv,
+)
 from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
-
-
-def train_flow_main(
-    dataset_root: Path,
-    checkpoint_path: Path,
-    feature_dim: int,
-    hidden_dim: int,
-    num_layers: int,
-    learning_rate: float,
-    num_epochs: int,
-    batch_size: int,
-    device: str,
-    seed: int | None = None,
-    experiment_log_dir: Path | None = None,
-    pretrained_encoder_path: Path | None = None,
-    resume_checkpoint_path: Path | None = None,
-    augment: bool = False,
-) -> None:
-    """Run the flow-matching grasp-generation training pipeline."""
-    run_flow_training_pipeline(
-        dataset_root=dataset_root,
-        checkpoint_path=checkpoint_path,
-        feature_dim=feature_dim,
-        hidden_dim=hidden_dim,
-        num_layers=num_layers,
-        learning_rate=learning_rate,
-        num_epochs=num_epochs,
-        batch_size=batch_size,
-        device=device,
-        seed=seed,
-        experiment_log_dir=experiment_log_dir,
-        pretrained_encoder_path=pretrained_encoder_path,
-        resume_checkpoint_path=resume_checkpoint_path,
-        augment=augment,
-    )
-
 
 if __name__ == "__main__":
     import argparse
 
+    config_dir = parse_config_dir_from_argv()
+    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "training")
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
-        description="Train a flow-matching grasp-generation model"
+        description="Train a flow-matching grasp-generation model",
+        parents=[pre_parser],
     )
-    parser.add_argument("--dataset-root", type=Path, required=True)
-    parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument("--feature-dim", type=int, required=True)
-    parser.add_argument("--hidden-dim", type=int, required=True)
-    parser.add_argument("--num-layers", type=int, required=True)
-    parser.add_argument("--learning-rate", type=float, required=True)
-    parser.add_argument("--num-epochs", type=int, required=True)
-    parser.add_argument("--batch-size", type=int, required=True)
-    parser.add_argument("--device", type=str, required=True)
-    parser.add_argument("--seed", type=int, default=None)
-    parser.add_argument("--experiment-log-dir", type=Path, default=None)
+    parser.add_argument(
+        "--dataset-root",
+        type=Path,
+        default=config_path(cfg, "paths", "dataset_root"),
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=config_path(cfg, "flow", "checkpoint"),
+    )
+    parser.add_argument(
+        "--feature-dim",
+        type=int,
+        default=int(config_get(cfg, "architecture", "feature_dim")),
+    )
+    parser.add_argument(
+        "--hidden-dim",
+        type=int,
+        default=int(config_get(cfg, "architecture", "hidden_dim")),
+    )
+    parser.add_argument(
+        "--num-layers",
+        type=int,
+        default=int(config_get(cfg, "architecture", "num_layers")),
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=float(config_get(cfg, "supervised", "learning_rate")),
+    )
+    parser.add_argument(
+        "--num-epochs",
+        type=int,
+        default=int(config_get(cfg, "supervised", "num_epochs")),
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=int(config_get(cfg, "supervised", "batch_size")),
+    )
+    parser.add_argument("--device", type=str, default=str(config_get(cfg, "device")))
+    parser.add_argument("--seed", type=int, default=int(config_get(cfg, "seed")))
+    parser.add_argument(
+        "--experiment-log-dir",
+        type=Path,
+        default=config_path(cfg, "flow", "tensorboard"),
+    )
     parser.add_argument("--pretrained-encoder", type=Path, default=None)
     parser.add_argument(
         "--resume",
@@ -68,19 +79,29 @@ if __name__ == "__main__":
         help="Apply SO(3)/translation jitter during supervised pair construction",
     )
     args = parser.parse_args()
-    train_flow_main(
-        args.dataset_root,
-        args.checkpoint,
-        args.feature_dim,
-        args.hidden_dim,
-        args.num_layers,
-        args.learning_rate,
-        args.num_epochs,
-        args.batch_size,
-        args.device,
-        args.seed,
-        args.experiment_log_dir,
-        args.pretrained_encoder,
-        args.resume,
-        args.augment,
+    if args.dataset_root is None:
+        parser.error(
+            "--dataset-root is required (set in configs/data.yaml paths.dataset_root "
+            "or pass explicitly)"
+        )
+    if args.checkpoint is None:
+        parser.error(
+            "--checkpoint is required (set in configs/model.yaml flow.checkpoint "
+            "or pass explicitly)"
+        )
+    run_flow_training_pipeline(
+        dataset_root=args.dataset_root,
+        checkpoint_path=args.checkpoint,
+        feature_dim=args.feature_dim,
+        hidden_dim=args.hidden_dim,
+        num_layers=args.num_layers,
+        learning_rate=args.learning_rate,
+        num_epochs=args.num_epochs,
+        batch_size=args.batch_size,
+        device=args.device,
+        seed=args.seed,
+        experiment_log_dir=args.experiment_log_dir,
+        pretrained_encoder_path=args.pretrained_encoder,
+        resume_checkpoint_path=args.resume,
+        augment=args.augment,
     )

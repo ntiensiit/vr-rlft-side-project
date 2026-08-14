@@ -12,7 +12,7 @@ from grasping_ai.inference.grasp_sampling import (
 )
 from grasping_ai.models.flow import load_flow_model_from_state
 from grasping_ai.training.checkpoint_io import (
-    checkpoint_dict_int,
+    checkpoint_scalar_int,
     load_torch_checkpoint,
 )
 
@@ -53,8 +53,8 @@ def build_diffusion_grasp_generator(
         A function that takes a point cloud ``(N, 3)`` and returns a set of
         candidate grasp poses as a numpy array.
     """
-    hidden_dim = checkpoint_dict_int(checkpoint, "hidden_dim")
-    num_layers = checkpoint_dict_int(checkpoint, "num_layers")
+    hidden_dim = checkpoint_scalar_int(checkpoint["hidden_dim"])
+    num_layers = checkpoint_scalar_int(checkpoint["num_layers"])
 
     from grasping_ai.models.diffusion import GraspGeneratorModel, build_diffusion_sampler
     model = GraspGeneratorModel(feature_dim, hidden_dim, num_layers)
@@ -111,8 +111,8 @@ def build_flow_grasp_generator(
         A function that takes a point cloud ``(N, 3)`` and returns a set of
         candidate grasp poses as a numpy array.
     """
-    hidden_dim = checkpoint_dict_int(checkpoint, "hidden_dim")
-    num_layers = checkpoint_dict_int(checkpoint, "num_layers")
+    hidden_dim = checkpoint_scalar_int(checkpoint["hidden_dim"])
+    num_layers = checkpoint_scalar_int(checkpoint["num_layers"])
 
     model = load_flow_model_from_state(
         checkpoint, feature_dim, hidden_dim, num_layers, device

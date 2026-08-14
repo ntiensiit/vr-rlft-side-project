@@ -1,5 +1,3 @@
-"""Phase 6 — End-to-End Orchestration & Eval tests."""
-import json
 import os
 import tempfile
 from pathlib import Path
@@ -28,35 +26,10 @@ from grasping_ai.evaluation.metrics import (
 from grasping_ai.pipelines.evaluate import (
     aggregate_evaluation_results,
     evaluate_generated_grasps,
+    read_jsonl_records,
     write_evaluation_report,
 )
 from grasping_ai.pipelines.simulate_grasp import simulate_grasp
-
-MINIMAL_ACTUATED_ROBOT_XML = """\
-<mujoco model="minimal_actuated_robot">
-    <compiler angle="radian"/>
-    <worldbody>
-        <body name="base" pos="0 0 0">
-            <geom name="base_geom" type="box" size="0.1 0.1 0.1"/>
-            <body name="link1" pos="0 0 0.2">
-                <joint name="joint1" type="hinge" axis="0 0 1" range="-3.14 3.14" limited="true"/>
-                <geom name="link1_geom" type="cylinder" size="0.05 0.1"/>
-                <body name="end_effector" pos="0 0 0.2"/>
-            </body>
-        </body>
-    </worldbody>
-    <actuator>
-        <motor name="motor1" joint="joint1" gear="1"/>
-    </actuator>
-</mujoco>
-"""
-
-
-@pytest.fixture
-def minimal_robot_xml(tmp_path):
-    path = tmp_path / "robot.xml"
-    path.write_text(MINIMAL_ACTUATED_ROBOT_XML, encoding="utf-8")
-    return path
 
 
 @pytest.fixture
@@ -101,6 +74,24 @@ def minimal_ycb_root_at_height(tmp_path):
     <mujoco model="mustard_bottle">
         <worldbody>
             <body name="mustard_bottle" pos="0 0 0.5">
+                <geom name="mustard_bottle_geom" type="box" size="0.05 0.05 0.05"/>
+            </body>
+        </worldbody>
+    </mujoco>
+    """
+    (obj_dir / "mustard_bottle.xml").write_text(xml_content, encoding="utf-8")
+    return tmp_path / "ycb"
+
+
+@pytest.fixture
+def minimal_ycb_root_freejoint(tmp_path):
+    obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
+    obj_dir.mkdir(parents=True)
+    xml_content = """
+    <mujoco model="mustard_bottle">
+        <worldbody>
+            <body name="mustard_bottle" pos="0 0 0.05">
+                <freejoint/>
                 <geom name="mustard_bottle_geom" type="box" size="0.05 0.05 0.05"/>
             </body>
         </worldbody>
@@ -214,13 +205,13 @@ def test_run_simulation_rejects_missing_robot_xml(minimal_ycb_root):
         )
 
 
-def test_run_simulation_creates_outcome_report(minimal_robot_xml, minimal_ycb_root):
+def test_run_simulation_creates_outcome_report(panda_robot_xml, minimal_ycb_root):
     """Verify simulate_grasp runs and returns valid outcome dict."""
     grasp = np.eye(4)
     grasp[:3, 3] = [0.0, 0.0, 0.3]
     outcome = simulate_grasp(
         grasp, "mustard_bottle", minimal_ycb_root,
-        minimal_robot_xml, None, 5, np.zeros(1),
+        panda_robot_xml, None, 5, np.zeros(1),
     )
     assert "success" in outcome
     assert "initial_height" in outcome
@@ -228,26 +219,26 @@ def test_run_simulation_creates_outcome_report(minimal_robot_xml, minimal_ycb_ro
     assert "contact_count" in outcome
 
 
-def test_run_simulation_validates_success_contract_params(minimal_robot_xml, minimal_ycb_root):
+def test_run_simulation_validates_success_contract_params(panda_robot_xml, minimal_ycb_root):
     """Verify simulate_grasp validates lift and stability thresholds."""
     grasp = np.eye(4)
     grasp[:3, 3] = [0.0, 0.0, 0.3]
     with pytest.raises(ValueError, match="lift_height_threshold"):
         simulate_grasp(
             grasp, "mustard_bottle", minimal_ycb_root,
-            minimal_robot_xml, None, 5, np.zeros(1),
+            panda_robot_xml, None, 5, np.zeros(1),
             lift_height_threshold=-0.01,
         )
     with pytest.raises(ValueError, match="max_linear_velocity"):
         simulate_grasp(
             grasp, "mustard_bottle", minimal_ycb_root,
-            minimal_robot_xml, None, 5, np.zeros(1),
+            panda_robot_xml, None, 5, np.zeros(1),
             max_linear_velocity=-0.1,
         )
     with pytest.raises(ValueError, match="max_angular_velocity"):
         simulate_grasp(
             grasp, "mustard_bottle", minimal_ycb_root,
-            minimal_robot_xml, None, 5, np.zeros(1),
+            panda_robot_xml, None, 5, np.zeros(1),
             max_angular_velocity=-0.1,
         )
 
@@ -276,40 +267,51 @@ def test_evaluate_creates_report_from_synthetic_inputs():
     assert "collision_free_rate" in aggregated
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        report_path = Path(tmp_dir) / "report.json"
+        report_path = Path(tmp_dir) / "report.jsonl"
         write_evaluation_report(report_path, aggregated)
         assert report_path.exists()
-        with report_path.open() as fp:
-            data = json.load(fp)
-            assert "success_rate" in data
+        records = read_jsonl_records(report_path)
+        summary = next(record for record in records if record.get("record_type") == "summary")
+        assert "success_rate" in summary
 
 
-def test_phase6_pipelines_do_not_leak_global_state(minimal_robot_xml, minimal_ycb_root):
+def test_phase6_pipelines_do_not_leak_global_state(panda_robot_xml, minimal_ycb_root):
     """Verify that multiple simulation runs are independent."""
     grasp1 = np.eye(4)
     grasp2 = np.eye(4)
     grasp2[0, 3] = 1.0
     outcome1 = simulate_grasp(
         grasp1, "mustard_bottle", minimal_ycb_root,
-        minimal_robot_xml, None, 5, np.zeros(1),
+        panda_robot_xml, None, 5, np.zeros(1),
     )
     outcome2 = simulate_grasp(
         grasp2, "mustard_bottle", minimal_ycb_root,
-        minimal_robot_xml, None, 5, np.zeros(1),
+        panda_robot_xml, None, 5, np.zeros(1),
     )
     assert np.allclose(outcome1["grasp_pose"], grasp1)
     assert np.allclose(outcome2["grasp_pose"], grasp2)
 
 
 def test_simulate_grasp_renames_object_body_to_object_identifier(
-    minimal_robot_xml, minimal_ycb_root_differing_body_name
+    panda_robot_xml, minimal_ycb_root_differing_body_name
 ):
-    """Verify object body is renamed to the identifier so lookups succeed."""
-    grasp = np.eye(4)
-    grasp[:3, 3] = [0.0, 0.0, 0.4]
+    """Verify object body is renamed to the identifier so lookups succeed.
+
+    Args:
+        panda_robot_xml: Path to ``deploy/robot.xml``.
+        minimal_ycb_root_differing_body_name: YCB root whose object body name
+            differs from the object identifier.
+    """
+    from grasping_ai.robotics.kinematics import build_forward_kinematics, load_robot_model
+
+    r_model = load_robot_model(str(panda_robot_xml))
+    q_home = np.array(
+        [0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853, 0.04, 0.04]
+    )
+    grasp = build_forward_kinematics(r_model)(q_home)
     outcome = simulate_grasp(
         grasp, "mustard_bottle", minimal_ycb_root_differing_body_name,
-        minimal_robot_xml, None, 5, np.zeros(1),
+        panda_robot_xml, None, 5, np.zeros(1),
     )
     assert set(outcome.keys()) == {
         "success", "initial_height", "final_height",
@@ -321,14 +323,14 @@ def test_simulate_grasp_renames_object_body_to_object_identifier(
 
 
 def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(
-    minimal_robot_xml, minimal_ycb_root_at_height
+    panda_robot_xml, minimal_ycb_root_at_height
 ):
     """Verify IK failure returns an unsuccessful outcome without simulating."""
     grasp = np.eye(4)
     grasp[:3, 3] = [0.0, 0.0, 1.0]
     outcome = simulate_grasp(
         grasp, "mustard_bottle", minimal_ycb_root_at_height,
-        minimal_robot_xml, None, 5, np.zeros(1),
+        panda_robot_xml, None, 5, np.zeros(1),
     )
     assert outcome["success"] is False
     assert outcome["initial_height"] == 0.0
@@ -338,7 +340,22 @@ def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(
     assert np.allclose(outcome["grasp_pose"], grasp)
 
 
-def test_simulate_grasp_missing_object_body_reports_error(minimal_robot_xml, tmp_path):
+def test_simulate_grasp_ik_failure_aligns_freejoint_object(
+    panda_robot_xml, minimal_ycb_root_freejoint
+):
+    """Verify unreachable grasps still run physics when the object can teleport."""
+    grasp = np.eye(4)
+    grasp[:3, 3] = [0.0, 0.0, 1.0]
+    outcome = simulate_grasp(
+        grasp, "mustard_bottle", minimal_ycb_root_freejoint,
+        panda_robot_xml, None, 5, np.zeros(1),
+    )
+    assert outcome["success"] is False
+    assert outcome["fk_position_error"] == float("inf")
+    assert outcome["initial_height"] != 0.0
+
+
+def test_simulate_grasp_missing_object_body_reports_error(panda_robot_xml, tmp_path):
     """Verify a missing object body is reported as an error, not silently zeroed."""
     obj_dir = tmp_path / "ycb" / "006_mustard_bottle"
     obj_dir.mkdir(parents=True)
@@ -349,5 +366,5 @@ def test_simulate_grasp_missing_object_body_reports_error(minimal_robot_xml, tmp
     with pytest.raises(ValueError, match="No body element found"):
         simulate_grasp(
             grasp, "mustard_bottle", ycb_root,
-            minimal_robot_xml, None, 5, np.zeros(1),
+            panda_robot_xml, None, 5, np.zeros(1),
         )

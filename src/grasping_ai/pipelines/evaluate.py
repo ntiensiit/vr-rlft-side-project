@@ -5,14 +5,12 @@ from pathlib import Path
 import numpy as np
 
 from grasping_ai.evaluation.collision import (
-    CollisionChecker,
     build_collision_checker,
     check_collision,
     filter_collision_free_grasps,
     generate_analytical_contacts,
 )
 from grasping_ai.evaluation.force_closure import (
-    ForceClosureJudge,
     build_force_closure_judge,
     compute_grasp_quality,
     compute_grasp_wrench_matrix,
@@ -20,59 +18,6 @@ from grasping_ai.evaluation.force_closure import (
     load_contact_set,
 )
 from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
-
-GraspEvaluation = dict[str, float | bool]
-
-
-def _contact_provider_from_path(
-    contact_path: Path,
-) -> Callable[[np.ndarray], list[dict[str, np.ndarray]]]:
-    """Build a contact provider that returns a fixed loaded contact set."""
-    file_contacts = load_contact_set(contact_path)
-
-    def provider(pose: np.ndarray) -> list[dict[str, np.ndarray]]:
-        del pose
-        return file_contacts
-
-    return provider
-
-
-def _evaluate_single_grasp(
-    pose: np.ndarray,
-    collision_checker: CollisionChecker,
-    contact_set_provider: Callable[[np.ndarray], list[dict[str, np.ndarray]]] | None,
-    object_point_cloud: np.ndarray,
-    gripper_point_cloud: np.ndarray,
-    clearance: float,
-    fc_judge: ForceClosureJudge,
-    friction_coefficient: float,
-) -> GraspEvaluation:
-    """Evaluate one grasp pose and return its metric dictionary."""
-    collision_free = check_collision(collision_checker, pose)
-    if contact_set_provider is not None:
-        contacts = contact_set_provider(pose)
-    else:
-        contacts = generate_analytical_contacts(
-            object_point_cloud, gripper_point_cloud, pose, clearance
-        )
-
-    force_closure = evaluate_force_closure(fc_judge, contacts)
-    wrench_matrix = compute_grasp_wrench_matrix(contacts, friction_coefficient)
-    wrench_rank = (
-        float(np.linalg.matrix_rank(wrench_matrix))
-        if wrench_matrix.size
-        else 0.0
-    )
-    grasp_quality = compute_grasp_quality(contacts, friction_coefficient)
-    grasp_success = bool(collision_free and force_closure)
-
-    return {
-        "collision_free": collision_free,
-        "force_closure": force_closure,
-        "grasp_success": grasp_success,
-        "grasp_quality": float(grasp_quality),
-        "wrench_rank": wrench_rank,
-    }
 
 
 def evaluate_generated_grasps(
@@ -86,7 +31,7 @@ def evaluate_generated_grasps(
     wrench_regularization: float = 1.0,
     contact_path: Path | None = None,
     filter_collisions: bool = False,
-) -> list[GraspEvaluation]:
+) -> list[dict[str, float | bool]]:
     """Evaluate a set of generated grasps using a common evaluation pipeline.
 
     Args:
@@ -105,6 +50,9 @@ def evaluate_generated_grasps(
 
     Returns:
         A list of per-grasp evaluation dictionaries.
+
+    Raises:
+        ValueError: If ``grasp_poses`` shape or metric parameters are invalid.
     """
     if grasp_poses.ndim == 2:
         if grasp_poses.shape == (4, 4):
@@ -132,29 +80,51 @@ def evaluate_generated_grasps(
             return []
 
     if contact_set_provider is None and contact_path is not None:
-        contact_set_provider = _contact_provider_from_path(contact_path)
+        file_contacts = load_contact_set(contact_path)
+
+        def contact_set_provider(pose: np.ndarray) -> list[dict[str, np.ndarray]]:
+            del pose
+            return file_contacts
 
     fc_judge = build_force_closure_judge(
         friction_coefficient, wrench_regularization=wrench_regularization
     )
 
-    return [
-        _evaluate_single_grasp(
-            grasp_poses[i],
-            collision_checker,
-            contact_set_provider,
-            object_point_cloud,
-            gripper_point_cloud,
-            clearance,
-            fc_judge,
-            friction_coefficient,
+    results: list[dict[str, float | bool]] = []
+    for i in range(grasp_poses.shape[0]):
+        pose = grasp_poses[i]
+        collision_free = check_collision(collision_checker, pose)
+        if contact_set_provider is not None:
+            contacts = contact_set_provider(pose)
+        else:
+            contacts = generate_analytical_contacts(
+                object_point_cloud, gripper_point_cloud, pose, clearance
+            )
+
+        force_closure = evaluate_force_closure(fc_judge, contacts)
+        wrench_matrix = compute_grasp_wrench_matrix(contacts, friction_coefficient)
+        wrench_rank = (
+            float(np.linalg.matrix_rank(wrench_matrix))
+            if wrench_matrix.size
+            else 0.0
         )
-        for i in range(grasp_poses.shape[0])
-    ]
+        grasp_quality = compute_grasp_quality(contacts, friction_coefficient)
+        grasp_success = bool(collision_free and force_closure)
+
+        results.append(
+            {
+                "collision_free": collision_free,
+                "force_closure": force_closure,
+                "grasp_success": grasp_success,
+                "grasp_quality": float(grasp_quality),
+                "wrench_rank": wrench_rank,
+            }
+        )
+    return results
 
 
 def aggregate_evaluation_results(
-    per_object_results: dict[str, list[GraspEvaluation]],
+    per_object_results: dict[str, list[dict[str, float | bool]]],
 ) -> dict[str, float]:
     """Aggregate per-object evaluation results into summary metrics.
 
@@ -163,6 +133,9 @@ def aggregate_evaluation_results(
 
     Returns:
         A dictionary of aggregated metric names and values.
+
+    Raises:
+        TypeError: If ``per_object_results`` is not a dictionary.
     """
     if not isinstance(per_object_results, dict):
         raise TypeError("per_object_results must be a dictionary")
@@ -224,28 +197,109 @@ def aggregate_evaluation_results(
     }
 
 
+def write_jsonl_records(
+    output_path: Path,
+    records: list[dict[str, object]],
+) -> None:
+    """Write JSON Lines records to disk.
+
+    Args:
+        output_path: Destination ``.jsonl`` file path.
+        records: Ordered mapping objects, one per output line.
+
+    Raises:
+        TypeError: If ``output_path`` is not a ``pathlib.Path`` instance.
+        ValueError: If writing the file fails.
+    """
+    if not isinstance(output_path, Path):
+        raise TypeError("output_path must be a pathlib.Path instance")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with output_path.open("w", encoding="utf-8") as fp:
+            for record in records:
+                fp.write(json.dumps(record, allow_nan=True))
+                fp.write("\n")
+    except Exception as e:
+        raise ValueError(f"Failed to write JSONL records: {e}") from e
+
+
+def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
+    """Read JSON Lines records from disk.
+
+    Args:
+        input_path: Source ``.jsonl`` file path.
+
+    Returns:
+        Parsed mapping objects in file order.
+
+    Raises:
+        TypeError: If ``input_path`` is not a ``pathlib.Path`` instance, or a
+            line does not decode to a mapping.
+        ValueError: If the file cannot be read or parsed.
+    """
+    if not isinstance(input_path, Path):
+        raise TypeError("input_path must be a pathlib.Path instance")
+    records: list[dict[str, object]] = []
+    try:
+        lines = input_path.read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        raise ValueError(f"Failed to read JSONL records from {input_path}: {e}") from e
+    for line_number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            loaded = json.loads(stripped)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Failed to read JSONL records from {input_path}: {e}"
+            ) from e
+        if not isinstance(loaded, dict):
+            raise TypeError(
+                f"JSONL line {line_number} in {input_path} must be a mapping"
+            )
+        records.append(loaded)
+    return records
+
 
 def write_evaluation_report(
     report_path: Path,
     results: dict[str, float],
     experiment_log_dir: Path | None = None,
+    per_object_results: dict[str, dict[str, float]] | None = None,
 ) -> None:
-    """Persist a human-readable evaluation report to disk.
+    """Persist an evaluation report as JSON Lines.
+
+    When ``per_object_results`` is supplied, one ``object`` record is written
+    per object followed by a final ``summary`` record. Otherwise only the
+    summary record is written.
 
     Args:
         report_path: Destination path for the report file.
         results: Aggregated evaluation metrics to serialize.
         experiment_log_dir: Optional path to write TensorBoard experiment events.
+        per_object_results: Optional per-object aggregated metrics keyed by
+            object identifier.
+
+    Raises:
+        TypeError: If ``report_path`` is not a ``pathlib.Path`` instance.
+        ValueError: If writing the report fails.
     """
     if not isinstance(report_path, Path):
         raise TypeError("report_path must be a pathlib.Path instance")
 
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with report_path.open("w") as fp:
-            json.dump(results, fp, indent=4)
-    except Exception as e:
-        raise ValueError(f"Failed to write evaluation report: {e}") from e
+    records: list[dict[str, object]] = []
+    if per_object_results is not None:
+        for object_id, metrics in per_object_results.items():
+            records.append(
+                {
+                    "record_type": "object",
+                    "object_id": object_id,
+                    **metrics,
+                }
+            )
+    records.append({"record_type": "summary", **results})
+    write_jsonl_records(report_path, records)
 
     if experiment_log_dir is not None:
         from torch.utils.tensorboard import SummaryWriter

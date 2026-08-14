@@ -13,6 +13,30 @@ JointConfiguration = np.ndarray
 RigidTransform = np.ndarray
 ForwardKinematics = Callable[[JointConfiguration], RigidTransform]
 
+_EE_BODY_CANDIDATES = (
+    "end_effector",
+    "ee",
+    "flange",
+    "gripper",
+    "hand",
+)
+
+
+def _resolve_end_effector_body_name(model: Any, robot_model: dict[str, object]) -> str:
+    """Return the end-effector body name for FK/IK."""
+    ee_body_name: Any = robot_model.get("end_effector_body_name")
+    if ee_body_name is None:
+        for name in _EE_BODY_CANDIDATES:
+            body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+            if body_id != -1:
+                ee_body_name = name
+                break
+        if ee_body_name is None:
+            ee_body_name = mujoco.mj_id2name(
+                model, mujoco.mjtObj.mjOBJ_BODY, model.nbody - 1
+            )
+    return str(ee_body_name)
+
 
 def _se3_pose_error(target_pose: RigidTransform, current_pose: RigidTransform) -> np.ndarray:
     """Compute a 6D SE(3) pose error using ``pytransform3d`` conventions.
@@ -77,18 +101,7 @@ def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematic
         raise TypeError("robot_model must be a dictionary returned by load_robot_model")
 
     model: Any = robot_model["model"]
-
-    ee_body_name: Any = robot_model.get("end_effector_body_name")
-    if ee_body_name is None:
-        for name in ["end_effector", "ee", "flange", "gripper"]:
-            body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
-            if body_id != -1:
-                ee_body_name = name
-                break
-        if ee_body_name is None:
-            ee_body_name = mujoco.mj_id2name(
-                model, mujoco.mjtObj.mjOBJ_BODY, model.nbody - 1
-            )
+    ee_body_name = _resolve_end_effector_body_name(model, robot_model)
 
     body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, ee_body_name)
     if body_id == -1:
@@ -139,18 +152,7 @@ def build_inverse_kinematics(
         raise ValueError("tolerance must be a positive float")
 
     model: Any = robot_model["model"]
-
-    ee_body_name: Any = robot_model.get("end_effector_body_name")
-    if ee_body_name is None:
-        for name in ["end_effector", "ee", "flange", "gripper"]:
-            body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
-            if body_id != -1:
-                ee_body_name = name
-                break
-        if ee_body_name is None:
-            ee_body_name = mujoco.mj_id2name(
-                model, mujoco.mjtObj.mjOBJ_BODY, model.nbody - 1
-            )
+    ee_body_name = _resolve_end_effector_body_name(model, robot_model)
 
     body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, ee_body_name)
     if body_id == -1:

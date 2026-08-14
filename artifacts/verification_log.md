@@ -12,12 +12,12 @@ Retained artifacts: 13
 Description: Reproducible artifact chain: supervised (YCB mesh -> synthetic dataset -> grasp checkpoint -> generated grasps -> MuJoCo simulation -> eval report) and RL (SB3 PPO -> legacy checkpoint -> policy_runner inference)
 
 === Retained artifacts ===
-  artifacts\checkpoints\grasp_generation.pt
-  artifacts\checkpoints\rl_policy.pt
-  artifacts\exports\generated_grasps.npy
-  artifacts\exports\grasp_poses_cracker.npy
-  artifacts\reports\evaluation_report.json
-  artifacts\reports\simulation_cracker.json
+  artifacts\checkpoints\diffusion_grasp_generator.pt
+  artifacts\checkpoints\rl_grasp_policy.pt
+  artifacts\exports\diffusion_grasp_candidates_by_object.npy
+  artifacts\exports\diffusion_grasp_poses_003_cracker_box.npy
+  artifacts\reports\diffusion_analytical_evaluation_report.jsonl
+  artifacts\reports\diffusion_simulation_outcomes_003_cracker_box.jsonl
   data\processed\003_cracker_box.npy
   data\processed\004_sugar_box.npy
   data\processed\006_mustard_bottle.npy
@@ -29,11 +29,11 @@ Description: Reproducible artifact chain: supervised (YCB mesh -> synthetic data
 === Stage outcomes ===
 * Step 0 MJCF wrappers: 3/3 objects produced (003_cracker_box, 004_sugar_box, 006_mustard_bottle)
 * Step 1 synthetic dataset: 3/3 objects (--required-objects enforced; fail-fast not triggered)
-* Step 2 supervised training: artifacts/checkpoints/grasp_generation.pt produced
+* Step 2 supervised training: artifacts/checkpoints/diffusion_grasp_generator.pt produced
 * Step 3 grasp generation: 24 grasps across 3 objects (dict out)
 * Step 4 MuJoCo simulation: 8 IK outcomes recorded (object_0 / 003_cracker_box)
 * Step 5 analytical evaluation: report on the same object_0 / 003_cracker_box (end-to-end consistency)
-* Step 6 RL training: artifacts/checkpoints/rl_policy.pt exported
+* Step 6 RL training: artifacts/checkpoints/rl_grasp_policy.pt exported
 * Step 7 policy_runner inference: smoke test passed against (21, 4) dims
 
 === Cross-cutting ===
@@ -55,8 +55,8 @@ the corresponding grasps are force-closure-eligible (here none are because
 the diffusion model is untrained and outputs near-noise).
 
 === Phase 4 contract ===
-The flow pipeline produces rtifacts/checkpoints/flow_model.pt via
+The flow pipeline produces artifacts/checkpoints/flow_model.pt via
 scripts/train_flow.py when run; the default artifact chain trains the
 diffusion path. The flow checkpoint, when produced, contains both
-ncoder.* and low_field.* keys and is reloadable through
+encoder.* and flow_field.* keys and is reloadable through
 load_flow_model_checkpoint. See docs/adr/003-flow-checkpoint-joint-encoder.md.

@@ -46,10 +46,10 @@ def test_base_config_contains_contract_keys():
     config_path = os.path.join("configs", "base.yaml")
     with open(config_path, encoding="utf-8") as f:
         content = f.read()
-    # Expect keys in YAML
     assert "seed:" in content or "random_seed:" in content
     assert "device:" in content
     assert "output_dir:" in content
+    assert "paths:" in content
 
 
 def test_pyproject_preserves_src_package_layout():

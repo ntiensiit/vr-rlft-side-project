@@ -6,42 +6,49 @@ import numpy as np
 
 from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
 from grasping_ai.inference.grasp_generator import (
-    GraspPoseGenerator,
     build_diffusion_grasp_generator,
     build_flow_grasp_generator,
+    generate_candidate_grasps,
     load_grasp_model_checkpoint,
 )
 from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
 
 
-def build_grasp_generator_from_checkpoint(
+def run_single_object_grasp_inference(
+    checkpoint_path: Path,
+    output_path: Path,
     method: str,
-    checkpoint: dict[str, object],
     feature_dim: int,
     num_steps: int,
-    device: str,
-    seed: int = 42,
-) -> GraspPoseGenerator:
-    """Construct a diffusion or flow grasp generator from a loaded checkpoint."""
-    if method == "diffusion":
-        return build_diffusion_grasp_generator(
-            checkpoint, feature_dim, num_steps, device, seed
-        )
-    if method == "flow":
-        return build_flow_grasp_generator(
-            checkpoint, feature_dim, num_steps, device, seed
-        )
-    raise ValueError(f"method must be 'diffusion' or 'flow', got '{method}'")
-
-
-def load_inference_point_cloud(
-    observation_path: Path | None,
-    ycb_root: Path | None,
-    object_id: str | None,
     num_grasps: int,
+    device: str,
     seed: int,
+    observation_path: Path | None = None,
+    ycb_root: Path | None = None,
+    object_id: str | None = None,
 ) -> np.ndarray:
-    """Resolve a single-object point cloud for grasp inference."""
+    """Generate grasp candidates for one object and optionally persist them.
+
+    Args:
+        checkpoint_path: Trained grasp-generation checkpoint on disk.
+        output_path: Destination ``.npy`` path for generated grasp poses.
+        method: ``"diffusion"`` or ``"flow"``; must match the checkpoint type.
+        feature_dim: Conditioning feature dimension expected by the model.
+        num_steps: Diffusion denoising steps or flow integration steps.
+        num_grasps: Number of candidate grasps to sample.
+        device: Torch device identifier such as ``"cpu"`` or ``"cuda"``.
+        seed: Random seed for point-cloud sampling and grasp generation.
+        observation_path: Optional precomputed object point cloud ``.npy``.
+        ycb_root: Optional YCB root used when ``observation_path`` is omitted.
+        object_id: YCB object identifier required with ``ycb_root``.
+
+    Returns:
+        Generated grasp poses with shape ``(K, 4, 4)``.
+
+    Raises:
+        ValueError: If inputs are inconsistent or ``method`` is unsupported.
+        FileNotFoundError: If a required observation or YCB path is missing.
+    """
     if observation_path is None and (ycb_root is None or object_id is None):
         raise ValueError(
             "Provide either observation_path or both ycb_root and object_id"
@@ -68,32 +75,19 @@ def load_inference_point_cloud(
         raise ValueError(
             f"point_cloud must have shape (N, 3), got {point_cloud.shape}"
         )
-    return point_cloud
 
-
-def run_single_object_grasp_inference(
-    checkpoint_path: Path,
-    output_path: Path,
-    method: str,
-    feature_dim: int,
-    num_steps: int,
-    num_grasps: int,
-    device: str,
-    seed: int,
-    observation_path: Path | None = None,
-    ycb_root: Path | None = None,
-    object_id: str | None = None,
-) -> np.ndarray:
-    """Generate grasp candidates for one object and optionally persist them."""
-    from grasping_ai.inference.grasp_generator import generate_candidate_grasps
-
-    point_cloud = load_inference_point_cloud(
-        observation_path, ycb_root, object_id, num_grasps, seed
-    )
     checkpoint = load_grasp_model_checkpoint(checkpoint_path, device)
-    generator = build_grasp_generator_from_checkpoint(
-        method, checkpoint, feature_dim, num_steps, device, seed
-    )
+    if method == "diffusion":
+        generator = build_diffusion_grasp_generator(
+            checkpoint, feature_dim, num_steps, device, seed
+        )
+    elif method == "flow":
+        generator = build_flow_grasp_generator(
+            checkpoint, feature_dim, num_steps, device, seed
+        )
+    else:
+        raise ValueError(f"method must be 'diffusion' or 'flow', got '{method}'")
+
     grasp_poses = generate_candidate_grasps(generator, point_cloud, num_grasps)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(output_path, grasp_poses)

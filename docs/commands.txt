@@ -1,1 +1,1 @@
-& "D:\Code\Vin\VinRobotics\ycb-tools\.venv\Scripts\python.exe" "D:\Code\Vin\VinRobotics\ycb-tools\download_ycb_dataset.py"
+& ".venv\Scripts\python.exe" "scripts\download_ycb_dataset.py"

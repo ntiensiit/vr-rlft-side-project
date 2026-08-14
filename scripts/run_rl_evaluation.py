@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import numpy as np
@@ -10,25 +9,10 @@ from grasping_ai.inference.policy_runner import (
     load_rl_policy_checkpoint,
     run_policy_step,
 )
+from grasping_ai.pipelines.evaluate import write_jsonl_records
 from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
 from grasping_ai.simulation.scene import build_scene_xml
 from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
-
-
-def _resolve_object_mjcf(ycb_root: Path, object_id: str) -> Path:
-    """Return the MJCF path for the YCB object under the YCB root.
-
-    The YCB raw directory ships OpenRAVE KinBody descriptions; production
-    scripts consume the MJCF wrappers produced by
-    ``scripts/prepare_ycb_mjcf.py``. This helper prefers the MJCF wrapper
-    when it exists and falls back to the raw directory only if the
-    wrapper is missing (in which case ``build_scene_xml`` will reject the
-    KinBody and surface a clear ``ValueError``).
-    """
-    if not ycb_root.is_dir():
-        raise FileNotFoundError(f"YCB root directory not found: {ycb_root}")
-    object_dir = resolve_ycb_object_directory(ycb_root, object_id)
-    return find_ycb_mjcf(object_dir)
 
 
 def run_rl_evaluation_main(
@@ -91,10 +75,10 @@ def run_rl_evaluation_main(
     if not robot_xml_path.is_file():
         raise FileNotFoundError(f"Robot XML file not found: {robot_xml_path}")
 
-    object_xml_path = _resolve_object_mjcf(ycb_root, object_id)
-    env_xml_path = build_scene_xml(
-        robot_xml_path, object_xml_path, table_xml_path, object_id
-    )
+    if not ycb_root.is_dir():
+        raise FileNotFoundError(f"YCB root directory not found: {ycb_root}")
+    object_xml_path = find_ycb_mjcf(resolve_ycb_object_directory(ycb_root, object_id))
+    env_xml_path = build_scene_xml(robot_xml_path, object_xml_path, table_xml_path, object_id)
 
     env = MuJoCoGraspingEnv(env_xml_path, object_name=object_id)
     env_obs_dim = env.observation_space.shape[0]
@@ -114,15 +98,12 @@ def run_rl_evaluation_main(
         )
     if action_dim != env_act_dim:
         raise ValueError(
-            f"action_dim ({action_dim}) does not match "
-            f"environment action dimension ({env_act_dim})"
+            f"action_dim ({action_dim}) does not match environment action dimension ({env_act_dim})"
         )
 
     action_low = np.asarray(env.action_space.low, dtype=np.float64)
     action_high = np.asarray(env.action_space.high, dtype=np.float64)
-    finite_bounds = bool(
-        np.all(np.isfinite(action_low)) and np.all(np.isfinite(action_high))
-    )
+    finite_bounds = bool(np.all(np.isfinite(action_low)) and np.all(np.isfinite(action_high)))
     if not finite_bounds:
         action_low = np.full(env_act_dim, -1.0, dtype=np.float64)
         action_high = np.full(env_act_dim, 1.0, dtype=np.float64)
@@ -160,8 +141,7 @@ def run_rl_evaluation_main(
                     "terminated": bool(terminated),
                     "truncated": bool(truncated),
                     "info": {
-                        k: (v.tolist() if hasattr(v, "tolist") else v)
-                        for k, v in info.items()
+                        k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in info.items()
                     },
                 }
             )
@@ -183,21 +163,19 @@ def run_rl_evaluation_main(
             }
         )
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as fp:
-        json.dump(
-            {
-                "policy_checkpoint": str(policy_checkpoint_path),
-                "robot_xml": str(robot_xml_path),
-                "ycb_root": str(ycb_root),
-                "object_id": object_id,
-                "observation_dim": observation_dim,
-                "action_dim": action_dim,
-                "episodes": episodes_out,
-            },
-            fp,
-            indent=2,
-        )
+    records: list[dict[str, object]] = [
+        {
+            "record_type": "rollout_header",
+            "policy_checkpoint": str(policy_checkpoint_path),
+            "robot_xml": str(robot_xml_path),
+            "ycb_root": str(ycb_root),
+            "object_id": object_id,
+            "observation_dim": observation_dim,
+            "action_dim": action_dim,
+        },
+        *({"record_type": "episode", **episode} for episode in episodes_out),
+    ]
+    write_jsonl_records(output_path, records)
 
 
 if __name__ == "__main__":

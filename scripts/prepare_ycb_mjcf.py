@@ -1,6 +1,12 @@
 import argparse
 from pathlib import Path
 
+from grasping_ai.config.yaml_loader import (
+    config_path,
+    load_project_yaml_config,
+    parse_config_dir_from_argv,
+)
+
 
 def convert_ycb_to_mjcf(ycb_root: Path, output_root: Path) -> list[Path]:
     """Write MJCF object wrappers referencing the real YCB mesh meshes.
@@ -48,7 +54,7 @@ def convert_ycb_to_mjcf(ycb_root: Path, output_root: Path) -> list[Path]:
             '    <compiler angle="radian"/>\n'
             f'    <asset><mesh name="{object_id}_mesh" file="{mesh_dir}/{mesh.name}"/></asset>\n'
             '    <worldbody>\n'
-            f'        <body name="{object_id}" pos="0 0 0.05">\n'
+            f'        <body name="{object_id}" pos="0.5 0 0.1">\n'
             '            <freejoint/>\n'
             f'            <geom name="{object_id}_geom" type="mesh" mesh="{object_id}_mesh"/>\n'
             "        </body>\n"
@@ -61,12 +67,35 @@ def convert_ycb_to_mjcf(ycb_root: Path, output_root: Path) -> list[Path]:
 
 
 if __name__ == "__main__":
+    config_dir = parse_config_dir_from_argv()
+    cfg = load_project_yaml_config(config_dir, "base", "data")
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
-        description="Convert raw YCB objects to MJCF wrappers for simulation"
+        description="Convert raw YCB objects to MJCF wrappers for simulation",
+        parents=[pre_parser],
     )
-    parser.add_argument("--ycb-root", type=Path, required=True)
-    parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument(
+        "--ycb-root",
+        type=Path,
+        default=config_path(cfg, "paths", "ycb_root"),
+    )
+    parser.add_argument(
+        "--output-root",
+        type=Path,
+        default=config_path(cfg, "paths", "ycb_mjcf"),
+    )
     args = parser.parse_args()
+    if args.ycb_root is None:
+        parser.error(
+            "--ycb-root is required (set in configs/data.yaml paths.ycb_root "
+            "or pass explicitly)"
+        )
+    if args.output_root is None:
+        parser.error(
+            "--output-root is required (set in configs/base.yaml paths.ycb_mjcf "
+            "or pass explicitly)"
+        )
     generated = convert_ycb_to_mjcf(args.ycb_root, args.output_root)
     for path in generated:
         print(path)

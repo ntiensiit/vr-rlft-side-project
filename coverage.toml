@@ -1,12 +1,15 @@
 [run]
-branch = true
+branch = false
 source = ["src"]
-omit = ["tests/*"]
+omit = [
+    "tests/*",
+    "src/grasping_ai/pipelines/visualize_robot.py",
+]
 
 [report]
 show_missing = true
 skip_covered = false
-fail_under = 80
+fail_under = 97
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",

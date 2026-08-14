@@ -13,25 +13,6 @@ from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
 from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
 from grasping_ai.simulation.scene import build_scene_xml
 
-MINIMAL_ACTUATED_ROBOT_XML = """\
-<mujoco model="minimal_actuated_robot">
-    <compiler angle="radian"/>
-    <worldbody>
-        <body name="base" pos="0 0 0">
-            <geom name="base_geom" type="box" size="0.1 0.1 0.1"/>
-            <body name="link1" pos="0 0 0.2">
-                <joint name="joint1" type="hinge" axis="0 0 1" range="-3.14 3.14" limited="true"/>
-                <geom name="link1_geom" type="cylinder" size="0.05 0.1"/>
-            </body>
-        </body>
-    </worldbody>
-    <actuator>
-        <motor name="motor1" joint="joint1" gear="1" ctrlrange="-1.5 1.5"/>
-    </actuator>
-</mujoco>
-"""
-
-
 MINIMAL_UNACTUATED_ROBOT_XML = """\
 <mujoco model="minimal_unactuated_robot">
     <compiler angle="radian"/>
@@ -42,13 +23,6 @@ MINIMAL_UNACTUATED_ROBOT_XML = """\
     </worldbody>
 </mujoco>
 """
-
-
-@pytest.fixture
-def minimal_robot_xml(tmp_path: Path) -> Path:
-    path = tmp_path / "robot.xml"
-    path.write_text(MINIMAL_ACTUATED_ROBOT_XML, encoding="utf-8")
-    return path
 
 
 @pytest.fixture
@@ -71,55 +45,24 @@ OBJECT_XML = """\
 
 
 @pytest.fixture
-def scene_xml(tmp_path: Path) -> Path:
-    robot_path = tmp_path / "robot.xml"
-    robot_path.write_text(MINIMAL_ACTUATED_ROBOT_XML, encoding="utf-8")
+def scene_xml(tmp_path: Path, panda_robot_xml: Path) -> Path:
     object_path = tmp_path / "object.xml"
     object_path.write_text(OBJECT_XML, encoding="utf-8")
-    return build_scene_xml(robot_path, object_path, None)
+    return build_scene_xml(panda_robot_xml, object_path, None)
 
 
-SB3_ROBOT_XML = """\
-<mujoco model="minimal_actuated_robot">
-    <compiler angle="radian"/>
-    <worldbody>
-        <body name="base" pos="0 0 0">
-            <geom name="base_geom" type="box" size="0.1 0.1 0.1"/>
-            <body name="link1" pos="0 0 0.2">
-                <joint name="joint1" type="hinge" axis="0 0 1" range="-3.14 3.14" limited="true"/>
-                <geom name="link1_geom" type="cylinder" size="0.05 0.1"/>
-            </body>
-        </body>
-    </worldbody>
-    <actuator>
-        <motor name="motor1" joint="joint1" gear="1" ctrlrange="-1.0 1.0"/>
-    </actuator>
-</mujoco>
-"""
+def test_env_initialization(panda_robot_xml):
+    env = MuJoCoGraspingEnv(panda_robot_xml)
 
-
-@pytest.fixture
-def robot_xml(tmp_path: Path) -> Path:
-    path = tmp_path / "robot.xml"
-    path.write_text(SB3_ROBOT_XML, encoding="utf-8")
-    return path
-
-
-def test_env_initialization(minimal_robot_xml):
-    env = MuJoCoGraspingEnv(minimal_robot_xml)
-
-    # Check observation and action space shapes/dtypes
     assert isinstance(env.observation_space, gym.spaces.Box)
-    assert env.observation_space.shape == (2,)  # qpos (1) + qvel (1)
+    assert env.observation_space.shape == (18,)
     assert env.observation_space.dtype == np.float32
 
     assert isinstance(env.action_space, gym.spaces.Box)
-    assert env.action_space.shape == (1,)
+    assert env.action_space.shape == (8,)
     assert env.action_space.dtype == np.float32
-
-    # Actuator limits validation
-    assert np.allclose(env.action_space.low, np.array([-1.5], dtype=np.float32))
-    assert np.allclose(env.action_space.high, np.array([1.5], dtype=np.float32))
+    assert env.action_space.low.shape == (8,)
+    assert env.action_space.high.shape == (8,)
 
 
 def test_env_initialization_no_actuators(minimal_unactuated_robot_xml):
@@ -127,40 +70,40 @@ def test_env_initialization_no_actuators(minimal_unactuated_robot_xml):
         MuJoCoGraspingEnv(minimal_unactuated_robot_xml)
 
 
-def test_env_reset(minimal_robot_xml):
-    env = MuJoCoGraspingEnv(minimal_robot_xml)
+def test_env_reset(panda_robot_xml):
+    env = MuJoCoGraspingEnv(panda_robot_xml)
     obs, info = env.reset(seed=42)
 
     assert isinstance(obs, np.ndarray)
-    assert obs.shape == (2,)
+    assert obs.shape == (18,)
     assert obs.dtype == np.float32
     assert isinstance(info, dict)
 
 
-def test_env_reset_determinism(minimal_robot_xml):
-    env = MuJoCoGraspingEnv(minimal_robot_xml)
+def test_env_reset_determinism(panda_robot_xml):
+    env = MuJoCoGraspingEnv(panda_robot_xml)
     obs1, _ = env.reset(seed=42)
     obs2, _ = env.reset(seed=42)
     assert np.allclose(obs1, obs2)
 
 
-def test_env_step_valid(minimal_robot_xml):
-    env = MuJoCoGraspingEnv(minimal_robot_xml)
+def test_env_step_valid(panda_robot_xml):
+    env = MuJoCoGraspingEnv(panda_robot_xml)
     env.reset(seed=42)
 
     action = np.array([0.5], dtype=np.float32)
     obs, reward, terminated, truncated, info = env.step(action)
 
     assert isinstance(obs, np.ndarray)
-    assert obs.shape == (2,)
+    assert obs.shape == (18,)
     assert isinstance(reward, float)
     assert isinstance(terminated, bool)
     assert isinstance(truncated, bool)
     assert isinstance(info, dict)
 
 
-def test_env_step_non_finite_rejection(minimal_robot_xml):
-    env = MuJoCoGraspingEnv(minimal_robot_xml)
+def test_env_step_non_finite_rejection(panda_robot_xml):
+    env = MuJoCoGraspingEnv(panda_robot_xml)
     env.reset(seed=42)
 
     with pytest.raises(ValueError, match="finite values"):
@@ -171,15 +114,15 @@ def test_env_step_non_finite_rejection(minimal_robot_xml):
 
 
 def test_env_step_terminal_returns_terminal_observation_without_reset(
-    minimal_robot_xml, monkeypatch
+    panda_robot_xml, monkeypatch
 ):
     """Verify a non-finite transition returns the terminal observation unchanged."""
     import grasping_ai.simulation.mujoco_env as mujoco_env_module
 
-    env = MuJoCoGraspingEnv(minimal_robot_xml)
+    env = MuJoCoGraspingEnv(panda_robot_xml)
     env.reset(seed=42)
 
-    terminal_obs = np.full(2, np.nan, dtype=np.float32)
+    terminal_obs = np.full(18, np.nan, dtype=np.float32)
     monkeypatch.setattr(env, "_get_observation", lambda: terminal_obs)
 
     reset_calls: list[object] = []
@@ -199,8 +142,8 @@ def test_env_step_terminal_returns_terminal_observation_without_reset(
     assert reset_calls == []
 
 
-def test_env_step_padding_truncation(minimal_robot_xml):
-    env = MuJoCoGraspingEnv(minimal_robot_xml)
+def test_env_step_padding_truncation(panda_robot_xml):
+    env = MuJoCoGraspingEnv(panda_robot_xml)
     env.reset(seed=42)
 
     # Over-sized action should be truncated
@@ -212,8 +155,8 @@ def test_env_step_padding_truncation(minimal_robot_xml):
     assert np.isfinite(obs).all()
 
 
-def test_default_reward_preserves_legacy_behavior(minimal_robot_xml):
-    env = MuJoCoGraspingEnv(minimal_robot_xml)
+def test_default_reward_preserves_legacy_behavior(panda_robot_xml):
+    env = MuJoCoGraspingEnv(panda_robot_xml)
     env.reset(seed=42)
     _obs, reward, terminated, truncated, _info = env.step(
         np.array([0.5], dtype=np.float32)
@@ -282,20 +225,20 @@ def test_env_validates_reward_configuration(scene_xml):
         MuJoCoGraspingEnv(scene_xml, object_name=123)  # type: ignore[arg-type]
 
 
-def test_non_finite_terminal_uses_config(minimal_robot_xml, monkeypatch):
+def test_non_finite_terminal_uses_config(panda_robot_xml, monkeypatch):
     env = MuJoCoGraspingEnv(
-        minimal_robot_xml,
+        panda_robot_xml,
         reward_config=RewardConfig(terminate_on_non_finite=False),
     )
     env.reset(seed=42)
-    monkeypatch.setattr(env, "_get_observation", lambda: np.full(2, np.nan, dtype=np.float32))
+    monkeypatch.setattr(env, "_get_observation", lambda: np.full(18, np.nan, dtype=np.float32))
     _obs, _reward, terminated, _truncated, _info = env.step(
         np.array([0.0], dtype=np.float32)
     )
     assert terminated is False
 
 
-def test_env_step_routes_through_shared_command_path(minimal_robot_xml, monkeypatch):
+def test_env_step_routes_through_shared_command_path(panda_robot_xml, monkeypatch):
     import grasping_ai.simulation.mujoco_env as mujoco_env_module
     from grasping_ai.simulation.mujoco_env import set_actuator_controls
 
@@ -309,32 +252,39 @@ def test_env_step_routes_through_shared_command_path(minimal_robot_xml, monkeypa
         mujoco_env_module, "set_actuator_controls", spy_set_actuator_controls
     )
 
-    env = MuJoCoGraspingEnv(minimal_robot_xml)
+    env = MuJoCoGraspingEnv(panda_robot_xml)
     env.reset(seed=42)
     env.step(np.array([0.5], dtype=np.float32))
 
     assert len(calls) == 1
-    assert np.allclose(calls[0], [0.5])
+    expected = np.zeros(8, dtype=np.float32)
+    expected[0] = 0.5
+    assert np.allclose(calls[0], expected)
 
 
 @pytest.mark.filterwarnings("ignore")
-def test_gymnasium_env_compliance(minimal_robot_xml):
-    env = MuJoCoGraspingEnv(minimal_robot_xml)
+def test_gymnasium_env_compliance(panda_robot_xml):
+    env = MuJoCoGraspingEnv(panda_robot_xml)
     check_env(env)
 
 
-def test_sb3_training_and_inference_compatibility(robot_xml, tmp_path):
+def test_sb3_training_and_inference_compatibility(panda_robot_xml, tmp_path):
+    """Train a tiny Panda RL policy and run a one-step inference call.
+
+    Args:
+        panda_robot_xml: Path to ``deploy/robot.xml``.
+        tmp_path: Temporary directory for the checkpoint and logs.
+    """
     checkpoint_path = tmp_path / "policy.pt"
     log_dir = tmp_path / "tb_logs"
 
-    # Run the pipeline for a tiny number of updates (e.g. 1 update = 64 steps)
     run_rl_training_pipeline(
-        robot_xml_path=robot_xml,
-        ycb_root=tmp_path,  # unused since object_ids is empty
+        robot_xml_path=panda_robot_xml,
+        ycb_root=tmp_path,
         object_ids=[],
         policy_checkpoint_path=checkpoint_path,
-        observation_dim=2,  # qpos (1) + qvel (1)
-        action_dim=1,
+        observation_dim=18,
+        action_dim=8,
         hidden_dim=16,
         learning_rate=1e-3,
         num_updates=1,
@@ -346,22 +296,21 @@ def test_sb3_training_and_inference_compatibility(robot_xml, tmp_path):
 
     assert checkpoint_path.is_file()
 
-    # Load and build inference policy runner
     checkpoint = load_rl_policy_checkpoint(checkpoint_path, "cpu")
     assert "model_state_dict" in checkpoint
 
     runner = build_rl_policy_runner(
         checkpoint=checkpoint,
-        observation_dim=2,
-        action_dim=1,
+        observation_dim=18,
+        action_dim=8,
         device="cpu",
     )
 
-    obs = np.array([0.5, -0.2], dtype=np.float32)
+    obs = np.zeros(18, dtype=np.float32)
     action = runner(obs)
 
     assert isinstance(action, np.ndarray)
-    assert action.shape == (1,)
+    assert action.shape == (8,)
     assert np.isfinite(action).all()
 
 

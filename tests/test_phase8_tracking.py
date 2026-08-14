@@ -1,11 +1,10 @@
 import copy
-import json
 
 import numpy as np
 import torch
 
 from grasping_ai.pipelines.evaluate import write_evaluation_report
-from grasping_ai.pipelines.train import run_training_pipeline
+from grasping_ai.pipelines.train_diffusion import run_diffusion_training_pipeline
 from grasping_ai.training.trainer import (
     build_training_step,
     run_training_loop,
@@ -69,7 +68,9 @@ def test_training_loop_tracking(tmp_path):
 
 
 def test_evaluation_tracking(tmp_path):
-    report_path = tmp_path / "report.json"
+    from grasping_ai.pipelines.evaluate import read_jsonl_records
+
+    report_path = tmp_path / "report.jsonl"
     log_dir = tmp_path / "tb_eval_logs"
 
     results = {
@@ -81,9 +82,12 @@ def test_evaluation_tracking(tmp_path):
     write_evaluation_report(report_path, results, experiment_log_dir=log_dir)
 
     assert report_path.is_file()
-    with report_path.open("r") as fp:
-        loaded = json.load(fp)
-    assert loaded == results
+    loaded = next(
+        record
+        for record in read_jsonl_records(report_path)
+        if record.get("record_type") == "summary"
+    )
+    assert loaded == {"record_type": "summary", **results}
 
     assert log_dir.is_dir()
     event_files = list(log_dir.glob("events.out.tfevents.*"))
@@ -106,7 +110,7 @@ def test_supervised_reproducibility(tmp_path):
     checkpoint_path2 = tmp_path / "chk2.pt"
     checkpoint_path3 = tmp_path / "chk3.pt"
 
-    run_training_pipeline(
+    run_diffusion_training_pipeline(
         dataset_root=dataset_root,
         checkpoint_path=checkpoint_path1,
         feature_dim=8,
@@ -119,7 +123,7 @@ def test_supervised_reproducibility(tmp_path):
         seed=42,
     )
 
-    run_training_pipeline(
+    run_diffusion_training_pipeline(
         dataset_root=dataset_root,
         checkpoint_path=checkpoint_path2,
         feature_dim=8,
@@ -132,7 +136,7 @@ def test_supervised_reproducibility(tmp_path):
         seed=42,
     )
 
-    run_training_pipeline(
+    run_diffusion_training_pipeline(
         dataset_root=dataset_root,
         checkpoint_path=checkpoint_path3,
         feature_dim=8,

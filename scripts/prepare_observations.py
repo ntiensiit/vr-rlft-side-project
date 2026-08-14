@@ -5,6 +5,12 @@ from pathlib import Path
 import open3d as _open3d  # noqa: F401
 import numpy as np
 
+from grasping_ai.config.yaml_loader import (
+    config_get,
+    config_path,
+    load_project_yaml_config,
+    parse_config_dir_from_argv,
+)
 from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
 from grasping_ai.perception.pointcloud import normalize_point_cloud
 from grasping_ai.sensors.pointcloud_sensor import (
@@ -48,10 +54,43 @@ def make_observations(ycb_root: Path, output_dir: Path, num_samples: int, seed: 
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Sample per-object observation clouds")
-    parser.add_argument("--ycb-root", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--num-samples", type=int, default=256)
-    parser.add_argument("--seed", type=int, default=7)
+    config_dir = parse_config_dir_from_argv()
+    cfg = load_project_yaml_config(config_dir, "base", "data")
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
+    parser = argparse.ArgumentParser(
+        description="Sample per-object observation clouds",
+        parents=[pre_parser],
+    )
+    parser.add_argument(
+        "--ycb-root",
+        type=Path,
+        default=config_path(cfg, "paths", "ycb_root"),
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=config_path(cfg, "paths", "observations"),
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=int(config_get(cfg, "observations", "num_samples")),
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=int(config_get(cfg, "observations", "seed")),
+    )
     args = parser.parse_args()
+    if args.ycb_root is None:
+        parser.error(
+            "--ycb-root is required (set in configs/data.yaml paths.ycb_root "
+            "or pass explicitly)"
+        )
+    if args.output_dir is None:
+        parser.error(
+            "--output-dir is required (set in configs/base.yaml paths.observations "
+            "or pass explicitly)"
+        )
     make_observations(args.ycb_root, args.output_dir, args.num_samples, args.seed)

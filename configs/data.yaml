@@ -1,10 +1,21 @@
-# Documentation/default reference only; runtime pipelines accept parameters via CLI arguments.
-dataset_root: data/processed
-ycb_root: data/raw/ycb
-object_ids:
-  - 003_cracker_box
-  - 004_sugar_box
-  - 006_mustard_bottle
-train_split: train
-val_split: val
-test_split: test
+paths:
+  dataset_root: data/processed
+  ycb_root: data/raw/ycb
+  output_index: data/processed/index.json
+objects:
+  ids:
+    - 003_cracker_box
+    - 004_sugar_box
+    - 006_mustard_bottle
+splits:
+  train: train
+  val: val
+  test: test
+synthetic:
+  num_samples: 256
+  num_grasps: 8
+  gripper_width: 0.08
+  seed: 42
+observations:
+  num_samples: 256
+  seed: 7

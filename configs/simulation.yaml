@@ -1,4 +1,3 @@
-# Documentation/default reference only; runtime pipelines accept parameters via CLI arguments.
-simulation_dt: 0.002
-num_simulation_steps: 500
+dt: 0.002
+num_steps: 50
 contact_body_names: []

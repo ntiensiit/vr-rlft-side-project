@@ -1,4 +1,3 @@
-"""Phase 5 — Reinforcement Learning Policy tests."""
 import os
 import tempfile
 from pathlib import Path
@@ -25,30 +24,6 @@ from grasping_ai.models.rl_policy import (
 from grasping_ai.pipelines.train_rl import (
     run_rl_training_pipeline,
 )
-
-MINIMAL_ACTUATED_ROBOT_XML = """\
-<mujoco model="minimal_actuated_robot">
-    <compiler angle="radian"/>
-    <worldbody>
-        <body name="base" pos="0 0 0">
-            <geom name="base_geom" type="box" size="0.1 0.1 0.1"/>
-            <body name="link1" pos="0 0 0.2">
-                <joint name="joint1" type="hinge" axis="0 0 1" range="-3.14 3.14" limited="true"/>
-                <geom name="link1_geom" type="cylinder" size="0.05 0.1"/>
-            </body>
-        </body>
-    </worldbody>
-    <actuator>
-        <motor name="motor1" joint="joint1" gear="1"/>
-    </actuator>
-</mujoco>
-"""
-
-
-def _write_robot_xml(tmp_path: Path) -> Path:
-    path = tmp_path / "robot.xml"
-    path.write_text(MINIMAL_ACTUATED_ROBOT_XML, encoding="utf-8")
-    return path
 
 
 def _write_ycb_object_xml(tmp_path: Path) -> Path:
@@ -147,79 +122,92 @@ def test_run_rl_pipeline_rejects_missing_robot_xml():
         )
 
 
-def test_run_rl_pipeline_rejects_missing_ycb_root_when_objects_requested():
-    """Verify pipeline raises when YCB root is missing but objects requested."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        robot_xml = _write_robot_xml(Path(tmp_dir))
-        with pytest.raises(FileNotFoundError):
-            run_rl_training_pipeline(
-                robot_xml_path=robot_xml,
-                ycb_root=Path(tmp_dir) / "missing_ycb",
-                object_ids=["obj001"],
-                policy_checkpoint_path=Path(tmp_dir) / "policy.pt",
-                observation_dim=15,
-                action_dim=1,
-                hidden_dim=8,
-                learning_rate=1e-3,
-                num_updates=1,
-                gamma=0.99,
-                device="cpu",
-            )
+def test_run_rl_pipeline_rejects_missing_ycb_root_when_objects_requested(
+    panda_robot_xml: Path,
+):
+    """Verify pipeline raises when YCB root is missing but objects requested.
+
+    Args:
+        panda_robot_xml: Path to ``deploy/robot.xml``.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir, pytest.raises(FileNotFoundError):
+        run_rl_training_pipeline(
+            robot_xml_path=panda_robot_xml,
+            ycb_root=Path(tmp_dir) / "missing_ycb",
+            object_ids=["obj001"],
+            policy_checkpoint_path=Path(tmp_dir) / "policy.pt",
+            observation_dim=31,
+            action_dim=8,
+            hidden_dim=8,
+            learning_rate=1e-3,
+            num_updates=1,
+            gamma=0.99,
+            device="cpu",
+        )
 
 
-def test_run_rl_pipeline_validates_observation_dim():
-    """Verify pipeline raises on observation dim mismatch."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        robot_xml = _write_robot_xml(Path(tmp_dir))
-        with pytest.raises(ValueError, match="observation_dim"):
-            run_rl_training_pipeline(
-                robot_xml_path=robot_xml,
-                ycb_root=Path(tmp_dir),
-                object_ids=[],
-                policy_checkpoint_path=Path(tmp_dir) / "policy.pt",
-                observation_dim=999,
-                action_dim=1,
-                hidden_dim=8,
-                learning_rate=1e-3,
-                num_updates=1,
-                gamma=0.99,
-                device="cpu",
-            )
+def test_run_rl_pipeline_validates_observation_dim(panda_robot_xml: Path):
+    """Verify pipeline raises on observation dim mismatch.
+
+    Args:
+        panda_robot_xml: Path to ``deploy/robot.xml``.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir, pytest.raises(
+        ValueError, match="observation_dim"
+    ):
+        run_rl_training_pipeline(
+            robot_xml_path=panda_robot_xml,
+            ycb_root=Path(tmp_dir),
+            object_ids=[],
+            policy_checkpoint_path=Path(tmp_dir) / "policy.pt",
+            observation_dim=999,
+            action_dim=8,
+            hidden_dim=8,
+            learning_rate=1e-3,
+            num_updates=1,
+            gamma=0.99,
+            device="cpu",
+        )
 
 
-def test_run_rl_pipeline_validates_action_dim():
-    """Verify pipeline raises on action dim mismatch."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        robot_xml = _write_robot_xml(Path(tmp_dir))
-        with pytest.raises(ValueError, match="action_dim"):
-            run_rl_training_pipeline(
-                robot_xml_path=robot_xml,
-                ycb_root=Path(tmp_dir),
-                object_ids=[],
-                policy_checkpoint_path=Path(tmp_dir) / "policy.pt",
-                observation_dim=2,
-                action_dim=999,
-                hidden_dim=8,
-                learning_rate=1e-3,
-                num_updates=1,
-                gamma=0.99,
-                device="cpu",
-            )
+def test_run_rl_pipeline_validates_action_dim(panda_robot_xml: Path):
+    """Verify pipeline raises on action dim mismatch.
+
+    Args:
+        panda_robot_xml: Path to ``deploy/robot.xml``.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir, pytest.raises(
+        ValueError, match="action_dim"
+    ):
+        run_rl_training_pipeline(
+            robot_xml_path=panda_robot_xml,
+            ycb_root=Path(tmp_dir),
+            object_ids=[],
+            policy_checkpoint_path=Path(tmp_dir) / "policy.pt",
+            observation_dim=18,
+            action_dim=999,
+            hidden_dim=8,
+            learning_rate=1e-3,
+            num_updates=1,
+            gamma=0.99,
+            device="cpu",
+        )
 
 
-def test_run_rl_pipeline_performs_minimal_training_and_saves_checkpoint():
+def test_run_rl_pipeline_performs_minimal_training_and_saves_checkpoint(
+    panda_robot_xml: Path,
+):
     """Verify full RL pipeline trains and saves checkpoint."""
     with tempfile.TemporaryDirectory() as tmp_dir:
-        robot_xml = _write_robot_xml(Path(tmp_dir))
         ckpt_path = Path(tmp_dir) / "policy.pt"
 
         run_rl_training_pipeline(
-            robot_xml_path=robot_xml,
+            robot_xml_path=panda_robot_xml,
             ycb_root=Path(tmp_dir),
             object_ids=[],
             policy_checkpoint_path=ckpt_path,
-            observation_dim=2,
-            action_dim=1,
+            observation_dim=18,
+            action_dim=8,
             hidden_dim=8,
             learning_rate=1e-3,
             num_updates=1,
@@ -229,19 +217,18 @@ def test_run_rl_pipeline_performs_minimal_training_and_saves_checkpoint():
         assert ckpt_path.exists()
 
 
-def test_rl_checkpoint_is_loadable_or_discoverable():
+def test_rl_checkpoint_is_loadable_or_discoverable(panda_robot_xml: Path):
     """Verify saved checkpoint can be loaded back."""
     with tempfile.TemporaryDirectory() as tmp_dir:
-        robot_xml = _write_robot_xml(Path(tmp_dir))
         ckpt_path = Path(tmp_dir) / "policy.pt"
 
         run_rl_training_pipeline(
-            robot_xml_path=robot_xml,
+            robot_xml_path=panda_robot_xml,
             ycb_root=Path(tmp_dir),
             object_ids=[],
             policy_checkpoint_path=ckpt_path,
-            observation_dim=2,
-            action_dim=1,
+            observation_dim=18,
+            action_dim=8,
             hidden_dim=8,
             learning_rate=1e-3,
             num_updates=1,
@@ -253,14 +240,14 @@ def test_rl_checkpoint_is_loadable_or_discoverable():
         assert isinstance(checkpoint, dict)
         assert "model_state_dict" in checkpoint
 
-        runner = build_rl_policy_runner(checkpoint, 2, 1, "cpu")
-        obs = np.random.randn(2).astype(np.float32)
+        runner = build_rl_policy_runner(checkpoint, 18, 8, "cpu")
+        obs = np.random.randn(18).astype(np.float32)
         action = run_policy_step(runner, obs)
-        assert action.shape == (1,)
+        assert action.shape == (8,)
         assert np.isfinite(action).all()
 
 
-def test_run_rl_pipeline_loads_requested_object():
+def test_run_rl_pipeline_loads_requested_object(panda_robot_xml: Path):
     """Verify the pipeline loads the requested object into the environment."""
     from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
     from grasping_ai.simulation.scene import build_scene_xml
@@ -268,14 +255,13 @@ def test_run_rl_pipeline_loads_requested_object():
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        robot_xml = _write_robot_xml(tmp_path)
         object_xml = _write_ycb_object_xml(tmp_path)
         ycb_root = tmp_path / "ycb"
 
         object_dir = resolve_ycb_object_directory(ycb_root, "mustard_bottle")
         assert object_dir.is_dir()
 
-        scene_xml = build_scene_xml(robot_xml, object_xml, None)
+        scene_xml = build_scene_xml(panda_robot_xml, object_xml, None)
         env = MuJoCoGraspingEnv(scene_xml)
 
         state_dict = env._state  # type: ignore[attr-defined]
@@ -288,16 +274,18 @@ def test_run_rl_pipeline_loads_requested_object():
         assert body_id != -1
 
         obs_dim = env.observation_space.shape[0]
-        assert obs_dim == 15  # robot (qpos 1 + qvel 1) + free-joint object (qpos 7 + qvel 6)
+        assert obs_dim == 31
+        act_dim = env.action_space.shape[0]
+        assert act_dim == 8
 
         ckpt_path = tmp_path / "policy.pt"
         run_rl_training_pipeline(
-            robot_xml_path=robot_xml,
+            robot_xml_path=panda_robot_xml,
             ycb_root=ycb_root,
             object_ids=["mustard_bottle"],
             policy_checkpoint_path=ckpt_path,
             observation_dim=obs_dim,
-            action_dim=1,
+            action_dim=act_dim,
             hidden_dim=8,
             learning_rate=1e-3,
             num_updates=1,
@@ -307,14 +295,15 @@ def test_run_rl_pipeline_loads_requested_object():
         assert ckpt_path.exists()
 
 
-def test_rl_pipeline_tracks_object_and_enables_grasp_rewards(monkeypatch):
+def test_rl_pipeline_tracks_object_and_enables_grasp_rewards(
+    monkeypatch, panda_robot_xml: Path
+):
     """Verify the RL pipeline propagates the object name and enables grasp rewards."""
     from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
     from grasping_ai.simulation.ycb import resolve_ycb_object_directory
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        robot_xml = _write_robot_xml(tmp_path)
         _write_ycb_object_xml(tmp_path)
         ycb_root = tmp_path / "ycb"
         resolve_ycb_object_directory(ycb_root, "mustard_bottle")
@@ -332,12 +321,12 @@ def test_rl_pipeline_tracks_object_and_enables_grasp_rewards(monkeypatch):
         )
 
         run_rl_training_pipeline(
-            robot_xml_path=robot_xml,
+            robot_xml_path=panda_robot_xml,
             ycb_root=ycb_root,
             object_ids=["mustard_bottle"],
             policy_checkpoint_path=tmp_path / "policy.pt",
-            observation_dim=15,
-            action_dim=1,
+            observation_dim=31,
+            action_dim=8,
             hidden_dim=8,
             learning_rate=1e-3,
             num_updates=1,
@@ -573,22 +562,20 @@ def test_rl_policy_additional_validations(tmp_path: Path) -> None:
         select_action(policy, obs, "not_a_generator")  # type: ignore[arg-type]
 
 
-def test_run_rl_training_pipeline_integration(tmp_path: Path) -> None:
+def test_run_rl_training_pipeline_integration(tmp_path: Path, panda_robot_xml: Path) -> None:
     ycb_dir = tmp_path / "ycb"
     ycb_dir.mkdir()
-    robot_xml = tmp_path / "robot.xml"
-    robot_xml.write_text(MINIMAL_ACTUATED_ROBOT_XML, encoding="utf-8")
     policy_ckpt = tmp_path / "trained_policy.pt"
 
     from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
 
-    env = MuJoCoGraspingEnv(robot_xml)
+    env = MuJoCoGraspingEnv(panda_robot_xml)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
     env.close()
 
     run_rl_training_pipeline(
-        robot_xml_path=robot_xml,
+        robot_xml_path=panda_robot_xml,
         ycb_root=ycb_dir,
         object_ids=[],
         policy_checkpoint_path=policy_ckpt,
@@ -608,42 +595,41 @@ def test_run_rl_training_pipeline_integration(tmp_path: Path) -> None:
     assert ckpt["action_dim"] == act_dim
 
 
-def test_run_rl_training_pipeline_validation_errors(tmp_path: Path) -> None:
-    valid_robot = tmp_path / "robot.xml"
-    valid_robot.write_text(MINIMAL_ACTUATED_ROBOT_XML, encoding="utf-8")
+def test_run_rl_training_pipeline_validation_errors(tmp_path: Path, panda_robot_xml: Path) -> None:
+    valid_robot = panda_robot_xml
     valid_ycb = tmp_path / "ycb"
     valid_ycb.mkdir()
 
     with pytest.raises(TypeError, match="robot_xml_path"):
-        run_rl_training_pipeline("invalid", valid_ycb, [], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 0.99, "cpu")  # type: ignore[arg-type]
+        run_rl_training_pipeline("invalid", valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")  # type: ignore[arg-type]
 
     with pytest.raises(FileNotFoundError, match="Robot XML file not found"):
-        run_rl_training_pipeline(tmp_path / "missing.xml", valid_ycb, [], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(tmp_path / "missing.xml", valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")
 
     with pytest.raises(TypeError, match="ycb_root"):
-        run_rl_training_pipeline(valid_robot, "invalid", ["obj1"], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 0.99, "cpu")  # type: ignore[arg-type]
+        run_rl_training_pipeline(valid_robot, "invalid", ["obj1"], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")  # type: ignore[arg-type]
 
     with pytest.raises(FileNotFoundError, match="YCB root directory not found"):
-        run_rl_training_pipeline(valid_robot, tmp_path / "missing_ycb", ["obj1"], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(valid_robot, tmp_path / "missing_ycb", ["obj1"], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")
 
     with pytest.raises(ValueError, match="observation_dim"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 0, 2, 16, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 0, 8, 16, 1e-3, 1, 0.99, "cpu")
 
     with pytest.raises(ValueError, match="action_dim"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 4, 0, 16, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 18, 0, 16, 1e-3, 1, 0.99, "cpu")
 
     with pytest.raises(ValueError, match="hidden_dim"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 4, 2, 0, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 18, 8, 0, 1e-3, 1, 0.99, "cpu")
 
     with pytest.raises(ValueError, match="learning_rate"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 4, 2, 16, 0.0, 1, 0.99, "cpu")
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 0.0, 1, 0.99, "cpu")
 
     with pytest.raises(ValueError, match="num_updates"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 4, 2, 16, 1e-3, 0, 0.99, "cpu")
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 0, 0.99, "cpu")
 
     with pytest.raises(ValueError, match="gamma"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 1.5, "cpu")
+        run_rl_training_pipeline(valid_robot, valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 1.5, "cpu")
 
     with pytest.raises(ValueError, match="object_ids must contain at most one object"):
-        run_rl_training_pipeline(valid_robot, valid_ycb, ["obj1", "obj2"], tmp_path / "c.pt", 4, 2, 16, 1e-3, 1, 0.99, "cpu")
+        run_rl_training_pipeline(valid_robot, valid_ycb, ["obj1", "obj2"], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")
 

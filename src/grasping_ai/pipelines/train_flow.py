@@ -1,4 +1,5 @@
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import cast
 
@@ -9,9 +10,10 @@ from grasping_ai.data.training_pairs import (
     validate_grasp_dataset,
 )
 from grasping_ai.models.flow import FlowGeneratorModel, load_flow_model_checkpoint
-from grasping_ai.pipelines.supervised_training import SupervisedTrainingDataloader
+from grasping_ai.pipelines.supervised_training import iter_supervised_training_batches
 from grasping_ai.training.losses import build_flow_matching_loss
 from grasping_ai.training.trainer import (
+    BatchSource,
     build_adam_optimizer,
     build_supervised_training_step,
     load_training_checkpoint,
@@ -103,7 +105,7 @@ def run_flow_training_pipeline(
 ) -> None:
     """Run the end-to-end flow-matching training pipeline for grasp generation.
 
-    Mirrors ``run_training_pipeline`` but uses a continuous-time flow-matching
+    Mirrors ``run_diffusion_training_pipeline`` but uses a continuous-time flow-matching
     objective on the canonical-frame 9D grasp vectors instead of the discrete
     diffusion score-matching loss.
 
@@ -156,11 +158,19 @@ def run_flow_training_pipeline(
         )
 
     if pretrained_encoder_path is not None:
-        from grasping_ai.pipelines.train import load_pretrained_encoder
+        if not isinstance(pretrained_encoder_path, Path):
+            raise TypeError("pretrained_encoder_path must be a pathlib.Path instance")
+        from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 
-        encoder_state = load_pretrained_encoder(pretrained_encoder_path, device)
-        encoder_module = cast(torch.nn.Module, model.encoder)
-        encoder_module.load_state_dict(encoder_state, strict=False)
+        checkpoint = load_torch_checkpoint(pretrained_encoder_path, device)
+        state_dict = checkpoint.get("model_state_dict", checkpoint)
+        encoder_state: dict[str, torch.Tensor] = {}
+        for key, value in state_dict.items():
+            if key.startswith("encoder."):
+                encoder_state[key[len("encoder.") :]] = value
+            else:
+                encoder_state[key] = value
+        cast(torch.nn.Module, model.encoder).load_state_dict(encoder_state, strict=False)
 
     pairs = build_supervised_training_pairs(dataset_root, augment=augment, seed=seed)
 
@@ -173,8 +183,9 @@ def run_flow_training_pipeline(
         seed=seed,
     )
 
-    dataloader: Iterable[tuple[torch.Tensor, torch.Tensor]] = SupervisedTrainingDataloader(
-        pairs, batch_size, device, seed
+    dataloader = cast(
+        BatchSource,
+        partial(iter_supervised_training_batches, pairs, batch_size, device, seed),
     )
 
     metadata = {

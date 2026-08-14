@@ -194,7 +194,7 @@ A flow formulation can learn a vector field that transforms an initial distribut
 
 A score-based diffusion formulation learns a score function used during denoising and sampling.
 
-**Status note (2026-08-12):** both flow and diffusion paths are now fully implemented through to training. `scripts/train.py` runs diffusion-based supervised training; `scripts/train_flow.py` runs flow-matching supervised training. Both produce checkpoints loadable by the corresponding inference modules.
+**Status note (2026-08-12):** both flow and diffusion paths are now fully implemented through to training. `scripts/train_diffusion.py` runs diffusion-based supervised training; `scripts/train_flow.py` runs flow-matching supervised training. Both produce checkpoints loadable by the corresponding inference modules.
 
 ### 5.5 Robotics layer
 

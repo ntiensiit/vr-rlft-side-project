@@ -5,7 +5,26 @@ from typing import Any
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
 
-GripperCommand = np.ndarray
+
+def gripper_actuator_indices(mj_model: Any) -> list[int]:
+    """Return actuator indices that drive the gripper rather than the arm."""
+    indices: list[int] = []
+    for i in range(int(mj_model.nu)):
+        name = (mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, i) or "").lower()
+        if any(token in name for token in ("finger", "gripper")):
+            indices.append(i)
+            continue
+        if mj_model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_TENDON:
+            indices.append(i)
+            continue
+        if mj_model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_JOINT:
+            joint_id = int(mj_model.actuator_trnid[i, 0])
+            jname = (
+                mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_id) or ""
+            ).lower()
+            if "finger" in jname or "gripper" in jname:
+                indices.append(i)
+    return indices
 
 
 def load_gripper_model(gripper_description_path: str) -> dict[str, object]:
@@ -48,7 +67,7 @@ def load_gripper_model(gripper_description_path: str) -> dict[str, object]:
     }
 
 
-def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[GripperCommand], None]:
+def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[np.ndarray], None]:
     """Build a callable gripper controller that issues open/close commands.
 
     The controller writes through the authoritative actuator-control path
@@ -69,7 +88,7 @@ def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[Grip
 
     from grasping_ai.simulation.mujoco_env import set_actuator_controls
 
-    def controller(command: GripperCommand) -> None:
+    def controller(command: np.ndarray) -> None:
         if not isinstance(command, np.ndarray):
             raise TypeError("command must be a numpy array")
         if not np.isfinite(command).all():
@@ -92,7 +111,7 @@ def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[Grip
     return controller
 
 
-def make_open_command(gripper_model: dict[str, object]) -> GripperCommand:
+def make_open_command(gripper_model: dict[str, object]) -> np.ndarray:
     """Build an "open" gripper command for the supplied gripper model.
 
     Args:
@@ -118,7 +137,7 @@ def make_open_command(gripper_model: dict[str, object]) -> GripperCommand:
     return cmd
 
 
-def make_close_command(gripper_model: dict[str, object]) -> GripperCommand:
+def make_close_command(gripper_model: dict[str, object]) -> np.ndarray:
     """Build a "close" gripper command for the supplied gripper model.
 
     Args:

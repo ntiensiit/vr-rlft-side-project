@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -39,6 +40,32 @@ def _resolve_scene_output_dir(output_dir: Path | None) -> Path:
     temp_root = Path(tempfile.gettempdir()) / "grasping_ai_scenes"
     temp_root.mkdir(parents=True, exist_ok=True)
     return temp_root
+
+
+def _xml_with_absolute_meshdir(xml_path: Path, out_dir: Path) -> Path:
+    """Rewrite ``meshdir`` to an absolute path so includes from a temp scene resolve.
+
+    MuJoCo interprets relative ``meshdir`` against the top-level XML, not the
+    included file. Assembled scenes live in a temp directory, so robot meshes
+    must be re-rooted to the original MJCF location.
+    """
+    text = xml_path.read_text(encoding="utf-8")
+
+    def _replace(match: re.Match[str]) -> str:
+        raw = match.group(1)
+        meshdir = Path(raw)
+        if not meshdir.is_absolute():
+            meshdir = (xml_path.parent / meshdir).resolve()
+        return f'meshdir="{meshdir.as_posix()}"'
+
+    rewritten, count = re.subn(r'meshdir="([^"]*)"', _replace, text, count=1)
+    if count == 0:
+        return xml_path
+    fd, path_str = tempfile.mkstemp(suffix="_absmesh.xml", dir=str(out_dir))
+    os.close(fd)
+    dest = Path(path_str)
+    dest.write_text(rewritten, encoding="utf-8")
+    return dest
 
 
 def build_scene_xml(
@@ -87,13 +114,15 @@ def build_scene_xml(
             object_xml_path, object_name, out_dir
         )
 
+    robot_for_include = _xml_with_absolute_meshdir(robot_xml_path, out_dir)
+
     fd, path_str = tempfile.mkstemp(suffix="_scene.xml", dir=str(out_dir))
     os.close(fd)
     path = Path(path_str)
 
     lines = [
         '<mujoco model="assembled_scene">',
-        f'    <include file="{robot_xml_path.resolve().as_posix()}"/>',
+        f'    <include file="{robot_for_include.resolve().as_posix()}"/>',
         f'    <include file="{included_object_path.resolve().as_posix()}"/>',
     ]
     if table_xml_path is not None:
@@ -205,7 +234,8 @@ def attach_object_to_scene(
     lines = ['<mujoco model="assembled_scene">']
     original_xml = state_dict.get("model_xml_path")
     if original_xml is not None:
-        lines.append(f'    <include file="{original_xml.resolve().as_posix()}"/>')
+        robot_for_include = _xml_with_absolute_meshdir(original_xml, out_dir)
+        lines.append(f'    <include file="{robot_for_include.resolve().as_posix()}"/>')
     for path in state_dict["attached_xml_paths"]:
         lines.append(f'    <include file="{path.resolve().as_posix()}"/>')
     lines.append('</mujoco>')

@@ -1,144 +1,261 @@
-#!/usr/bin/env python
-"""Reproducible end-to-end experiment artifact generation.
-
-Runs both retained artifact chains with small, CPU-friendly hyperparameters:
-
-  1. Supervised chain: YCB mesh -> synthetic dataset -> trained grasp checkpoint
-     -> generated grasps -> MuJoCo simulation -> evaluation report.
-  2. RL chain: MuJoCo+YCB env -> SB3 PPO -> exported legacy policy checkpoint
-     -> policy_runner inference smoke test.
-
-All commands are logged to ``artifacts/manifest.json`` together with the
-parameters used, so the retained artifacts can be reproduced from scratch.
-"""
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA_PROCESSED = ROOT / "data" / "processed"
-ARTIFACTS = ROOT / "artifacts"
-ENV_VARS = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
-
-LOG: list[dict[str, object]] = []
-
-
-def run(cmd: list[str]) -> None:
-    print(">>>", " ".join(cmd))
-    subprocess.run(cmd, cwd=ROOT, env=ENV_VARS, check=True, capture_output=False)
-    LOG.append({"command": " ".join(cmd), "cwd": str(ROOT)})
+from grasping_ai.config.yaml_loader import (
+    config_float_list,
+    config_get,
+    config_str_list,
+    load_project_yaml_config,
+    parse_config_dir_from_argv,
+)
+from grasping_ai.pipelines.evaluate import write_jsonl_records
 
 
 def main() -> None:
-    ycb_root = ROOT / "data" / "raw" / "ycb"
-    mjcf_root = DATA_PROCESSED / "ycb_mjcf"
-    observations = ROOT / "data" / "observations"
+    """Run reproducible supervised and RL artifact chains and write a manifest.
+
+    Executes the full pipeline from YCB MJCF preparation through diffusion
+    training, grasp generation, simulation, evaluation, and RL training.
+    Records repo-relative commands in ``artifacts/manifest.jsonl``.
+    """
+    root = Path(__file__).resolve().parents[1]
+    config_dir = parse_config_dir_from_argv()
+    if not config_dir.is_absolute():
+        config_dir = root / config_dir
+    cfg = load_project_yaml_config(
+        config_dir, "base", "data", "model", "training", "evaluation", "robot", "simulation"
+    )
+    artifacts = root / str(config_get(cfg, "paths", "output_dir"))
+    data_processed = root / str(config_get(cfg, "paths", "dataset_root"))
+    ycb_root = root / str(config_get(cfg, "paths", "ycb_root"))
+    mjcf_root = root / str(config_get(cfg, "paths", "ycb_mjcf"))
+    observations = root / str(config_get(cfg, "paths", "observations"))
+    object_ids = config_str_list(cfg, "objects", "ids") or []
+    gripper_close = config_float_list(cfg, "robot", "gripper", "close_command") or [0.0]
+    env_vars = {
+        **os.environ,
+        "PYTHONPATH": str(root / "src"),
+        "PYTHONPYCACHEPREFIX": str(root / ".pycache"),
+    }
+    log: list[dict[str, object]] = []
+
     mjcf_root.mkdir(parents=True, exist_ok=True)
     observations.mkdir(parents=True, exist_ok=True)
 
-    # Step 0: YCB mesh -> MJCF wrappers (raw YCB uses OpenRAVE KinBody XML).
-    run([sys.executable, "scripts/prepare_ycb_mjcf.py",
-         "--ycb-root", str(ycb_root), "--output-root", str(mjcf_root)])
+    diffusion_checkpoint = root / str(config_get(cfg, "diffusion", "checkpoint"))
+    rl_checkpoint = root / str(config_get(cfg, "rl", "checkpoint"))
+    grasp_candidates = root / str(
+        config_get(cfg, "diffusion", "exports", "grasp_candidates")
+    )
+    grasp_poses = root / str(config_get(cfg, "diffusion", "exports", "grasp_poses"))
+    simulation_report = root / str(
+        config_get(cfg, "diffusion", "exports", "simulation_report")
+    )
+    evaluation_report = root / str(
+        config_get(cfg, "diffusion", "exports", "evaluation_report")
+    )
+    robot_xml = root / str(config_get(cfg, "robot", "description"))
+    diffusion_tb = root / str(config_get(cfg, "diffusion", "tensorboard"))
+    rl_tb = root / str(config_get(cfg, "rl", "tensorboard"))
+    output_index = root / str(config_get(cfg, "paths", "output_index"))
 
-    # Step 1: YCB mesh -> synthetic grasp dataset + index. The three shipped
-    # YCB objects are declared as required: any missing/failed object aborts
-    # the chain rather than silently producing a partial dataset.
-    run([sys.executable, "scripts/prepare_data.py",
-         "--mode", "synthetic",
-         "--ycb-root", str(ycb_root),
-         "--dataset-root", str(DATA_PROCESSED),
-         "--output-index", str(DATA_PROCESSED / "index.json"),
-         "--num-samples", "256", "--num-grasps", "8",
-         "--gripper-width", "0.08", "--seed", "42",
-         "--required-objects", "003_cracker_box", "004_sugar_box",
-         "006_mustard_bottle"])
+    root_resolved = root.resolve()
+    config_dir_arg = config_dir.resolve().relative_to(root_resolved).as_posix()
+    ycb_root_arg = ycb_root.resolve().relative_to(root_resolved).as_posix()
+    mjcf_root_arg = mjcf_root.resolve().relative_to(root_resolved).as_posix()
+    observations_arg = observations.resolve().relative_to(root_resolved).as_posix()
+    data_processed_arg = data_processed.resolve().relative_to(root_resolved).as_posix()
+    output_index_arg = output_index.resolve().relative_to(root_resolved).as_posix()
+    diffusion_checkpoint_arg = (
+        diffusion_checkpoint.resolve().relative_to(root_resolved).as_posix()
+    )
+    grasp_candidates_arg = grasp_candidates.resolve().relative_to(root_resolved).as_posix()
+    grasp_poses_arg = grasp_poses.resolve().relative_to(root_resolved).as_posix()
+    simulation_report_arg = simulation_report.resolve().relative_to(root_resolved).as_posix()
+    evaluation_report_arg = evaluation_report.resolve().relative_to(root_resolved).as_posix()
+    robot_xml_arg = robot_xml.resolve().relative_to(root_resolved).as_posix()
+    diffusion_tb_arg = diffusion_tb.resolve().relative_to(root_resolved).as_posix()
+    rl_checkpoint_arg = rl_checkpoint.resolve().relative_to(root_resolved).as_posix()
+    rl_tb_arg = rl_tb.resolve().relative_to(root_resolved).as_posix()
+    observation_files = [
+        (observations / f"{object_id}.npy").resolve().relative_to(root_resolved).as_posix()
+        for object_id in object_ids
+    ]
 
-    # Observations for inference/evaluation.
-    run([sys.executable, "scripts/prepare_observations.py",
-         "--ycb-root", str(ycb_root),
-         "--output-dir", str(observations),
-         "--num-samples", "256", "--seed", "7"])
+    commands: list[list[str]] = [
+        [
+            sys.executable,
+            "scripts/prepare_ycb_mjcf.py",
+            "--ycb-root",
+            ycb_root_arg,
+            "--output-root",
+            mjcf_root_arg,
+        ],
+        [
+            sys.executable,
+            "scripts/prepare_data.py",
+            "--config-dir",
+            config_dir_arg,
+            "--mode",
+            "synthetic",
+            "--ycb-root",
+            ycb_root_arg,
+            "--dataset-root",
+            data_processed_arg,
+            "--output-index",
+            output_index_arg,
+            "--num-samples",
+            str(config_get(cfg, "synthetic", "num_samples")),
+            "--num-grasps",
+            str(config_get(cfg, "synthetic", "num_grasps")),
+            "--gripper-width",
+            str(config_get(cfg, "synthetic", "gripper_width")),
+            "--seed",
+            str(config_get(cfg, "synthetic", "seed")),
+            "--required-objects",
+            *object_ids,
+        ],
+        [
+            sys.executable,
+            "scripts/prepare_observations.py",
+            "--ycb-root",
+            ycb_root_arg,
+            "--output-dir",
+            observations_arg,
+            "--num-samples",
+            str(config_get(cfg, "observations", "num_samples")),
+            "--seed",
+            str(config_get(cfg, "observations", "seed")),
+        ],
+        [
+            sys.executable,
+            "scripts/train_diffusion.py",
+            "--config-dir",
+            config_dir_arg,
+            "--dataset-root",
+            data_processed_arg,
+            "--checkpoint",
+            diffusion_checkpoint_arg,
+            "--experiment-log-dir",
+            diffusion_tb_arg,
+        ],
+        [
+            sys.executable,
+            "scripts/generate_grasps.py",
+            "--config-dir",
+            config_dir_arg,
+            "--checkpoint",
+            diffusion_checkpoint_arg,
+            "--observations",
+            *observation_files,
+            "--output",
+            grasp_candidates_arg,
+        ],
+        [
+            sys.executable,
+            "scripts/extract_object_grasps.py",
+            "--input",
+            grasp_candidates_arg,
+            "--output",
+            grasp_poses_arg,
+            "--key",
+            "object_0",
+        ],
+        [
+            sys.executable,
+            "scripts/run_simulation.py",
+            "--config-dir",
+            config_dir_arg,
+            "--grasps",
+            grasp_poses_arg,
+            "--object-id",
+            object_ids[0],
+            "--ycb-root",
+            mjcf_root_arg,
+            "--robot-xml",
+            robot_xml_arg,
+            "--output",
+            simulation_report_arg,
+            "--gripper-close-command",
+            *[str(value) for value in gripper_close],
+        ],
+        [
+            sys.executable,
+            "scripts/evaluate.py",
+            "--config-dir",
+            config_dir_arg,
+            "--multi-object",
+            "--grasps",
+            grasp_candidates_arg,
+            "--observations-dir",
+            observations_arg,
+            "--gripper-point-cloud",
+            f"{observations_arg}/gripper.npy",
+            "--report",
+            evaluation_report_arg,
+        ],
+        [
+            sys.executable,
+            "scripts/train_rl.py",
+            "--config-dir",
+            config_dir_arg,
+            "--robot-xml",
+            robot_xml_arg,
+            "--ycb-root",
+            mjcf_root_arg,
+            "--object-ids",
+            object_ids[0],
+            "--policy-checkpoint",
+            rl_checkpoint_arg,
+            "--experiment-log-dir",
+            rl_tb_arg,
+        ],
+    ]
 
-    # Step 2: supervised training -> grasp checkpoint.
-    run([sys.executable, "scripts/train.py",
-         "--dataset-root", str(DATA_PROCESSED),
-         "--checkpoint", str(ARTIFACTS / "checkpoints" / "grasp_generation.pt"),
-         "--feature-dim", "32", "--hidden-dim", "32", "--num-layers", "2",
-         "--learning-rate", "0.001", "--num-epochs", "3", "--batch-size", "2",
-         "--device", "cpu", "--seed", "42",
-         "--experiment-log-dir", str(ARTIFACTS / "exports" / "tensorboard" / "train")])
-
-    # Step 3: checkpoint -> generated grasps.
-    run([sys.executable, "scripts/generate_grasps.py",
-         "--checkpoint", str(ARTIFACTS / "checkpoints" / "grasp_generation.pt"),
-         "--observations",
-         str(observations / "003_cracker_box.npy"),
-         str(observations / "004_sugar_box.npy"),
-         str(observations / "006_mustard_bottle.npy"),
-         "--output", str(ARTIFACTS / "exports" / "generated_grasps.npy"),
-         "--feature-dim", "32", "--num-diffusion-steps", "5", "--num-grasps", "8",
-         "--device", "cpu"])
-
-    # Step 4: generated grasps -> MuJoCo simulation outcomes.
-    run([sys.executable, "scripts/extract_object_grasps.py",
-         "--input", str(ARTIFACTS / "exports" / "generated_grasps.npy"),
-         "--output", str(ARTIFACTS / "exports" / "grasp_poses_cracker.npy"),
-         "--key", "object_0"])
-    run([sys.executable, "scripts/run_simulation.py",
-         "--grasps", str(ARTIFACTS / "exports" / "grasp_poses_cracker.npy"),
-         "--object-id", "003_cracker_box",
-         "--ycb-root", str(mjcf_root),
-         "--robot-xml", str(ROOT / "deploy" / "robot.xml"),
-         "--output", str(ARTIFACTS / "reports" / "simulation_cracker.json"),
-         "--num-simulation-steps", "50", "--gripper-close-command", "0.02", "0.02"])
-
-    # Step 5: evaluation report — same object identity (003_cracker_box) as the
-    # simulation step, so the chain tracks one object end-to-end.
-    run([sys.executable, "scripts/evaluate.py",
-         "--grasps", str(ARTIFACTS / "exports" / "generated_grasps.npy"),
-         "--object-id", "object_0",
-         "--object-point-cloud", str(observations / "003_cracker_box.npy"),
-         "--gripper-point-cloud", str(observations / "gripper.npy"),
-         "--report", str(ARTIFACTS / "reports" / "evaluation_report.json"),
-         "--friction-coefficient", "0.5", "--lift-height-threshold", "0.05",
-         "--contact-clearance", "0.005", "--wrench-regularization", "1.0"])
-
-    # Step 6: RL chain — SB3 PPO training + legacy checkpoint export.
-    run([sys.executable, "scripts/train_rl.py",
-         "--robot-xml", str(ROOT / "deploy" / "robot.xml"),
-         "--ycb-root", str(mjcf_root),
-         "--object-ids", "003_cracker_box",
-         "--policy-checkpoint", str(ARTIFACTS / "checkpoints" / "rl_policy.pt"),
-         "--observation-dim", "21", "--action-dim", "4", "--hidden-dim", "32",
-         "--learning-rate", "0.0003", "--num-updates", "10", "--gamma", "0.99",
-         "--device", "cpu", "--seed", "42",
-         "--experiment-log-dir", str(ARTIFACTS / "exports" / "tensorboard" / "rl")])
+    for cmd in commands:
+        print(">>>", " ".join(cmd))
+        subprocess.run(cmd, cwd=root, env=env_vars, check=True, capture_output=False)
+        log.append({"command": "python " + " ".join(cmd[1:]), "cwd": "."})
 
     retained_artifacts = sorted(
-        str(p.relative_to(ROOT)) for p in (
-            *DATA_PROCESSED.glob("*.npy"),
-            *DATA_PROCESSED.glob("index.json"),
+        p.resolve().relative_to(root_resolved).as_posix()
+        for p in (
+            *data_processed.glob("*.npy"),
+            *data_processed.glob("index.json"),
             *mjcf_root.rglob("*.xml"),
-            *ARTIFACTS.rglob("*.pt"),
-            *ARTIFACTS.rglob("*.npy"),
-            *ARTIFACTS.rglob("*.json"),
+            *artifacts.rglob("*.pt"),
+            *artifacts.rglob("*.npy"),
+            *artifacts.rglob("*.jsonl"),
         )
     )
-    manifest = {
-        "description": (
-            "Reproducible artifact chain: supervised (YCB mesh -> synthetic dataset "
-            "-> grasp checkpoint -> generated grasps -> MuJoCo simulation -> eval report) "
-            "and RL (SB3 PPO -> legacy checkpoint -> policy_runner inference)"
-        ),
-        "generated": LOG,
-        "retained_artifacts": retained_artifacts,
-    }
-    (ARTIFACTS / "manifest.json").write_text(
-        json.dumps(manifest, indent=2), encoding="utf-8"
+    manifest_path = artifacts / "manifest.jsonl"
+    manifest_records: list[dict[str, object]] = [
+        {
+            "record_type": "manifest",
+            "description": (
+                "Reproducible artifact chain: supervised (YCB mesh -> synthetic dataset "
+                "-> grasp checkpoint -> generated grasps -> MuJoCo simulation -> eval report) "
+                "and RL (SB3 PPO -> legacy checkpoint -> policy_runner inference)"
+            ),
+            "config_dir": config_dir_arg,
+        }
+    ]
+    manifest_records.extend(
+        {"record_type": "command", **entry} for entry in log
     )
-    # Step 7: policy_runner inference smoke test on the exported RL checkpoint.
+    manifest_records.extend(
+        {"record_type": "retained_artifact", "path": rel}
+        for rel in retained_artifacts
+    )
+    write_jsonl_records(manifest_path, manifest_records)
+
+    observation_dim = int(config_get(cfg, "rl", "observation_dim"))
+    action_dim = int(config_get(cfg, "rl", "action_dim"))
+    infer_path_arg = (artifacts / "rl_inference_smoke.py").resolve().relative_to(
+        root_resolved
+    ).as_posix()
     infer_script = (
         "from pathlib import Path\n"
         "import numpy as np\n"
@@ -146,18 +263,20 @@ def main() -> None:
         "    load_rl_policy_checkpoint, build_rl_policy_runner, run_policy_step,\n"
         ")\n"
         f"ckpt = load_rl_policy_checkpoint(\n"
-        f"    Path(r'{(ARTIFACTS / 'checkpoints' / 'rl_policy.pt').as_posix()}'), 'cpu')\n"
-        "runner = build_rl_policy_runner(ckpt, 21, 4, 'cpu')\n"
-        "obs = np.zeros(21, dtype=np.float32)\n"
+        f"    Path('{rl_checkpoint_arg}'), 'cpu')\n"
+        f"runner = build_rl_policy_runner(ckpt, {observation_dim}, {action_dim}, 'cpu')\n"
+        f"obs = np.zeros({observation_dim}, dtype=np.float32)\n"
         "act = run_policy_step(runner, obs)\n"
         "print('policy inference OK', np.asarray(act).shape)\n"
     )
-    infer_path = ARTIFACTS / "rl_inference_smoke.py"
+    infer_path = artifacts / "rl_inference_smoke.py"
     infer_path.write_text(infer_script, encoding="utf-8")
-    run([sys.executable, str(infer_path)])
+    print(">>>", sys.executable, str(infer_path))
+    subprocess.run([sys.executable, str(infer_path)], cwd=root, env=env_vars, check=True)
+    log.append({"command": f"python {infer_path_arg}", "cwd": "."})
 
     print("All artifact-chain steps completed.")
-    print("Manifest written to artifacts/manifest.json")
+    print("Manifest written to artifacts/manifest.jsonl")
 
 
 if __name__ == "__main__":

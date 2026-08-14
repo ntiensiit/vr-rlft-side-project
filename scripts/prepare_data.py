@@ -103,7 +103,11 @@ def generate_synthetic_dataset(
                 # Fallback: retry with the relaxed antipodal search so that
                 # objects producing no strict grasps are not saved unusable.
                 grasps = generate_analytical_grasps(
-                    points, normals, num_grasps, gripper_width, rng,
+                    points,
+                    normals,
+                    num_grasps,
+                    gripper_width,
+                    rng,
                     allow_relaxed=True,
                 )
             if grasps.shape[0] == 0:
@@ -130,29 +134,69 @@ def generate_synthetic_dataset(
 
     if failures:
         joined = "; ".join(failures)
-        raise RuntimeError(
-            f"Required YCB objects failed to generate synthetic data: {joined}"
-        )
+        raise RuntimeError(f"Required YCB objects failed to generate synthetic data: {joined}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Prepare grasp dataset or generate synthetic data")
-    parser.add_argument("--mode", type=str, choices=["index", "synthetic"], default="index")
-    parser.add_argument("--dataset-root", type=Path, default=None)
-    parser.add_argument("--output-dir", type=Path, default=None)
-    parser.add_argument("--output-index", type=Path, required=True)
+    from grasping_ai.config.yaml_loader import (
+        config_get,
+        config_path,
+        config_str_list,
+        load_project_yaml_config,
+        parse_config_dir_from_argv,
+    )
 
-    # Synthetic arguments
-    parser.add_argument("--ycb-root", type=Path, default=None)
-    parser.add_argument("--num-samples", type=int, default=1024)
-    parser.add_argument("--num-grasps", type=int, default=64)
-    parser.add_argument("--gripper-width", type=float, default=0.08)
-    parser.add_argument("--seed", type=int, default=42)
+    config_dir = parse_config_dir_from_argv()
+    cfg = load_project_yaml_config(config_dir, "base", "data")
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
+    parser = argparse.ArgumentParser(
+        description="Prepare grasp dataset or generate synthetic data",
+        parents=[pre_parser],
+    )
+    parser.add_argument("--mode", type=str, choices=["index", "synthetic"], default="index")
+    parser.add_argument(
+        "--dataset-root",
+        type=Path,
+        default=config_path(cfg, "paths", "dataset_root"),
+    )
+    parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument(
+        "--output-index",
+        type=Path,
+        default=config_path(cfg, "paths", "output_index"),
+    )
+
+    parser.add_argument(
+        "--ycb-root",
+        type=Path,
+        default=config_path(cfg, "paths", "ycb_root"),
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=int(config_get(cfg, "synthetic", "num_samples")),
+    )
+    parser.add_argument(
+        "--num-grasps",
+        type=int,
+        default=int(config_get(cfg, "synthetic", "num_grasps")),
+    )
+    parser.add_argument(
+        "--gripper-width",
+        type=float,
+        default=float(config_get(cfg, "synthetic", "gripper_width")),
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=int(config_get(cfg, "synthetic", "seed")),
+    )
     parser.add_argument(
         "--required-objects",
         type=str,
         nargs="+",
-        default=None,
+        default=config_str_list(cfg, "objects", "ids"),
         help=(
             "Space-separated list of YCB object identifiers whose generation "
             "must succeed; missing objects cause a non-zero exit code. "
@@ -161,6 +205,11 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    if args.output_index is None:
+        parser.error(
+            "--output-index is required (set in configs/data.yaml paths.output_index "
+            "or pass explicitly)"
+        )
 
     # Resolve output directory for synthetic or indexing
     target_dir = args.output_dir if args.output_dir is not None else args.dataset_root

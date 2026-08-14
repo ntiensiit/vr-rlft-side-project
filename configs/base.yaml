@@ -1,5 +1,8 @@
-# Documentation/default reference only; runtime pipelines accept parameters via CLI arguments.
-seed: 0
-device: cuda
-output_dir: artifacts
+seed: 42
+device: cpu
 experiment_name: default
+paths:
+  output_dir: artifacts
+  ycb_mjcf: data/processed/ycb_mjcf
+  observations: data/observations
+  tensorboard: artifacts/exports/tensorboard

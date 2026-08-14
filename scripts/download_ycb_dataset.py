@@ -1,68 +1,17 @@
-# Copyright 2015 Yale University - Grablab
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-# Modified to work with Python 3 by Sebastian Castro, 2020
-
 import json
 import os
 from urllib.request import Request, urlopen
 
-# Define an output folder
-output_directory = os.path.join("data", "raw", "ycb")
-
-# Define a list of objects to download from
-# http://ycb-benchmarks.s3-website-us-east-1.amazonaws.com/
-objects_to_download = [
-    "003_cracker_box",
-    "004_sugar_box",
-    "006_mustard_bottle",
-]
-
-# You can edit this list to only download certain kinds of files.
-# 'berkeley_rgbd' contains all of the depth maps and images from the Carmines.
-# 'berkeley_rgb_highres' contains all of the high-res images from the Canon cameras.
-# 'berkeley_processed' contains all of the segmented point clouds and textured meshes.
-# 'google_16k' contains google meshes with 16k vertices.
-# 'google_64k' contains google meshes with 64k vertices.
-# 'google_512k' contains google meshes with 512k vertices.
-# See the website for more details.
-# files_to_download = [
-#     "berkeley_rgbd",
-#     "berkeley_rgb_highres",
-#     "berkeley_processed",
-#     "google_16k",
-#     "google_64k",
-#     "google_512k",
-# ]
-files_to_download = ["berkeley_processed", "google_16k"]
-
-# Extract all files from the downloaded .tgz, and remove .tgz files.
-# If false, will just download all .tgz files to output_directory
-extract = True
-
-base_url = "http://ycb-benchmarks.s3-website-us-east-1.amazonaws.com/data/"
-objects_url = "https://ycb-benchmarks.s3.amazonaws.com/data/objects.json"
-
-if not os.path.exists(output_directory):
-    os.makedirs(output_directory)
-
 
 def fetch_objects(url):
-    """ Fetches the object information before download """
+    """Fetches the object information before download.
+
+    Args:
+        url: The URL to fetch the object list from.
+
+    Returns:
+        list: A list of object IDs.
+    """
     response = urlopen(url)
     html = response.read()
     objects = json.loads(html)
@@ -70,8 +19,18 @@ def fetch_objects(url):
 
 
 def download_file(url, filename, max_retries=5):
-    """ Downloads files from a given URL with retries """
+    """Downloads files from a given URL with retries.
+
+    Args:
+        url: The URL of the file to download.
+        filename: The output filename path.
+        max_retries: The maximum number of download attempts.
+
+    Raises:
+        Exception: If download fails after max_retries.
+    """
     import time
+
     for attempt in range(max_retries):
         try:
             req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -108,8 +67,18 @@ def download_file(url, filename, max_retries=5):
         else:
             return
 
+
 def tgz_url(object, type):
-    """ Get the TGZ file URL for a particular object and dataset type """
+    """Get the TGZ file URL for a particular object and dataset type.
+
+    Args:
+        object: The name of the object.
+        type: The type of dataset file.
+
+    Returns:
+        str: The URL of the TGZ file.
+    """
+    base_url = "http://ycb-benchmarks.s3-website-us-east-1.amazonaws.com/data/"
     if type in ["berkeley_rgbd", "berkeley_rgb_highres"]:
         return f"{base_url}berkeley/{object}/{object}_{type}.tgz"
     if type == "berkeley_processed":
@@ -118,12 +87,18 @@ def tgz_url(object, type):
 
 
 def extract_tgz(filename, dir):
-    """ Extract a TGZ file using built-in tarfile """
+    """Extract a TGZ file using built-in tarfile.
+
+    Args:
+        filename: The TGZ file path to extract.
+        dir: The output directory path.
+    """
     import tarfile
     import time
+
     with tarfile.open(filename, "r:gz") as tar:
-        if hasattr(tarfile, 'data_filter'):
-            tar.extractall(path=dir, filter='data')
+        if hasattr(tarfile, "data_filter"):
+            tar.extractall(path=dir, filter="data")
         else:
             tar.extractall(path=dir)
 
@@ -137,7 +112,14 @@ def extract_tgz(filename, dir):
 
 
 def check_url(url):
-    """ Check the validity of a URL """
+    """Check the validity of a URL.
+
+    Args:
+        url: The URL to check.
+
+    Returns:
+        bool: True if the URL is valid, False otherwise.
+    """
     try:
         request = Request(url)
         request.get_method = lambda: "HEAD"
@@ -152,6 +134,19 @@ def check_url(url):
 if __name__ == "__main__":
     import shutil
 
+    output_directory = os.path.join("data", "raw", "ycb")
+    objects_to_download = [
+        "003_cracker_box",
+        "004_sugar_box",
+        "006_mustard_bottle",
+    ]
+    files_to_download = ["berkeley_processed", "google_16k"]
+    extract = True
+    objects_url = "https://ycb-benchmarks.s3.amazonaws.com/data/objects.json"
+
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+
     # Grab all the object information
     objects = fetch_objects(objects_url)
 
@@ -164,9 +159,8 @@ if __name__ == "__main__":
                 for file_type in files_to_download:
                     # Check if already downloaded/extracted
                     if extract:
-                        is_google_extracted = (
-                            file_type == "google_16k"
-                            and os.path.exists(os.path.join(object_dir, "google_16k"))
+                        is_google_extracted = file_type == "google_16k" and os.path.exists(
+                            os.path.join(object_dir, "google_16k")
                         )
                         is_berkeley_extracted = (
                             file_type == "berkeley_processed"
@@ -208,4 +202,4 @@ if __name__ == "__main__":
                             break
                         except OSError:
                             time.sleep(1)
-                continue
+                continue

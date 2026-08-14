@@ -12,7 +12,7 @@ single-object grasp generation, simulation, evaluation, RL rollout, and composed
 end-to-end workflows were missing.
 
 `scripts/run_artifacts.py` remains the **CPU-friendly artifact-chain smoke test**
-(reproducible supervised + RL chain, `artifacts/manifest.json`). The runtime
+(reproducible supervised + RL chain, `artifacts/manifest.jsonl`). The runtime
 workflow scripts below are **entry points** for single-object or composed runs.
 
 ## Decision
