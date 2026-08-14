@@ -72,10 +72,10 @@ def test_simulation_config_file_exists():
     assert path.is_file()
 
 
-def test_robot_config_file_exists():
-    """Verify robot configuration file existence."""
-    path = Path("configs/gripper/default.yaml")
-    assert path.is_file()
+def test_robot_config_files_exist():
+    """Verify gripper config default alias and Franka Emika Panda variant exist."""
+    assert Path("configs/gripper/default.yaml").is_file()
+    assert Path("configs/gripper/franka_emika_panda.yaml").is_file()
 
 
 @pytest.fixture

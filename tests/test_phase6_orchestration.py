@@ -110,10 +110,12 @@ def test_phase1_package_import_remains_stable():
     assert grasping_ai.__name__ == "grasping_ai"
 
 
-def test_evaluation_config_file_exists():
-    """Verify that configs/evaluation/default.yaml exists."""
-    config_path = os.path.join("configs", "evaluation", "default.yaml")
-    assert os.path.isfile(config_path)
+def test_evaluation_config_files_exist():
+    """Verify evaluation config default alias, common base, and method variants exist."""
+    assert os.path.isfile(os.path.join("configs", "evaluation", "default.yaml"))
+    assert os.path.isfile(os.path.join("configs", "evaluation", "diffusion.yaml"))
+    assert os.path.isfile(os.path.join("configs", "evaluation", "flow.yaml"))
+    assert os.path.isfile(os.path.join("configs", "evaluation", "rl.yaml"))
 
 
 def test_collision_checker_shape_checks():

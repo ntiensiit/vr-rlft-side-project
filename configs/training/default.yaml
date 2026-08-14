@@ -1,25 +1,2 @@
-# @package _global_
-supervised:
-  batch_size: 2
-  learning_rate: 0.001
-  num_epochs: 3
-  log_every: 50
-  min_grasp_score: 0.0
-  score_repeat_factor: 2
-  score_repeat_power: 1.0
-rl:
-  learning_rate: 0.0003
-  num_updates: 10
-  clip_ratio: 0.2
-  entropy_coefficient: 0.0
-  gamma: 0.99
-  gae_lambda: 0.95
-  reward:
-    action_cost_weight: 0.01
-    survival_bonus: 1.0
-    contact_reward: 0.5
-    lift_reward_weight: 2.0
-    grasp_success_bonus: 5.0
-    lift_height_threshold: 0.05
-    drop_height_threshold: 0.1
-    terminate_on_non_finite: true
+defaults:
+  - diffusion

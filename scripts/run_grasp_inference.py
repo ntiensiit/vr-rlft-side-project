@@ -13,7 +13,7 @@ from grasping_ai.inference.grasp_inference_runtime import run_single_object_gras
 
 if __name__ == "__main__":
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "model")
+    cfg = load_project_yaml_config(config_dir)
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -60,7 +60,10 @@ if __name__ == "__main__":
         else:
             args.checkpoint = config_path(cfg, "diffusion", "checkpoint")
     if args.checkpoint is None:
-        parser.error("--checkpoint is required (set in configs/model/default.yaml or pass explicitly)")
+        parser.error(
+            "--checkpoint is required (set in configs/model/diffusion.yaml or "
+            "configs/model/flow.yaml or pass explicitly)"
+        )
     if args.num_steps is None:
         if args.method == "flow":
             args.num_steps = int(config_get(cfg, "flow", "inference_steps"))

@@ -9,6 +9,8 @@ from grasping_ai.config.yaml_loader import (
     config_path,
     load_project_yaml_config,
     parse_config_dir_from_argv,
+    parse_config_name_from_argv,
+    parse_config_overrides_from_argv,
 )
 from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
 from grasping_ai.perception.pointcloud import normalize_point_cloud
@@ -52,9 +54,12 @@ def make_observations(ycb_root: Path, output_dir: Path, num_samples: int, seed: 
 
 if __name__ == "__main__":
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "object")
+    config_name = parse_config_name_from_argv()
+    overrides = parse_config_overrides_from_argv()
+    cfg = load_project_yaml_config(config_dir, config_name=config_name, overrides=overrides)
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
+    pre_parser.add_argument("--config-name", type=str, default=config_name)
     parser = argparse.ArgumentParser(
         description="Sample per-object observation clouds",
         parents=[pre_parser],

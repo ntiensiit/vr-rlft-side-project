@@ -1,10 +1,4 @@
 defaults:
-  - base
-  - model: default
-  - data: default
-  - gripper: default
-  - env: default
-  - object: default
-  - training: default
-  - evaluation: default
+  - training: diffusion
+  - override evaluation: diffusion
   - _self_

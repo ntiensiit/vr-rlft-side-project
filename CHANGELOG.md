@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Google Colab–ready research notebooks (`notebooks/README.md`) for diffusion, flow, RL training, and combined evaluation; data prep reuses `scripts/` entry points.
 - ADRs [0001](docs/adr/001-phase4-canonicalization-vs-equivariant.md)–[0008](docs/adr/008-hydra-configuration.md); CI; artifact-chain script (`run_artifacts.py`) and runtime workflow scripts — [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
 - Hydra config composition (`hydra-core`, `configs/config.yaml`, config groups) — [ADR-0008](docs/adr/008-hydra-configuration.md).
 - Panda sim fidelity: contact-to-hand transform, width-to-joint mapping, fingertip friction — [ADR-0009](docs/adr/009-panda-contact-frame.md).
@@ -22,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `configs/gripper/` split into `franka_emika_panda.yaml`; `default.yaml` aliases Franka — [ADR-0008](docs/adr/008-hydra-configuration.md).
+- `configs/model/` split into `diffusion.yaml` and `flow.yaml`; `default.yaml` aliases diffusion; shared `grasp.yaml` for common grasp representation — [ADR-0008](docs/adr/008-hydra-configuration.md).
+- Config deduplication: artifact paths via `${paths.*}`; synthetic and RL keys interpolate from gripper/metrics; object export filenames use `${objects.ids.0}` — [ADR-0008](docs/adr/008-hydra-configuration.md).
+- Training and evaluation notebook entrypoints merged into `configs/training/{diffusion,flow}.yaml` and `configs/evaluation/{diffusion,flow,rl}.yaml`; load via `--config-name group/name` — [ADR-0008](docs/adr/008-hydra-configuration.md).
+- `configs/training/` split into `diffusion.yaml` and `flow.yaml`; `default.yaml` aliases diffusion — [ADR-0008](docs/adr/008-hydra-configuration.md).
+- `configs/evaluation/default.yaml` holds shared metrics/limits; method variants `diffusion.yaml`, `flow.yaml`, `rl.yaml` — [ADR-0008](docs/adr/008-hydra-configuration.md).
 - Analytical metric `lift_success` → `grasp_success`; 9D grasp representation in configs.
 - Dead helpers wired; duplicate training/checkpoint/SE(3) paths consolidated — [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md).
 - Dual inference CLIs share runtime helpers; artifact and runtime grasp formats reconciled — [ADR-0005](docs/adr/005-runtime-workflow-integration.md).

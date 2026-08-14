@@ -5,6 +5,7 @@ from grasping_ai.config.yaml_loader import (
     config_path,
     load_project_yaml_config,
     parse_config_dir_from_argv,
+    parse_config_overrides_from_argv,
 )
 from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
 
@@ -12,7 +13,14 @@ if __name__ == "__main__":
     import argparse
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "training", "object")
+    overrides = parse_config_overrides_from_argv()
+    if not any(item.startswith("training=") for item in overrides):
+        overrides = ["training=flow", *overrides]
+    if not any(item.startswith("model=") for item in overrides):
+        overrides = ["model=flow", *overrides]
+    if not any(item.startswith("evaluation=") for item in overrides):
+        overrides = ["evaluation=flow", *overrides]
+    cfg = load_project_yaml_config(config_dir, overrides=overrides)
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -99,7 +107,7 @@ if __name__ == "__main__":
             "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root or pass explicitly)"
         )
     if args.checkpoint is None:
-        parser.error("--checkpoint is required (set in configs/model/default.yaml flow.checkpoint or pass explicitly)")
+        parser.error("--checkpoint is required (set in configs/model/flow.yaml flow.checkpoint or pass explicitly)")
     from grasping_ai.utils.logging_utils import init_mlflow, setup_logging
     setup_logging(module_name="train_flow")
     use_mlflow = init_mlflow(cfg)

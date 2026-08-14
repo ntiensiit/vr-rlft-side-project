@@ -1,0 +1,22 @@
+# @package _global_
+defaults:
+  - grasp
+
+default_method: diffusion
+architecture:
+  feature_dim: 32
+  hidden_dim: 32
+  num_layers: 2
+  num_grasps: 8
+diffusion:
+  inference_steps: 5
+  checkpoint: ${paths.checkpoints}/diffusion_grasp_generator.pt
+  tensorboard: ${paths.tensorboard}/diffusion_train
+  exports:
+    grasp_candidates: ${paths.exports}/diffusion_grasp_candidates_by_object.npy
+    grasp_poses: ${paths.exports}/diffusion_grasp_poses_${objects.ids.0}.npy
+    simulation_report: ${paths.reports}/diffusion_simulation_outcomes_${objects.ids.0}.jsonl
+    evaluation_report: ${paths.reports}/diffusion_analytical_evaluation_report.jsonl
+  beta_start: 1.0e-4
+  beta_end: 0.02
+  num_steps: 100

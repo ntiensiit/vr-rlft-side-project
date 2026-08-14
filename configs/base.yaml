@@ -1,3 +1,12 @@
+defaults:
+  - data: default
+  - gripper: default
+  - env: default
+  - object: default
+  - model: default
+  - rl: default
+  - notebook: default
+
 seed: 42
 device: cpu
 experiment_name: default
@@ -15,3 +24,4 @@ paths:
   ycb_mjcf: ${oc.env:MGS_INPUT_DIR,"data"}/processed/ycb_mjcf
   observations: ${oc.env:MGS_INPUT_DIR,"data"}/observations
   tensorboard: ${oc.env:MGS_OUTPUT_DIR,"artifacts"}/exports/tensorboard
+

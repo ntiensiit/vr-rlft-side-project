@@ -35,7 +35,7 @@ MLflow, complementary use with TensorBoard).
 
 Synthetic and generated grasps store **contact-frame** poses (origin at the
 antipodal midpoint). ``simulate_grasp`` converts to the Panda **hand frame**
-before IK (ADR-0009). Constants live in ``configs/gripper/default.yaml``.
+before IK (ADR-0009). Constants live in ``configs/gripper/franka_emika_panda.yaml``.
 
 For per-phase design and verification status, see
 `docs/PROJECT.md` and `CHECKLIST.md`.

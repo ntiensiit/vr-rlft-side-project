@@ -57,10 +57,11 @@ def test_stable_baselines_dependency_available():
     assert stable_baselines3.__version__ is not None
 
 
-def test_training_config_file_exists():
-    """Verify that configs/training/default.yaml exists."""
-    config_path = os.path.join("configs", "training", "default.yaml")
-    assert os.path.isfile(config_path)
+def test_training_config_files_exist():
+    """Verify training config default alias and method variants exist."""
+    assert os.path.isfile(os.path.join("configs", "training", "default.yaml"))
+    assert os.path.isfile(os.path.join("configs", "training", "diffusion.yaml"))
+    assert os.path.isfile(os.path.join("configs", "training", "flow.yaml"))
 
 
 def test_policy_network_forward_shape():

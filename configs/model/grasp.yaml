@@ -1,0 +1,4 @@
+# @package _global_
+grasp:
+  dim: 9
+  representation: 6d_rotation_columns

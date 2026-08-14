@@ -8,6 +8,7 @@ from grasping_ai.config.yaml_loader import (
     config_str_list,
     load_project_yaml_config,
     parse_config_dir_from_argv,
+    parse_config_overrides_from_argv,
 )
 from grasping_ai.pipelines.evaluate import (
     aggregate_evaluation_results,
@@ -20,7 +21,8 @@ if __name__ == "__main__":
     import argparse
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "evaluation")
+    overrides = parse_config_overrides_from_argv()
+    cfg = load_project_yaml_config(config_dir, overrides=overrides)
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -34,7 +36,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--report",
         type=Path,
-        default=config_path(cfg, "diffusion", "exports", "evaluation_report"),
+        default=config_path(cfg, "evaluation", "analytical_report")
+        or config_path(cfg, "diffusion", "exports", "evaluation_report"),
     )
     parser.add_argument(
         "--observations-dir",
@@ -82,8 +85,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.report is None:
         parser.error(
-            "--report is required (set in configs/model/default.yaml "
-            "diffusion.exports.evaluation_report or pass explicitly)"
+            "--report is required (set in configs/evaluation/diffusion.yaml "
+            "evaluation.analytical_report or pass explicitly)"
         )
 
     gripper_point_cloud = np.load(args.gripper_point_cloud)

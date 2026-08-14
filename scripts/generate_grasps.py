@@ -18,7 +18,7 @@ if __name__ == "__main__":
     import argparse
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "model")
+    cfg = load_project_yaml_config(config_dir)
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -56,11 +56,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.checkpoint is None:
         parser.error(
-            "--checkpoint is required (set in configs/model/default.yaml diffusion.checkpoint or pass explicitly)"
+            "--checkpoint is required (set in configs/model/diffusion.yaml diffusion.checkpoint or pass explicitly)"
         )
     if args.output is None:
         parser.error(
-            "--output is required (set in configs/model/default.yaml "
+            "--output is required (set in configs/model/diffusion.yaml "
             "diffusion.exports.grasp_candidates or pass explicitly)"
         )
 

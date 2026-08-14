@@ -1,8 +1,16 @@
 # @package _global_
 paths:
-  dataset_root: data/processed
-  ycb_root: data/raw/ycb
-  output_index: data/processed/index.json
+  input_dir: ${oc.env:MGS_INPUT_DIR,"data"}
+  output_dir: ${oc.env:MGS_OUTPUT_DIR,"artifacts"}
+  dataset_root: ${paths.input_dir}/processed
+  ycb_root: ${paths.input_dir}/raw/ycb
+  ycb_mjcf: ${paths.input_dir}/processed/ycb_mjcf
+  observations: ${paths.input_dir}/observations
+  output_index: ${paths.input_dir}/processed/index.json
+  checkpoints: ${paths.output_dir}/checkpoints
+  exports: ${paths.output_dir}/exports
+  reports: ${paths.output_dir}/reports
+  tensorboard: ${paths.output_dir}/exports/tensorboard
 
 splits:
   train: train
@@ -11,7 +19,7 @@ splits:
 synthetic:
   num_samples: 512
   num_grasps: 16
-  gripper_width: 0.08
+  gripper_width: ${robot.gripper.max_width}
   seed: 42
   oversample_factor: 2
   oversample_extra: 256
@@ -26,8 +34,8 @@ synthetic:
   min_grasp_translation: 0.01
   min_grasp_rotation: 0.2
   min_quality_score: 0.0
-  friction_coefficient: 0.5
-  collision_clearance: 0.005
+  friction_coefficient: ${metrics.friction_coefficient}
+  collision_clearance: ${metrics.collision_clearance}
   sim_validate: false
   sim_validate_require_lift: false
   sim_validate_require_ik: true

@@ -176,7 +176,21 @@ def run_rl_evaluation_main(
 if __name__ == "__main__":
     import argparse
 
-    from grasping_ai.config.yaml_loader import optional_cli_path
+    from grasping_ai.config.yaml_loader import (
+        config_get,
+        config_int,
+        config_path,
+        load_project_yaml_config,
+        optional_cli_path,
+        parse_config_dir_from_argv,
+        parse_config_overrides_from_argv,
+    )
+
+    config_dir = parse_config_dir_from_argv()
+    overrides = parse_config_overrides_from_argv()
+    if not any(item.startswith("evaluation=") for item in overrides):
+        overrides = ["evaluation=rl", *overrides]
+    cfg = load_project_yaml_config(config_dir, overrides=overrides)
 
     parser = argparse.ArgumentParser(description="Run deterministic rollouts of the exported RL policy")
     parser.add_argument("--policy-checkpoint", type=Path, required=True)
@@ -185,9 +199,21 @@ if __name__ == "__main__":
     parser.add_argument("--object-id", type=str, required=True)
     parser.add_argument("--observation-dim", type=int, required=True)
     parser.add_argument("--action-dim", type=int, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--episodes", type=int, required=True)
-    parser.add_argument("--max-steps", type=int, required=True)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=config_path(cfg, "evaluation", "rollout_report"),
+    )
+    parser.add_argument(
+        "--episodes",
+        type=int,
+        default=config_int(cfg, "evaluation", "episodes", default=5),
+    )
+    parser.add_argument(
+        "--max-steps",
+        type=int,
+        default=config_int(cfg, "evaluation", "max_steps", default=100),
+    )
     parser.add_argument("--device", type=str, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--table-xml", type=optional_cli_path, default=None)
@@ -204,15 +230,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stochastic",
         action="store_true",
+        default=bool(config_get(cfg, "evaluation", "stochastic", default=False)),
         help="Sample actions with Gaussian exploration noise",
     )
     parser.add_argument(
         "--exploration-noise",
         type=float,
-        default=0.1,
+        default=float(config_get(cfg, "evaluation", "exploration_noise", default=0.1)),
         help="Exploration noise scale when --stochastic is set",
     )
     args = parser.parse_args()
+    if args.output is None:
+        parser.error(
+            "--output is required (set in configs/evaluation/rl.yaml evaluation.rollout_report or pass explicitly)"
+        )
     run_rl_evaluation_main(
         policy_checkpoint_path=args.policy_checkpoint,
         robot_xml_path=args.robot_xml,

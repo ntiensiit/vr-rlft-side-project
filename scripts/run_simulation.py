@@ -17,7 +17,7 @@ if __name__ == "__main__":
     import argparse
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "gripper", "env", "object")
+    cfg = load_project_yaml_config(config_dir)
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -66,11 +66,12 @@ if __name__ == "__main__":
         parser.error("--ycb-root is required (set in configs/base.yaml paths.ycb_mjcf or pass explicitly)")
     if args.robot_xml is None:
         parser.error(
-            "--robot-xml is required (set in configs/gripper/default.yaml robot.description or pass explicitly)"
+            "--robot-xml is required (set in configs/gripper/franka_emika_panda.yaml "
+            "robot.description or pass explicitly)"
         )
     if args.output is None:
         parser.error(
-            "--output is required (set in configs/model/default.yaml "
+            "--output is required (set in configs/model/diffusion.yaml "
             "diffusion.exports.simulation_report or pass explicitly)"
         )
 

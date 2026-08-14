@@ -7,6 +7,7 @@
 ```text
 configs/                       YAML defaults loaded by CLI scripts (--config-dir to override)
 scripts/                       Thin CLI entry points
+notebooks/                     Colab-ready research notebooks (see notebooks/README.md)
 notebooks/archive/             Retired exploratory notebooks (see README there)
 src/grasping_ai/
   data/                        Dataset loading and transforms

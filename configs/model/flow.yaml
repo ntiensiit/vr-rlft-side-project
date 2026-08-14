@@ -1,9 +1,18 @@
 # @package _global_
+defaults:
+  - grasp
+
 default_method: flow
 architecture:
   feature_dim: 64
   hidden_dim: 64
   num_layers: 3
+  num_grasps: 8
 flow:
-  train_steps: 150
   inference_steps: 10
+  checkpoint: ${paths.checkpoints}/flow_grasp_generator.pt
+  tensorboard: ${paths.tensorboard}/flow_train
+  exports:
+    grasp_poses: ${paths.exports}/flow_grasp_poses_${objects.ids.0}.npy
+    simulation_report: ${paths.reports}/flow_simulation_outcomes_${objects.ids.0}.jsonl
+    evaluation_report: ${paths.reports}/flow_analytical_evaluation_report.jsonl

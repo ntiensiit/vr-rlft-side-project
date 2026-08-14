@@ -1,0 +1,7 @@
+# @package _global_
+notebook:
+  download_ycb: true
+  object_index: 0
+  augment: true
+  mount_drive: true
+  drive_storage_dir: vr-rlft-side-project

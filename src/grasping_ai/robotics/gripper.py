@@ -9,7 +9,7 @@ import numpy as np
 def panda_hand_to_contact_transform() -> np.ndarray:
     """Return the Panda hand-base to contact-center rigid transform.
 
-    Values match ``configs/gripper/default.yaml`` and the MuJoCo Grasping
+    Values match ``configs/gripper/franka_emika_panda.yaml`` and the MuJoCo Grasping
     Simulator Panda gripper definition (translation along hand z, wxyz quaternion).
 
     Returns:

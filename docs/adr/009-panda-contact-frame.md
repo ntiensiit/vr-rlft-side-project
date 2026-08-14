@@ -21,7 +21,7 @@ reference Panda models.
 
 1. Document that dataset and analytical grasps remain **contact-frame** SE(3)
    poses; simulation converts to **hand-frame** before IK.
-2. Store Panda numeric constants in ``configs/gripper/default.yaml`` (width
+2. Store Panda numeric constants in ``configs/gripper/franka_emika_panda.yaml`` (width
    limits, joint ranges, ``base_to_contact`` translation and wxyz quaternion).
 3. Implement ``panda_hand_to_contact_transform`` and
    ``panda_width_to_finger_joints`` in ``grasping_ai.robotics.gripper`` using

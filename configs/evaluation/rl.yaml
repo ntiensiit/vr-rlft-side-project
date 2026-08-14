@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - default
+  - _self_
+
+evaluation:
+  method: rl
+  rollout_report: ${paths.reports}/rl_grasp_rollout_report.jsonl
+  episodes: 5
+  max_steps: 100
+  stochastic: false
+  exploration_noise: 0.1

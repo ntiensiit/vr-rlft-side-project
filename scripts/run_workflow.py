@@ -302,12 +302,32 @@ if __name__ == "__main__":
         load_project_yaml_config,
         optional_cli_path,
         parse_config_dir_from_argv,
+        parse_config_overrides_from_argv,
     )
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "training", "evaluation", "robot", "simulation")
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
+    pre_parser.add_argument(
+        "--method",
+        type=str,
+        choices=["diffusion", "flow"],
+        default=None,
+    )
+    pre_args, _ = pre_parser.parse_known_args()
+    overrides = parse_config_overrides_from_argv()
+    method = pre_args.method or (
+        "flow" if any(item == "model=flow" for item in overrides) else "diffusion"
+    )
+    if pre_args.method is not None:
+        overrides = [item for item in overrides if not item.startswith("model=")]
+        overrides = [item for item in overrides if not item.startswith("evaluation=")]
+        eval_choice = "default" if method == "diffusion" else method
+        overrides = [f"model={method}", f"evaluation={eval_choice}", *overrides]
+    elif not any(item.startswith("evaluation=") for item in overrides):
+        eval_method = "flow" if any(item == "model=flow" for item in overrides) else "default"
+        overrides = [f"evaluation={eval_method}", *overrides]
+    cfg = load_project_yaml_config(config_dir, overrides=overrides)
     parser = argparse.ArgumentParser(
         description="Run the end-to-end runtime workflow on a single object",
         parents=[pre_parser],
@@ -326,7 +346,7 @@ if __name__ == "__main__":
         "--method",
         type=str,
         choices=["diffusion", "flow"],
-        default=str(config_get(cfg, "default_method")),
+        default=str(config_get(cfg, "evaluation", "method") or config_get(cfg, "default_method")),
     )
     parser.add_argument(
         "--feature-dim",
@@ -404,9 +424,15 @@ if __name__ == "__main__":
         if args.method == "flow":
             args.checkpoint = config_path(cfg, "flow", "checkpoint")
         if args.checkpoint is None:
-            parser.error("--checkpoint is required (set in configs/model/default.yaml or pass explicitly)")
+            parser.error(
+                "--checkpoint is required (set in configs/model/diffusion.yaml or "
+                "configs/model/flow.yaml or pass explicitly)"
+            )
     if args.output_dir is None:
-        parser.error("--output-dir is required (set in configs/base.yaml paths.output_dir or pass explicitly)")
+        parser.error(
+            "--output-dir is required (set in configs/base.yaml paths.output_dir "
+            "or pass explicitly)"
+        )
     diffusion_steps = int(config_get(cfg, "diffusion", "inference_steps"))
     if args.method == "flow" and args.num_steps == diffusion_steps:
         args.num_steps = int(config_get(cfg, "flow", "inference_steps"))

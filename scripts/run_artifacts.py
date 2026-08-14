@@ -26,7 +26,7 @@ def main() -> None:
     config_dir = parse_config_dir_from_argv()
     if not config_dir.is_absolute():
         config_dir = root / config_dir
-    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "training", "evaluation", "robot", "simulation")
+    cfg = load_project_yaml_config(config_dir)
     artifacts = root / str(config_get(cfg, "paths", "output_dir"))
     data_processed = root / str(config_get(cfg, "paths", "dataset_root"))
     ycb_root = root / str(config_get(cfg, "paths", "ycb_root"))

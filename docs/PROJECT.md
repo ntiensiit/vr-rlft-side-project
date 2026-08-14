@@ -114,10 +114,11 @@ The current scope includes:
 The following details have been specified and implemented during recent phases:
 
 - **Robot & Gripper:** Franka Emika Panda model (in `deploy/robot.xml` and `deploy/franka_emika_panda/panda.xml`) with a contact-to-hand transform base offset and fingertip pad friction.
-- **Grasp Generation:** Both conditional diffusion (`train_diffusion.py`) and flow-matching (`train_flow.py`) methods are implemented.
+- **Grasp Generation:** Both conditional diffusion (`scripts/train_diffusion.py`, `notebooks/train_diffusion.py`) and flow-matching (`scripts/train_flow.py`, `notebooks/train_flow.py`) methods are implemented.
 - **Grasp Representation:** 9D vector representation (3 translation components + first 2 columns of the rotation matrix).
 - **Configuration System:** Hydra (`hydra-core`) config composition via `configs/config.yaml` and config groups.
 - **Experiment Tracking:** TensorBoard for local scalar tracking and Weights & Biases (optional) for artifact versioning and lineage.
+- **Interactive Notebooks:** Google Colab–ready percent-format notebooks in `notebooks/`; data prep invokes existing `scripts/` entry points, training/evaluation call `grasping_ai.pipelines.*`. See `notebooks/README.md`.
 
 ### 4.3 Not yet specified / Open Decisions
 
@@ -195,7 +196,7 @@ A flow formulation can learn a vector field that transforms an initial distribut
 
 A score-based diffusion formulation learns a score function used during denoising and sampling.
 
-**Status note (2026-08-12):** both flow and diffusion paths are now fully implemented through to training. `scripts/train_diffusion.py` runs diffusion-based supervised training; `scripts/train_flow.py` runs flow-matching supervised training. Both produce checkpoints loadable by the corresponding inference modules.
+**Status note (2026-08-12):** both flow and diffusion paths are now fully implemented through to training. `scripts/train_diffusion.py` and `notebooks/train_diffusion.py` run diffusion-based supervised training; `scripts/train_flow.py` and `notebooks/train_flow.py` run flow-matching supervised training. Both produce checkpoints loadable by the corresponding inference modules.
 
 ### 5.5 Robotics layer
 
@@ -258,6 +259,8 @@ Possible roles for RL identified during project analysis include:
 - Optimization using simulation feedback.
 
 The exact role is not yet fixed by the project specification.
+
+**Status note (2026-08-14):** PPO training via Stable-Baselines3 against `MuJoCoGraspingEnv` is implemented in `scripts/train_rl.py` and `notebooks/train_rl.py`. Policy rollouts are available through `scripts/run_rl_evaluation.py` and the RL section of `notebooks/evaluate.py`.
 
 ### 5.8 Evaluation layer
 
@@ -555,19 +558,31 @@ grasping_ai/
 │   ├── config.yaml
 │   ├── data/
 │   │   └── default.yaml
-│   ├── env/
-│   │   └── default.yaml
 │   ├── evaluation/
-│   │   └── default.yaml
-│   ├── gripper/
-│   │   └── default.yaml
+│   │   ├── default.yaml
+│   │   ├── diffusion.yaml
+│   │   ├── flow.yaml
+│   │   └── rl.yaml
 │   ├── model/
 │   │   ├── default.yaml
+│   │   ├── diffusion.yaml
 │   │   └── flow.yaml
 │   ├── object/
 │   │   └── default.yaml
+│   ├── gripper/
+│   │   ├── default.yaml
+│   │   └── franka_emika_panda.yaml
+│   ├── env/
+│   │   └── default.yaml
+│   ├── notebook/
+│   │   └── default.yaml
+│   ├── rl/
+│   │   ├── default.yaml
+│   │   └── rl_train.yaml
 │   └── training/
-│       └── default.yaml
+│       ├── default.yaml
+│       ├── diffusion.yaml
+│       └── flow.yaml
 │
 ├── data/
 │   ├── raw/
@@ -591,11 +606,26 @@ grasping_ai/
 │
 ├── scripts/
 │   ├── prepare_data.py
-│   ├── train.py
-│   ├── evaluate.py
+│   ├── prepare_observations.py
+│   ├── train_diffusion.py
+│   ├── train_flow.py
+│   ├── train_rl.py
+│   ├── run_grasp_inference.py
 │   ├── generate_grasps.py
+│   ├── evaluate.py
 │   ├── run_simulation.py
-│   └── train_rl.py
+│   ├── run_rl_evaluation.py
+│   ├── run_artifacts.py
+│   └── visualize_robot.py
+│
+├── notebooks/
+│   ├── README.md
+│   ├── train_diffusion.py
+│   ├── train_flow.py
+│   ├── train_rl.py
+│   ├── evaluate.py
+│   └── archive/
+│       └── README.md
 │
 ├── artifacts/
 │   ├── checkpoints/
@@ -737,6 +767,19 @@ For flow-based generation, the model learns a vector field that transforms an in
 
 For RL, the training data is generated through interaction with the simulation environment rather than necessarily coming from a static labeled dataset.
 
+### Interactive notebook entry points
+
+Google Colab–ready percent-format notebooks in `notebooks/` follow a standard research layout: environment bootstrap, editable `RUN` configuration, data preparation via existing `scripts/`, pipeline execution, and results summary. Data commands mirror `scripts/run_artifacts.py`.
+
+| Notebook | Script equivalent | Pipeline |
+| --- | --- | --- |
+| `notebooks/train_diffusion.py` | `scripts/train_diffusion.py` | `run_diffusion_training_pipeline` |
+| `notebooks/train_flow.py` | `scripts/train_flow.py` | `run_flow_training_pipeline` (`model=flow` override) |
+| `notebooks/train_rl.py` | `scripts/train_rl.py` | `run_rl_training_pipeline` |
+| `notebooks/evaluate.py` | `run_grasp_inference.py`, `evaluate.py`, `run_simulation.py`, `run_rl_evaluation.py` | diffusion/flow inference, analytical evaluation, MuJoCo simulation, RL rollouts |
+
+On Colab: set **Runtime → GPU**, run cells sequentially, and optionally set `MOUNT_DRIVE = True` in the environment cell. See `notebooks/README.md`.
+
 ## 18. Inference Workflow
 
 At inference time, training is not performed.
@@ -827,6 +870,8 @@ Common evaluator
 ```
 
 This makes quantitative comparison possible.
+
+The combined evaluation notebook (`notebooks/evaluate.py`) runs diffusion and flow inference, shared analytical metrics, MuJoCo simulation sweeps, and RL policy rollouts for the first configured YCB object, writing reports under `artifacts/reports/`.
 
 Relevant metrics include:
 
@@ -960,7 +1005,7 @@ A new contributor should understand the project in the following order:
 6. Set up the Python and MuJoCo environment.
 7. Load a YCB object in simulation.
 8. Verify robot and gripper control.
-9. Run the basic grasp-generation and evaluation pipeline.
+9. Run the basic grasp-generation and evaluation pipeline via `scripts/run_artifacts.py` or the interactive notebooks in `notebooks/`.
 10. Only then work on training and RL components.
 
 The first implementation milestone should be an end-to-end system that can produce a grasp pose, execute it in MuJoCo on a YCB object, and report an objective evaluation result.
@@ -974,6 +1019,7 @@ Source and configuration that define the project should be version controlled:
 - `src/`
 - `configs/`
 - `scripts/`
+- `notebooks/`
 - `tests/`
 - `docs/`
 - `deploy/`

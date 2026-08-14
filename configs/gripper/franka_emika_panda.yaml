@@ -1,0 +1,20 @@
+# @package _global_
+robot:
+  description: deploy/robot.xml
+  gripper:
+    description: deploy/robot.xml
+    max_width: 0.08
+    min_width_clamp: 0.003
+    close_command:
+      - 0.0
+    open_command:
+      - 0.04
+    joint_ranges:
+      finger_joint1: [0.0, 0.04]
+      finger_joint2: [-0.04, 0.0]
+    base_to_contact:
+      position: [0, 0, -0.102]
+      quaternion_wxyz: [0.707106781, 0.0, 0.0, 0.707106781]
+  ik:
+    max_iterations: 400
+    tolerance: 0.001

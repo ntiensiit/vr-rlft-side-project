@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /base
+  - /evaluation: default
+  - _self_
+
+notebook:
+  experiment: rl_grasp_colab
+  augment: false
+  mount_drive: false

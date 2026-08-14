@@ -55,10 +55,11 @@ def test_phase1_package_import_remains_stable():
     assert grasping_ai.__name__ == "grasping_ai"
 
 
-def test_model_config_file_exists():
-    """Verify that configs/model/default.yaml exists."""
-    config_path = os.path.join("configs", "model", "default.yaml")
-    assert os.path.isfile(config_path)
+def test_model_config_files_exist():
+    """Verify that configs/model default, diffusion, and flow configs exist."""
+    assert os.path.isfile(os.path.join("configs", "model", "default.yaml"))
+    assert os.path.isfile(os.path.join("configs", "model", "diffusion.yaml"))
+    assert os.path.isfile(os.path.join("configs", "model", "flow.yaml"))
 
 
 def test_generative_model_forward_shape():

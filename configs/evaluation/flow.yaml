@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - default
+  - override /model: flow
+  - _self_
+
+evaluation:
+  method: flow
+  analytical_report: ${paths.reports}/flow_analytical_evaluation_report.jsonl
+  simulation_report: ${paths.reports}/flow_simulation_outcomes_${objects.ids.0}.jsonl
+  filter_collisions: false

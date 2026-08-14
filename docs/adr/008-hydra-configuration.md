@@ -27,10 +27,10 @@ standard override syntax and a single composable config entrypoint.
      - base
      - model: default
      - data: default
-     - robot: default
-     - simulation: default
+     - gripper: default
+     - env: default
      - training: default
-     - evaluation: default
+     - evaluation: diffusion
      - _self_
    ```
 
@@ -69,3 +69,20 @@ Revisit when:
 - a hosted experiment registry (W&B artifacts, ADR-0007) must link to Hydra
   run IDs automatically;
 - config groups grow large enough to split by environment (dev/prod).
+
+## Follow-up (2026-08-14)
+
+Unified config layout to match the ADR-0008 group names and remove split keys:
+
+- `configs/gripper/` holds robot MJCF, gripper, and IK settings (top-level key `robot:`).
+- `configs/env/` holds MuJoCo timestep and rollout length (`dt`, `num_steps`).
+- All `paths` consolidated under `configs/data/default.yaml` with `${paths.input_dir}` interpolation; removed from `base.yaml`.
+- All `rl` settings consolidated under `configs/rl/default.yaml` (removed from `model/` and `training/`).
+- `configs/model/flow.yaml` exports aligned with diffusion export paths.
+- CLI scripts call `load_project_yaml_config(config_dir)` without redundant layer lists when `config.yaml` is present.
+- `configs/gripper/default.yaml` split into `configs/gripper/franka_emika_panda.yaml`; `default.yaml` defaults to Franka.
+- `configs/model/default.yaml` split into `configs/model/diffusion.yaml` and `configs/model/flow.yaml`; `default.yaml` defaults to diffusion.
+- Config deduplication: shared `configs/model/grasp.yaml`; artifact paths use `${paths.checkpoints|exports|reports|tensorboard}`; synthetic `gripper_width`, friction/collision, and RL `lift_height_threshold` interpolate from gripper/metrics; object-specific export filenames use `${objects.ids.0}`; removed unused `diffusion.train_steps`.
+- `configs/training/default.yaml` split into `configs/training/diffusion.yaml` and `configs/training/flow.yaml`; `default.yaml` defaults to diffusion.
+- `configs/evaluation/default.yaml` holds shared metrics/limits only; `diffusion.yaml`, `flow.yaml`, and `rl.yaml` compose `default` for shared keys and serve as full notebook/CLI entrypoints.
+- Training presets merged into `configs/training/diffusion.yaml` and `configs/training/flow.yaml`; evaluation presets merged into `configs/evaluation/diffusion.yaml`, `flow.yaml`, and `rl.yaml`. Load via `config_name="group/name"` (e.g. `training/diffusion`, `evaluation/flow`).

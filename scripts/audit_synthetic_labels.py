@@ -107,7 +107,7 @@ def audit_synthetic_labels(
 
 if __name__ == "__main__":
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "evaluation")
+    cfg = load_project_yaml_config(config_dir)
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(

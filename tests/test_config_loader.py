@@ -25,7 +25,7 @@ def test_load_yaml_mapping_reads_base_config() -> None:
     cfg = load_yaml_mapping(Path("configs/base.yaml"))
     assert cfg["device"] == "cpu"
     assert cfg["seed"] == 42
-    assert config_get(cfg, "paths", "output_dir") == '${oc.env:MGS_OUTPUT_DIR,"artifacts"}'
+    assert cfg["experiment_name"] == "default"
 
 
 def test_load_project_yaml_config_merges_layers() -> None:
@@ -37,6 +37,32 @@ def test_load_project_yaml_config_merges_layers() -> None:
     assert config_get(cfg, "diffusion", "checkpoint") == ("artifacts/checkpoints/diffusion_grasp_generator.pt")
     assert config_get(cfg, "rl", "learning_rate") == 0.0003
     assert config_get(cfg, "rl", "observation_dim") == 31
+
+
+def test_load_project_yaml_config_composes_evaluation_groups() -> None:
+    """Verify that evaluation defaults compose common metrics and method settings."""
+    cfg = load_project_yaml_config(Path("configs"))
+    assert config_get(cfg, "metrics", "friction_coefficient") == 0.5
+    assert config_get(cfg, "limits", "max_linear_velocity") == 0.05
+    assert config_get(cfg, "evaluation", "method") == "diffusion"
+
+
+def test_load_project_yaml_config_applies_evaluation_override() -> None:
+    """Verify that evaluation=rl selects RL rollout settings."""
+    cfg = load_project_yaml_config(Path("configs"), overrides=["evaluation=rl"])
+    assert config_get(cfg, "evaluation", "method") == "rl"
+    assert config_get(cfg, "evaluation", "episodes") == 5
+    assert config_get(cfg, "metrics", "friction_coefficient") == 0.5
+
+
+def test_load_project_yaml_config_applies_training_override() -> None:
+    """Verify that training=flow selects the flow supervised config group."""
+    cfg = load_project_yaml_config(
+        Path("configs"),
+        overrides=["model=flow", "training=flow"],
+    )
+    assert config_get(cfg, "default_method") == "flow"
+    assert config_get(cfg, "supervised", "batch_size") == 2
 
 
 def test_load_project_yaml_config_applies_hydra_overrides() -> None:
@@ -159,11 +185,38 @@ def test_parse_config_dir_from_argv_reads_flag() -> None:
     assert parse_config_dir_from_argv(["--config-dir", "custom"]) == Path("custom")
 
 
+def test_load_project_yaml_config_uses_named_entrypoint() -> None:
+    """Verify that config_name selects a full preset composition."""
+    cfg = load_project_yaml_config(Path("configs"), config_name="training/flow")
+    assert config_get(cfg, "default_method") == "flow"
+    assert config_get(cfg, "supervised", "batch_size") == 2
+
+
+def test_load_project_yaml_config_includes_notebook_settings() -> None:
+    """Verify that notebook entrypoints compose shared notebook run settings."""
+    cfg = load_project_yaml_config(Path("configs"), config_name="training/diffusion")
+    assert config_get(cfg, "notebook", "experiment") == "diffusion_grasp_colab"
+    assert config_get(cfg, "notebook", "download_ycb") is True
+    assert config_get(cfg, "notebook", "augment") is False
+    assert config_get(cfg, "notebook", "object_index") == 0
+    assert config_get(cfg, "notebook", "mount_drive") is False
+    assert config_get(cfg, "notebook", "drive_storage_dir") == "vr-rlft-side-project"
+
+
+def test_parse_config_name_from_argv_reads_flag() -> None:
+    """Parse an explicit ``--config-name`` flag from argv."""
+    from grasping_ai.config.yaml_loader import parse_config_name_from_argv
+
+    assert parse_config_name_from_argv(["--config-name", "training/flow"]) == "training/flow"
+
+
 def test_parse_config_overrides_from_argv() -> None:
     """Parse Hydra-style overrides while skipping argparse flags."""
     argv = [
         "--config-dir",
         "configs",
+        "--config-name",
+        "training/diffusion",
         "--config-dir=other",
         "--epochs",
         "10",

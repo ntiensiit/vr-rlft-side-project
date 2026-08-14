@@ -389,18 +389,24 @@ def generate_synthetic_dataset(
 
 if __name__ == "__main__":
     from grasping_ai.config.yaml_loader import (
+        config_float,
         config_float_list,
         config_get,
         config_path,
         config_str_list,
         load_project_yaml_config,
         parse_config_dir_from_argv,
+        parse_config_name_from_argv,
+        parse_config_overrides_from_argv,
     )
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "object", "evaluation", "gripper", "env")
+    config_name = parse_config_name_from_argv()
+    overrides = parse_config_overrides_from_argv()
+    cfg = load_project_yaml_config(config_dir, config_name=config_name, overrides=overrides)
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
+    pre_parser.add_argument("--config-name", type=str, default=config_name)
     parser = argparse.ArgumentParser(
         description="Prepare grasp dataset or generate synthetic data",
         parents=[pre_parser],
@@ -516,24 +522,14 @@ if __name__ == "__main__":
             min_grasp_translation=float(synthetic_cfg.get("min_grasp_translation", 0.01)),
             min_grasp_rotation=float(synthetic_cfg.get("min_grasp_rotation", 0.2)),
             min_quality_score=float(synthetic_cfg.get("min_quality_score", 0.0)),
-            friction_coefficient=float(
-                synthetic_cfg.get(
-                    "friction_coefficient",
-                    metrics_cfg.get("friction_coefficient", 0.5),
-                )
-            ),
-            collision_clearance=float(
-                synthetic_cfg.get(
-                    "collision_clearance",
-                    metrics_cfg.get("collision_clearance", 0.005),
-                )
-            ),
+            friction_coefficient=config_float(cfg, "synthetic", "friction_coefficient", default=0.5),
+            collision_clearance=config_float(cfg, "synthetic", "collision_clearance", default=0.005),
             sim_validate=args.sim_validate,
             mjcf_root=config_path(cfg, "paths", "ycb_mjcf"),
             robot_xml=config_path(cfg, "robot", "description"),
             num_simulation_steps=int(config_get(cfg, "num_steps", default=500)),
             gripper_close_command=close_command,
-            lift_height_threshold=float(metrics_cfg.get("lift_height_threshold", 0.05)),
+            lift_height_threshold=config_float(cfg, "metrics", "lift_height_threshold", default=0.05),
             max_linear_velocity=float(limits_cfg.get("max_linear_velocity", 0.05)),
             max_angular_velocity=float(limits_cfg.get("max_angular_velocity", 0.1)),
             quality_report_path=args.quality_report,
