@@ -116,10 +116,7 @@ def sample_point_cloud_from_mesh(mesh_path: Path, num_samples: int, rng: np.rand
     areas = 0.5 * np.linalg.norm(cross_prod, axis=1)
 
     total_area = np.sum(areas)
-    if total_area <= 0:
-        probabilities = np.ones(len(triangles)) / len(triangles)
-    else:
-        probabilities = areas / total_area
+    probabilities = np.ones(len(triangles)) / len(triangles) if total_area <= 0 else areas / total_area
 
     # Sample triangle indices
     sampled_indices = rng.choice(len(triangles), size=num_samples, p=probabilities)

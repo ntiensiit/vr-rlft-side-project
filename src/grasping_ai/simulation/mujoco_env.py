@@ -7,6 +7,11 @@ import gymnasium as gym
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
 
+from grasping_ai.config.yaml_loader import (
+    config_get,
+    load_project_yaml_config,
+    parse_config_dir_from_argv,
+)
 from grasping_ai.perception.geometry import make_transform
 
 SimulationStep = Callable[[float], None]
@@ -50,8 +55,6 @@ class RewardConfig:
         Returns:
             A RewardConfig instance populated with configured parameters.
         """
-        from grasping_ai.config.yaml_loader import config_get
-
         return cls(
             action_cost_weight=float(config_get(cfg, "rl", "reward", "action_cost_weight", default=0.01)),
             survival_bonus=float(config_get(cfg, "rl", "reward", "survival_bonus", default=1.0)),
@@ -325,8 +328,6 @@ class MuJoCoGraspingEnv(gym.Env):
         self._object_name = object_name
         if reward_config is None:
             try:
-                from grasping_ai.config.yaml_loader import load_project_yaml_config, parse_config_dir_from_argv
-
                 _cfg = load_project_yaml_config(parse_config_dir_from_argv())
                 reward_config = RewardConfig.load_from_config(_cfg)
             except Exception:
