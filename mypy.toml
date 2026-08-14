@@ -11,3 +11,10 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 files = ["src", "tests"]
 exclude = ["\\.venv", "build", "dist"]
+
+[[tool.mypy.overrides]]
+module = [
+    "loguru.*",
+    "mlflow.*",
+]
+ignore_missing_imports = true
