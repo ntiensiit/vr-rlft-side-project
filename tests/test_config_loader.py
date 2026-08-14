@@ -330,3 +330,5 @@ def test_optional_cli_path_treats_none_literal_as_absent() -> None:
     assert optional_cli_path("none") is None
     assert optional_cli_path("") is None
     assert optional_cli_path(" deploy/table.xml ") == Path("deploy/table.xml")
+
+

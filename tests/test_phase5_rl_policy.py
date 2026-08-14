@@ -793,3 +793,41 @@ def test_run_rl_training_pipeline_validation_errors(tmp_path: Path, panda_robot_
             0.99,
             "cpu",
         )
+    with pytest.raises(ValueError, match="object_ids must contain at most one object"):
+        run_rl_training_pipeline(
+            valid_robot,
+            valid_ycb,
+            ["obj1", "obj2"],
+            tmp_path / "c.pt",
+            18,
+            8,
+            16,
+            1e-3,
+            1,
+            0.99,
+            "cpu",
+        )
+
+
+def test_run_rl_training_pipeline_config_exception(tmp_path: Path, panda_robot_xml: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify train_rl pipeline fallback RewardConfig is loaded when yaml load fails."""
+    import grasping_ai.config.yaml_loader as loader_mod
+    monkeypatch.setattr(loader_mod, "load_project_yaml_config", lambda *args, **kwargs: exec("raise(Exception('test'))"))
+
+    valid_robot = panda_robot_xml
+    valid_ycb = tmp_path / "ycb_raw"
+    valid_ycb.mkdir(exist_ok=True)
+    run_rl_training_pipeline(
+        valid_robot,
+        valid_ycb,
+        [],
+        tmp_path / "c.pt",
+        18,
+        8,
+        16,
+        1e-3,
+        1,
+        0.99,
+        "cpu",
+    )
+

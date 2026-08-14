@@ -1,16 +1,11 @@
 # @package _global_
 paths:
-  input_dir: ${oc.env:MGS_INPUT_DIR,"data"}
-  output_dir: ${oc.env:MGS_OUTPUT_DIR,"artifacts"}
   dataset_root: ${paths.input_dir}/processed
   ycb_root: ${paths.input_dir}/raw/ycb
-  ycb_mjcf: ${paths.input_dir}/processed/ycb_mjcf
-  observations: ${paths.input_dir}/observations
   output_index: ${paths.input_dir}/processed/index.json
   checkpoints: ${paths.output_dir}/checkpoints
   exports: ${paths.output_dir}/exports
   reports: ${paths.output_dir}/reports
-  tensorboard: ${paths.output_dir}/exports/tensorboard
 
 splits:
   train: train

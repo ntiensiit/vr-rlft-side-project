@@ -230,7 +230,11 @@ def setup_notebook_environment(
         path = str(project_root / relative)
         if path not in sys.path:
             sys.path.insert(0, path)
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", "."], check=True)
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "--version"], capture_output=True, check=True)
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", "."], check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
     return project_root
 
 
@@ -291,6 +295,7 @@ def load_notebook_config(
     config_dir: Path,
     config_name: str,
     *,
+    overrides: list[str] | None = None,
     force_remount: bool = False,
 ) -> dict[str, object]:
     """Load a named Hydra entrypoint for notebook workflows.
@@ -302,14 +307,15 @@ def load_notebook_config(
     Args:
         config_dir: Directory containing Hydra YAML entrypoints.
         config_name: Entrypoint basename without ``.yaml``.
+        overrides: Optional list of Hydra override strings.
         force_remount: Forwarded to :func:`setup_notebook_drive_storage`.
 
     Returns:
         Composed configuration mapping for the requested entrypoint.
     """
-    cfg = load_project_yaml_config(config_dir, config_name=config_name)
+    cfg = load_project_yaml_config(config_dir, config_name=config_name, overrides=overrides)
     if setup_notebook_drive_storage(cfg, force_remount=force_remount) is not None:
-        cfg = load_project_yaml_config(config_dir, config_name=config_name)
+        cfg = load_project_yaml_config(config_dir, config_name=config_name, overrides=overrides)
     return cfg
 
 
