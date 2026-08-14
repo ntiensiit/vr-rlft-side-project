@@ -1,32 +1,32 @@
-=== End-to-End Artifact Verification ===
-Timestamp: 2026-08-12T18:06:46.1468298+07:00
-Reference: dev (6e86932)
-Tool: uv run python scripts/run_artifacts.py
+=== End-to-End Artifact Verification ===  
+Timestamp: 2026-08-12T18:06:46.1468298+07:00  
+Reference: dev (6e86932)  
+Tool: uv run python scripts/run_artifacts.py  
 
-=== Outcome ===
-Exit code: 0 (success)
-Elapsed: 44.9s
-Commands executed: 9
-Retained artifacts: 13
+=== Outcome ===  
+Exit code: 0 (success)  
+Elapsed: 44.9s  
+Commands executed: 9  
+Retained artifacts: 13  
 
 Description: Reproducible artifact chain: supervised (YCB mesh -> synthetic dataset -> grasp checkpoint -> generated grasps -> MuJoCo simulation -> eval report) and RL (SB3 PPO -> legacy checkpoint -> policy_runner inference)
 
-=== Retained artifacts ===
-  artifacts\checkpoints\diffusion_grasp_generator.pt
-  artifacts\checkpoints\rl_grasp_policy.pt
-  artifacts\exports\diffusion_grasp_candidates_by_object.npy
-  artifacts\exports\diffusion_grasp_poses_003_cracker_box.npy
-  artifacts\reports\diffusion_analytical_evaluation_report.jsonl
-  artifacts\reports\diffusion_simulation_outcomes_003_cracker_box.jsonl
-  data\processed\003_cracker_box.npy
-  data\processed\004_sugar_box.npy
-  data\processed\006_mustard_bottle.npy
-  data\processed\index.json
-  data\processed\ycb_mjcf\003_cracker_box\object.xml
-  data\processed\ycb_mjcf\004_sugar_box\object.xml
-  data\processed\ycb_mjcf\006_mustard_bottle\object.xml
+=== Retained artifacts ===  
+  artifacts\checkpoints\diffusion_grasp_generator.pt  
+  artifacts\checkpoints\rl_grasp_policy.pt  
+  artifacts\exports\diffusion_grasp_candidates_by_object.npy  
+  artifacts\exports\diffusion_grasp_poses_003_cracker_box.npy  
+  artifacts\reports\diffusion_analytical_evaluation_report.jsonl  
+  artifacts\reports\diffusion_simulation_outcomes_003_cracker_box.jsonl  
+  data\processed\003_cracker_box.npy  
+  data\processed\004_sugar_box.npy  
+  data\processed\006_mustard_bottle.npy  
+  data\processed\index.json  
+  data\processed\ycb_mjcf\003_cracker_box\object.xml  
+  data\processed\ycb_mjcf\004_sugar_box\object.xml  
+  data\processed\ycb_mjcf\006_mustard_bottle\object.xml  
 
-=== Stage outcomes ===
+=== Stage outcomes ===  
 * Step 0 MJCF wrappers: 3/3 objects produced (003_cracker_box, 004_sugar_box, 006_mustard_bottle)
 * Step 1 synthetic dataset: 3/3 objects (--required-objects enforced; fail-fast not triggered)
 * Step 2 supervised training: artifacts/checkpoints/diffusion_grasp_generator.pt produced
@@ -36,13 +36,13 @@ Description: Reproducible artifact chain: supervised (YCB mesh -> synthetic data
 * Step 6 RL training: artifacts/checkpoints/rl_grasp_policy.pt exported
 * Step 7 policy_runner inference: smoke test passed against (21, 4) dims
 
-=== Cross-cutting ===
+=== Cross-cutting ===  
 * Full pytest: 219 passed (216 fast + 3 slow)
 * Ruff: clean
 * MyPy: clean (41 source files)
 * Artifact chain CI test: tests/test_artifact_chain.py passes (slow marker)
 
-=== Interpretation ===
+=== Interpretation ===  
 The artifact chain executes end-to-end on a clean tree. The chain keeps the
 same object identity (003_cracker_box / object_0) through observation,
 generated grasps, extracted poses, MuJoCo simulation, and offline analytical
@@ -54,7 +54,7 @@ work, and the analytical evaluation produces genuine non-zero reports when
 the corresponding grasps are force-closure-eligible (here none are because
 the diffusion model is untrained and outputs near-noise).
 
-=== Phase 4 contract ===
+=== Phase 4 contract ===  
 The flow pipeline produces artifacts/checkpoints/flow_model.pt via
 scripts/train_flow.py when run; the default artifact chain trains the
 diffusion path. The flow checkpoint, when produced, contains both
