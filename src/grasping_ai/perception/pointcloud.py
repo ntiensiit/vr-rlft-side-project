@@ -8,9 +8,7 @@ PointCloud = np.ndarray
 FeatureExtractor = Callable[[np.ndarray], np.ndarray]
 
 
-def sample_point_cloud(
-    points: np.ndarray, num_samples: int, rng: np.random.Generator
-) -> np.ndarray:
+def sample_point_cloud(points: np.ndarray, num_samples: int, rng: np.random.Generator) -> np.ndarray:
     """Sample a fixed number of points from a point cloud.
 
     Args:
@@ -35,7 +33,7 @@ def sample_point_cloud(
         raise ValueError("points must contain only finite values")
 
     n = points.shape[0]
-    replace = (n < num_samples)
+    replace = n < num_samples
     indices = rng.choice(n, size=num_samples, replace=replace)
     return points[indices]
 
@@ -66,9 +64,7 @@ def normalize_point_cloud(points: np.ndarray) -> np.ndarray:
     return centered
 
 
-def farthest_point_sampling(
-    points: np.ndarray, num_samples: int, rng: np.random.Generator
-) -> np.ndarray:
+def farthest_point_sampling(points: np.ndarray, num_samples: int, rng: np.random.Generator) -> np.ndarray:
     """Select ``num_samples`` points using farthest point sampling.
 
     Args:
@@ -105,7 +101,7 @@ def farthest_point_sampling(
         num_unique = min(n, num_samples)
         for i in range(1, num_unique):
             diff = points - points[curr_idx]
-            dists = np.sum(diff ** 2, axis=1)
+            dists = np.sum(diff**2, axis=1)
             min_dists = np.minimum(min_dists, dists)
             curr_idx = int(np.argmax(min_dists))
             selected_indices[i] = curr_idx

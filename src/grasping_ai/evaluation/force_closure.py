@@ -35,9 +35,7 @@ def load_contact_set(contact_path: Path) -> ContactSet:
         raise ValueError(f"Failed to load contact set: {e}") from e
 
 
-def build_force_closure_judge(
-    friction_coefficient: float, wrench_regularization: float
-) -> ForceClosureJudge:
+def build_force_closure_judge(friction_coefficient: float, wrench_regularization: float) -> ForceClosureJudge:
     """Construct a callable force-closure judge for a contact set.
 
     Args:
@@ -127,9 +125,7 @@ def evaluate_force_closure(judge: ForceClosureJudge, contact_set: ContactSet) ->
     return judge(contact_set)
 
 
-def compute_grasp_wrench_matrix(
-    contact_set: ContactSet, friction_coefficient: float
-) -> np.ndarray:
+def compute_grasp_wrench_matrix(contact_set: ContactSet, friction_coefficient: float) -> np.ndarray:
     """Compute the grasp wrench matrix from a contact set.
 
     Args:
@@ -196,9 +192,7 @@ def compute_grasp_wrench_matrix(
     return np.stack(wrenches, axis=1)
 
 
-def compute_grasp_quality(
-    contact_set: ContactSet, friction_coefficient: float
-) -> float:
+def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) -> float:
     """Compute the standardized scalar grasp-quality metric for a contact set.
 
     Normalizes the grasp wrench matrix and measures the minimum distance from
@@ -276,4 +270,3 @@ def compute_grasp_quality(
         pass
 
     return 0.0
-

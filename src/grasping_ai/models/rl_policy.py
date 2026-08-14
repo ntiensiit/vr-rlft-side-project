@@ -98,9 +98,7 @@ def read_rl_policy_metadata(
         return None
 
 
-def build_policy_network(
-    observation_dim: int, action_dim: int, hidden_dim: int, num_layers: int
-) -> PolicyNetwork:
+def build_policy_network(observation_dim: int, action_dim: int, hidden_dim: int, num_layers: int) -> PolicyNetwork:
     """Construct a policy network mapping observations to action distributions.
 
     Args:
@@ -182,9 +180,7 @@ def select_action(
         A sampled action tensor with shape ``(B, action_dim)``.
     """
     if observation.ndim != 2:
-        raise ValueError(
-            f"observation must have shape (B, obs_dim), got {observation.shape}"
-        )
+        raise ValueError(f"observation must have shape (B, obs_dim), got {observation.shape}")
     if not isinstance(rng, torch.Generator):
         raise TypeError("rng must be a torch.Generator instance")
     if noise_scale < 0.0:
@@ -192,7 +188,9 @@ def select_action(
 
     action_mean = policy(observation)
     noise = torch.randn(
-        action_mean.shape, generator=rng,
-        device=action_mean.device, dtype=action_mean.dtype,
+        action_mean.shape,
+        generator=rng,
+        device=action_mean.device,
+        dtype=action_mean.dtype,
     )
     return action_mean + noise_scale * noise

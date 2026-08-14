@@ -95,11 +95,7 @@ def test_evaluation_tracking(tmp_path):
     write_evaluation_report(report_path, results, experiment_log_dir=log_dir)
 
     assert report_path.is_file()
-    loaded = next(
-        record
-        for record in read_jsonl_records(report_path)
-        if record.get("record_type") == "summary"
-    )
+    loaded = next(record for record in read_jsonl_records(report_path) if record.get("record_type") == "summary")
     assert loaded == {"record_type": "summary", **results}
 
     assert log_dir.is_dir()
@@ -175,6 +171,4 @@ def test_supervised_reproducibility(tmp_path):
         if not torch.allclose(chk1["model_state_dict"][k], chk3["model_state_dict"][k]):
             diff = True
             break
-    assert diff, (
-        "Different seeds should produce different model initialization and noise"
-    )
+    assert diff, "Different seeds should produce different model initialization and noise"

@@ -141,18 +141,14 @@ def run_flow_training_pipeline(
     if not isinstance(dataset_root, Path):
         raise TypeError("dataset_root must be a pathlib.Path instance")
     if not dataset_root.exists():
-        raise FileNotFoundError(
-            f"Dataset root does not exist: {dataset_root}"
-        )
+        raise FileNotFoundError(f"Dataset root does not exist: {dataset_root}")
 
     validate_grasp_dataset(dataset_root)
 
     if seed is not None:
         torch.manual_seed(seed)
 
-    components = build_flow_training_components(
-        feature_dim, hidden_dim, num_layers, learning_rate, device
-    )
+    components = build_flow_training_components(feature_dim, hidden_dim, num_layers, learning_rate, device)
     model = cast(FlowGeneratorModel, components["model"])
     optimizer = cast(torch.optim.Optimizer, components["optimizer"])
 

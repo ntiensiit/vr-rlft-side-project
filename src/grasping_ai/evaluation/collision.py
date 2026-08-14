@@ -35,9 +35,7 @@ def build_collision_checker(
 
     def checker(grasp_pose: np.ndarray) -> bool:
         if grasp_pose.shape != (4, 4):
-            raise ValueError(
-                f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}"
-            )
+            raise ValueError(f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}")
         transformed_gripper = transform_between_frames(grasp_pose, gripper_point_cloud)
 
         dists, _ = tree.query(transformed_gripper)
@@ -158,10 +156,11 @@ def generate_analytical_contacts(
             else:
                 normal = np.array([0.0, 0.0, 1.0])
 
-            contacts.append({
-                "position": obj_pt,
-                "normal": normal,
-            })
+            contacts.append(
+                {
+                    "position": obj_pt,
+                    "normal": normal,
+                }
+            )
 
     return contacts
-

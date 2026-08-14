@@ -62,9 +62,7 @@ def _compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor
     frame = torch.stack([u1, u2, u3], dim=-1)  # (B, 3, 3)
 
     # Fully degenerate (single-point) clouds receive the identity frame.
-    identity_frame = torch.eye(3, device=points.device, dtype=points.dtype).expand(
-        b_size, 3, 3
-    )
+    identity_frame = torch.eye(3, device=points.device, dtype=points.dtype).expand(b_size, 3, 3)
     frame = torch.where(degenerate_cloud.view(b_size, 1, 1), identity_frame, frame)
     return frame, centroid.squeeze(1)
 
@@ -96,9 +94,7 @@ def compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]
     return _compute_se3_frame(points)
 
 
-def world_transform_from_frame(
-    frame: torch.Tensor, centroid: torch.Tensor
-) -> torch.Tensor:
+def world_transform_from_frame(frame: torch.Tensor, centroid: torch.Tensor) -> torch.Tensor:
     """Build the SE(3) transform mapping canonical coordinates to input coordinates.
 
     Canonical coordinates ``p_c = R^T (p - c)`` map back to the input frame via
@@ -119,9 +115,7 @@ def world_transform_from_frame(
     return world
 
 
-def compose_with_se3_frame(
-    transforms: torch.Tensor, frame: torch.Tensor, centroid: torch.Tensor
-) -> torch.Tensor:
+def compose_with_se3_frame(transforms: torch.Tensor, frame: torch.Tensor, centroid: torch.Tensor) -> torch.Tensor:
     """Express canonical-frame grasp poses in the input point-cloud frame.
 
     Grasps sampled in the canonical object frame must be conjugated by the
@@ -182,9 +176,7 @@ class SE3EquivariantPointNet(torch.nn.Module):
         return features
 
 
-def build_equivariant_encoder(
-    feature_dim: int, num_layers: int
-) -> Callable[[torch.Tensor], torch.Tensor]:
+def build_equivariant_encoder(feature_dim: int, num_layers: int) -> Callable[[torch.Tensor], torch.Tensor]:
     """Construct a callable SE(3)-equivariant point-cloud encoder.
 
     The encoder projects each centered point onto a deterministic
@@ -203,9 +195,7 @@ def build_equivariant_encoder(
     return SE3EquivariantPointNet(feature_dim, num_layers)
 
 
-def encode_point_cloud(
-    encoder: Callable[[torch.Tensor], torch.Tensor], points: torch.Tensor
-) -> torch.Tensor:
+def encode_point_cloud(encoder: Callable[[torch.Tensor], torch.Tensor], points: torch.Tensor) -> torch.Tensor:
     """Run an SE(3)-equivariant encoder on a batched point cloud.
 
     Args:

@@ -33,9 +33,7 @@ def make_observations(ycb_root: Path, output_dir: Path, num_samples: int, seed: 
     rng = np.random.default_rng(seed)
     object_clouds: list[np.ndarray] = []
     for object_id in list_ycb_objects(ycb_root):
-        pts = sample_point_cloud_from_mesh(
-            resolve_ycb_object_id(ycb_root, object_id), num_samples, rng
-        )
+        pts = sample_point_cloud_from_mesh(resolve_ycb_object_id(ycb_root, object_id), num_samples, rng)
         np.save(output_dir / f"{object_id}.npy", pts)
         object_clouds.append(pts)
 
@@ -84,13 +82,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     if args.ycb_root is None:
-        parser.error(
-            "--ycb-root is required (set in configs/data/default.yaml paths.ycb_root "
-            "or pass explicitly)"
-        )
+        parser.error("--ycb-root is required (set in configs/data/default.yaml paths.ycb_root or pass explicitly)")
     if args.output_dir is None:
-        parser.error(
-            "--output-dir is required (set in configs/base.yaml paths.observations "
-            "or pass explicitly)"
-        )
+        parser.error("--output-dir is required (set in configs/base.yaml paths.observations or pass explicitly)")
     make_observations(args.ycb_root, args.output_dir, args.num_samples, args.seed)

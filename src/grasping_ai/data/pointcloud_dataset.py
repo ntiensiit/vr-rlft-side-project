@@ -311,4 +311,3 @@ def generate_analytical_grasps(
         return np.empty((0, 4, 4), dtype=np.float32)
 
     return np.stack(valid_grasps, axis=0).astype(np.float32)
-

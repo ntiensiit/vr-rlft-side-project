@@ -63,14 +63,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     if args.ycb_root is None:
-        parser.error(
-            "--ycb-root is required (set in configs/base.yaml paths.ycb_mjcf "
-            "or pass explicitly)"
-        )
+        parser.error("--ycb-root is required (set in configs/base.yaml paths.ycb_mjcf or pass explicitly)")
     if args.robot_xml is None:
         parser.error(
-            "--robot-xml is required (set in configs/gripper/default.yaml robot.description "
-            "or pass explicitly)"
+            "--robot-xml is required (set in configs/gripper/default.yaml robot.description or pass explicitly)"
         )
     if args.output is None:
         parser.error(
@@ -86,8 +82,7 @@ if __name__ == "__main__":
         grasp_poses = convert_grasps_to_world_frame(grasp_poses, identity_transform())
     elif args.grasp_pose_format != "world":
         raise ValueError(
-            f"Unsupported grasp pose format '{args.grasp_pose_format}'; "
-            "supported values are 'world' and 'object'"
+            f"Unsupported grasp pose format '{args.grasp_pose_format}'; supported values are 'world' and 'object'"
         )
 
     outcomes = run_simulation_sweep(

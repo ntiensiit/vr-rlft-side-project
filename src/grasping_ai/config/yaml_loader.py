@@ -112,6 +112,7 @@ def load_project_yaml_config(
         if not isinstance(container, dict):
             raise TypeError("Hydra config root must be a mapping")
         from typing import cast
+
         return cast(dict[str, object], container)
 
     merged: dict[str, object] = {}
@@ -213,9 +214,7 @@ def config_get(
     for key in keys:
         visited.append(key)
         if not isinstance(current, dict):
-            raise TypeError(
-                f"Config path {'.'.join(keys)!r} traverses a non-mapping value"
-            )
+            raise TypeError(f"Config path {'.'.join(keys)!r} traverses a non-mapping value")
         if key not in current:
             if required:
                 raise ValueError(f"Missing config key: {'.'.join(visited)}")

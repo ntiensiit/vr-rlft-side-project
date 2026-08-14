@@ -272,9 +272,7 @@ def test_run_rl_pipeline_loads_requested_object(panda_robot_xml: Path):
         mj_model = state_dict["model"]
         import mujoco  # type: ignore[import-untyped]
 
-        body_id = mujoco.mj_name2id(
-            mj_model, mujoco.mjtObj.mjOBJ_BODY, "mustard_bottle_body"
-        )
+        body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "mustard_bottle_body")
         assert body_id != -1
 
         obs_dim = env.observation_space.shape[0]
@@ -299,9 +297,7 @@ def test_run_rl_pipeline_loads_requested_object(panda_robot_xml: Path):
         assert ckpt_path.exists()
 
 
-def test_rl_pipeline_tracks_object_and_enables_grasp_rewards(
-    monkeypatch, panda_robot_xml: Path
-):
+def test_rl_pipeline_tracks_object_and_enables_grasp_rewards(monkeypatch, panda_robot_xml: Path):
     """Verify the RL pipeline propagates the object name and enables grasp rewards."""
     from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
     from grasping_ai.simulation.ycb import resolve_ycb_object_directory
@@ -481,17 +477,11 @@ def test_select_action_noise_scale_controls_exploration():
     policy = build_policy_network(4, 2, 16, 2)
     obs = torch.randn(3, 4)
 
-    with_noise = select_action(
-        policy, obs, torch.Generator().manual_seed(1), noise_scale=0.1
-    )
-    with_more_noise = select_action(
-        policy, obs, torch.Generator().manual_seed(1), noise_scale=0.5
-    )
+    with_noise = select_action(policy, obs, torch.Generator().manual_seed(1), noise_scale=0.1)
+    with_more_noise = select_action(policy, obs, torch.Generator().manual_seed(1), noise_scale=0.5)
     assert not torch.allclose(with_noise, with_more_noise)
 
-    deterministic = select_action(
-        policy, obs, torch.Generator().manual_seed(1), noise_scale=0.0
-    )
+    deterministic = select_action(policy, obs, torch.Generator().manual_seed(1), noise_scale=0.0)
     assert torch.allclose(deterministic, policy(obs))
 
 
@@ -610,9 +600,7 @@ def test_rl_policy_additional_validations(tmp_path: Path) -> None:
         select_action(policy, obs, "not_a_generator")  # type: ignore[arg-type]
 
 
-def test_run_rl_training_pipeline_integration(
-    tmp_path: Path, panda_robot_xml: Path
-) -> None:
+def test_run_rl_training_pipeline_integration(tmp_path: Path, panda_robot_xml: Path) -> None:
     """Verify end-to-end execution of the RL training pipeline and subsequent checkpoint metadata persistence."""
     ycb_dir = tmp_path / "ycb"
     ycb_dir.mkdir()
@@ -646,18 +634,14 @@ def test_run_rl_training_pipeline_integration(
     assert ckpt["action_dim"] == act_dim
 
 
-def test_run_rl_training_pipeline_validation_errors(
-    tmp_path: Path, panda_robot_xml: Path
-) -> None:
+def test_run_rl_training_pipeline_validation_errors(tmp_path: Path, panda_robot_xml: Path) -> None:
     """Verify validation checks on inputs (invalid paths, out of range values) for the RL training pipeline parameters."""
     valid_robot = panda_robot_xml
     valid_ycb = tmp_path / "ycb"
     valid_ycb.mkdir()
 
     with pytest.raises(TypeError, match="robot_xml_path"):
-        run_rl_training_pipeline(
-            "invalid", valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu"
-        )  # type: ignore[arg-type]
+        run_rl_training_pipeline("invalid", valid_ycb, [], tmp_path / "c.pt", 18, 8, 16, 1e-3, 1, 0.99, "cpu")  # type: ignore[arg-type]
 
     with pytest.raises(FileNotFoundError, match="Robot XML file not found"):
         run_rl_training_pipeline(

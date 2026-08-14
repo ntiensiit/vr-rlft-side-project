@@ -6,9 +6,7 @@ StabilityJudge = Callable[[np.ndarray], bool]
 LiftOutcomeJudge = Callable[[float, float], bool]
 
 
-def build_stability_judge(
-    max_linear_velocity: float, max_angular_velocity: float
-) -> StabilityJudge:
+def build_stability_judge(max_linear_velocity: float, max_angular_velocity: float) -> StabilityJudge:
     """Build a callable that judges whether an executed grasp is stable.
 
     Args:
@@ -29,9 +27,7 @@ def build_stability_judge(
             raise TypeError("object_velocity must be a numpy array")
         flat_vel = object_velocity.ravel()
         if flat_vel.shape[0] != 6:
-            raise ValueError(
-                f"object_velocity must represent 6D velocity, got shape {object_velocity.shape}"
-            )
+            raise ValueError(f"object_velocity must represent 6D velocity, got shape {object_velocity.shape}")
 
         lin_vel = flat_vel[:3]
         ang_vel = flat_vel[3:]
@@ -83,9 +79,7 @@ def build_lift_outcome_judge(lift_height_threshold: float) -> LiftOutcomeJudge:
     return judge
 
 
-def evaluate_lift_success(
-    judge: LiftOutcomeJudge, initial_height: float, final_height: float
-) -> bool:
+def evaluate_lift_success(judge: LiftOutcomeJudge, initial_height: float, final_height: float) -> bool:
     """Evaluate whether a lift attempt succeeded.
 
     Args:

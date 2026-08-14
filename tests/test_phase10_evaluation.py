@@ -88,9 +88,7 @@ def test_analytical_contacts_valid():
     grasp_pose = np.eye(4, dtype=np.float32)
 
     # Clearance is 0.005. Only the first gripper point is within clearance (dist=0.002)
-    contacts = generate_analytical_contacts(
-        object_pc, gripper_pc, grasp_pose, contact_clearance=0.005
-    )
+    contacts = generate_analytical_contacts(object_pc, gripper_pc, grasp_pose, contact_clearance=0.005)
 
     assert len(contacts) == 1
     assert np.allclose(contacts[0]["position"], np.array([0.0, 0.0, 0.0]))
@@ -106,9 +104,7 @@ def test_analytical_contacts_rejection():
     grasp_pose = np.eye(4, dtype=np.float32)
 
     # Too far, should yield 0 contacts
-    contacts = generate_analytical_contacts(
-        object_pc, gripper_pc, grasp_pose, contact_clearance=0.005
-    )
+    contacts = generate_analytical_contacts(object_pc, gripper_pc, grasp_pose, contact_clearance=0.005)
     assert len(contacts) == 0
 
 
@@ -135,9 +131,7 @@ def test_grasp_quality_empty():
 def test_grasp_quality_rank_deficient():
     """Verify that compute_grasp_quality returns zero for rank-deficient wrench matrices (e.g. single contact point)."""
     # Only 1 contact, wrench matrix will be rank deficient (< 6)
-    contacts = [
-        {"position": np.array([0.0, 0.0, 0.0]), "normal": np.array([0.0, 0.0, 1.0])}
-    ]
+    contacts = [{"position": np.array([0.0, 0.0, 0.0]), "normal": np.array([0.0, 0.0, 1.0])}]
     assert compute_grasp_quality(contacts, friction_coefficient=0.5) == 0.0
 
 
@@ -198,9 +192,7 @@ def test_aggregate_evaluation_results():
     }
 
     report = aggregate_evaluation_results(per_obj)
-    assert report["success_rate"] == pytest.approx(
-        1.0 / 3.0
-    )  # 1 out of 3 force closure
+    assert report["success_rate"] == pytest.approx(1.0 / 3.0)  # 1 out of 3 force closure
     assert report["collision_free_rate"] == pytest.approx(2.0 / 3.0)
     assert report["mean_grasp_quality"] == pytest.approx(0.5 / 3.0)
 
@@ -226,9 +218,7 @@ def test_evaluate_script_plain_array(temp_files):
 
 def test_evaluate_script_dictionary(temp_files):
     """Verify that evaluate_generated_grasps can load and evaluate pickled dictionary grasp formats."""
-    grasps = load_generated_grasps(
-        temp_files["grasps_dict_path"], object_key="mustard_bottle"
-    )
+    grasps = load_generated_grasps(temp_files["grasps_dict_path"], object_key="mustard_bottle")
     object_point_cloud = np.load(temp_files["obj_path"])
     gripper_point_cloud = np.load(temp_files["grip_path"])
 
@@ -376,9 +366,7 @@ def test_force_closure_additional_branches() -> None:
     w_matrix = compute_grasp_wrench_matrix(incomplete_contacts, 0.5)
     assert w_matrix.shape == (6, 0)
 
-    zero_contacts = [
-        {"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])} for _ in range(7)
-    ]
+    zero_contacts = [{"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])} for _ in range(7)]
     q_zero = compute_grasp_quality(zero_contacts, 0.5)
     assert q_zero == 0.0
 
@@ -398,50 +386,29 @@ def test_collision_additional_branches() -> None:
         generate_analytical_contacts(np.zeros((10, 3)), "not_array", np.eye(4), 0.05)  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="grasp_pose"):
-        generate_analytical_contacts(
-            np.zeros((10, 3)), np.zeros((5, 3)), np.zeros(3), 0.05
-        )
+        generate_analytical_contacts(np.zeros((10, 3)), np.zeros((5, 3)), np.zeros(3), 0.05)
 
     with pytest.raises(ValueError, match="finite"):
-        generate_analytical_contacts(
-            np.full((10, 3), np.nan), np.zeros((5, 3)), np.eye(4), 0.05
-        )
+        generate_analytical_contacts(np.full((10, 3), np.nan), np.zeros((5, 3)), np.eye(4), 0.05)
 
     with pytest.raises(ValueError, match="finite"):
-        generate_analytical_contacts(
-            np.zeros((10, 3)), np.full((5, 3), np.inf), np.eye(4), 0.05
-        )
+        generate_analytical_contacts(np.zeros((10, 3)), np.full((5, 3), np.inf), np.eye(4), 0.05)
 
     with pytest.raises(ValueError, match="finite"):
-        generate_analytical_contacts(
-            np.zeros((10, 3)), np.zeros((5, 3)), np.full((4, 4), np.nan), 0.05
-        )
+        generate_analytical_contacts(np.zeros((10, 3)), np.zeros((5, 3)), np.full((4, 4), np.nan), 0.05)
 
     with pytest.raises(ValueError, match="contact_clearance"):
-        generate_analytical_contacts(
-            np.zeros((10, 3)), np.zeros((5, 3)), np.eye(4), -0.01
-        )
+        generate_analytical_contacts(np.zeros((10, 3)), np.zeros((5, 3)), np.eye(4), -0.01)
 
-    assert (
-        generate_analytical_contacts(
-            np.zeros((0, 3)), np.zeros((5, 3)), np.eye(4), 0.05
-        )
-        == []
-    )
+    assert generate_analytical_contacts(np.zeros((0, 3)), np.zeros((5, 3)), np.eye(4), 0.05) == []
 
-    contacts_overlap = generate_analytical_contacts(
-        np.zeros((1, 3)), np.zeros((1, 3)), np.eye(4), 0.05
-    )
+    contacts_overlap = generate_analytical_contacts(np.zeros((1, 3)), np.zeros((1, 3)), np.eye(4), 0.05)
     assert len(contacts_overlap) == 1
     assert np.allclose(contacts_overlap[0]["normal"], [0.0, 0.0, 1.0])
 
-    colliding_checker = build_collision_checker(
-        np.zeros((10, 3)), np.zeros((5, 3)), 0.05
-    )
+    colliding_checker = build_collision_checker(np.zeros((10, 3)), np.zeros((5, 3)), 0.05)
     assert filter_collision_free_grasps(colliding_checker, np.eye(4)).shape == (0, 4, 4)
-    assert filter_collision_free_grasps(
-        colliding_checker, np.stack([np.eye(4), np.eye(4)])
-    ).shape == (0, 4, 4)
+    assert filter_collision_free_grasps(colliding_checker, np.stack([np.eye(4), np.eye(4)])).shape == (0, 4, 4)
 
 
 def test_evaluate_pipeline_additional_branches(tmp_path: Path) -> None:
@@ -554,17 +521,13 @@ def test_evaluate_generated_grasps_validations_and_contact_path(tmp_path: Path) 
         evaluate_generated_grasps(np.eye(4), obj_pc, grip_pc, friction_coefficient=-0.1)
 
     with pytest.raises(ValueError, match="lift_height_threshold must be non-negative"):
-        evaluate_generated_grasps(
-            np.eye(4), obj_pc, grip_pc, lift_height_threshold=-0.1
-        )
+        evaluate_generated_grasps(np.eye(4), obj_pc, grip_pc, lift_height_threshold=-0.1)
 
     with pytest.raises(ValueError, match="clearance must be non-negative"):
         evaluate_generated_grasps(np.eye(4), obj_pc, grip_pc, clearance=-0.1)
 
     with pytest.raises(ValueError, match="wrench_regularization must be non-negative"):
-        evaluate_generated_grasps(
-            np.eye(4), obj_pc, grip_pc, wrench_regularization=-0.1
-        )
+        evaluate_generated_grasps(np.eye(4), obj_pc, grip_pc, wrench_regularization=-0.1)
 
     contact_path = tmp_path / "contacts.npy"
     contacts_list = [{"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])}]
@@ -572,9 +535,7 @@ def test_evaluate_generated_grasps_validations_and_contact_path(tmp_path: Path) 
     payload[()] = contacts_list
     np.save(contact_path, payload, allow_pickle=True)
 
-    results = evaluate_generated_grasps(
-        np.eye(4), obj_pc, grip_pc, contact_path=contact_path
-    )
+    results = evaluate_generated_grasps(np.eye(4), obj_pc, grip_pc, contact_path=contact_path)
     assert len(results) == 1
 
 
@@ -584,9 +545,7 @@ def test_evaluate_generated_grasps_all_colliding_filtered() -> None:
     grip_pc = np.zeros((10, 3), dtype=np.float32)
     grasps = np.eye(4)[None]
 
-    results = evaluate_generated_grasps(
-        grasps, obj_pc, grip_pc, clearance=0.05, filter_collisions=True
-    )
+    results = evaluate_generated_grasps(grasps, obj_pc, grip_pc, clearance=0.05, filter_collisions=True)
     assert results == []
 
 
@@ -669,9 +628,7 @@ def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:
         load_contact_set,
     )
 
-    c1 = [
-        {"position": np.array([0.01, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])}
-    ]
+    c1 = [{"position": np.array([0.01, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])}]
     q1 = compute_grasp_quality(c1, friction_coefficient=0.5)
     assert q1 == 0.0
 
@@ -679,9 +636,7 @@ def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:
         {"position": np.array([0.0, 0.0, 0.0]), "normal": np.array([1.0, 0.0, 0.0])},
         {"position": np.array([0.0, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])},
     ]
-    judge = build_force_closure_judge(
-        friction_coefficient=0.5, wrench_regularization=0.0
-    )
+    judge = build_force_closure_judge(friction_coefficient=0.5, wrench_regularization=0.0)
     is_fc = judge(c_zero_rank)
     assert not is_fc
 
@@ -741,22 +696,14 @@ def test_evaluate_additional_branch_coverage(tmp_path: Path) -> None:
     obj_pc = np.zeros((10, 3))
     grip_pc = np.zeros((10, 3))
     poses = np.eye(4)[None, ...]
-    res = evaluate_generated_grasps(
-        poses, obj_pc, grip_pc, filter_collisions=True, clearance=100.0
-    )
+    res = evaluate_generated_grasps(poses, obj_pc, grip_pc, filter_collisions=True, clearance=100.0)
     assert res == []
 
-    outcomes = {
-        "obj1": [
-            {"grasp_success": False, "collision_free": False, "force_closure": False}
-        ]
-    }
+    outcomes = {"obj1": [{"grasp_success": False, "collision_free": False, "force_closure": False}]}
     summary = aggregate_evaluation_results(outcomes)
     assert summary["mean_grasp_quality"] == 0.0
 
     rep = tmp_path / "report_str.json"
     tb = tmp_path / "tb"
-    write_evaluation_report(
-        rep, {"str_key": "val", "num_key": 1.0}, experiment_log_dir=tb
-    )
+    write_evaluation_report(rep, {"str_key": "val", "num_key": 1.0}, experiment_log_dir=tb)
     assert rep.is_file()

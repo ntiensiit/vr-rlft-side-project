@@ -21,9 +21,7 @@ def test_load_yaml_mapping_reads_base_config() -> None:
     cfg = load_yaml_mapping(Path("configs/base.yaml"))
     assert cfg["device"] == "cpu"
     assert cfg["seed"] == 42
-    assert (
-        config_get(cfg, "paths", "output_dir") == '${oc.env:MGS_OUTPUT_DIR,"artifacts"}'
-    )
+    assert config_get(cfg, "paths", "output_dir") == '${oc.env:MGS_OUTPUT_DIR,"artifacts"}'
 
 
 def test_load_project_yaml_config_merges_layers() -> None:
@@ -32,9 +30,7 @@ def test_load_project_yaml_config_merges_layers() -> None:
     assert cfg["device"] == "cpu"
     assert config_get(cfg, "architecture", "feature_dim") == 32
     assert config_get(cfg, "supervised", "batch_size") == 2
-    assert config_get(cfg, "diffusion", "checkpoint") == (
-        "artifacts/checkpoints/diffusion_grasp_generator.pt"
-    )
+    assert config_get(cfg, "diffusion", "checkpoint") == ("artifacts/checkpoints/diffusion_grasp_generator.pt")
     assert config_get(cfg, "rl", "learning_rate") == 0.0003
     assert config_get(cfg, "rl", "observation_dim") == 31
 
@@ -172,9 +168,7 @@ def test_config_path_returns_default_for_missing_value() -> None:
 
 def test_config_path_returns_default_for_none_value() -> None:
     """Return the default when a path-valued key is explicitly ``None``."""
-    assert config_path(
-        {"paths": {"root": None}}, "paths", "root", default=Path("x")
-    ) == Path("x")
+    assert config_path({"paths": {"root": None}}, "paths", "root", default=Path("x")) == Path("x")
 
 
 def test_config_path_rejects_empty_string() -> None:
@@ -214,17 +208,13 @@ def test_config_float_list_rejects_non_list() -> None:
 def test_config_float_list_rejects_bool_items() -> None:
     """Reject bool entries in float-list config values."""
     with pytest.raises(TypeError, match="must be a list of numbers"):
-        config_float_list(
-            {"gripper": {"close_command": [True]}}, "gripper", "close_command"
-        )
+        config_float_list({"gripper": {"close_command": [True]}}, "gripper", "close_command")
 
 
 def test_config_float_list_rejects_non_numeric_items() -> None:
     """Reject non-numeric entries in float-list config values."""
     with pytest.raises(TypeError, match="must be a list of numbers"):
-        config_float_list(
-            {"gripper": {"close_command": ["bad"]}}, "gripper", "close_command"
-        )
+        config_float_list({"gripper": {"close_command": ["bad"]}}, "gripper", "close_command")
 
 
 def test_config_float_list_converts_integers() -> None:

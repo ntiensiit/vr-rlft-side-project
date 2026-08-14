@@ -264,9 +264,7 @@ def test_checkpoint_roundtrip():
         new_model = GraspGeneratorModel(feature_dim=8, hidden_dim=16, num_layers=2)
         new_optimizer = build_adam_optimizer(new_model.parameters(), 0.01)
 
-        epoch = load_training_checkpoint(
-            checkpoint_path, new_model, new_optimizer, "cpu"
-        )
+        epoch = load_training_checkpoint(checkpoint_path, new_model, new_optimizer, "cpu")
         assert epoch == 5
 
         # Check weights are loaded identically
@@ -286,9 +284,7 @@ def test_generate_grasps_output_shape_single_observation():
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
         checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
-        generator = build_diffusion_grasp_generator(
-            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu"
-        )
+        generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu")
 
         pc = np.random.randn(100, 3).astype(np.float32)
         grasps = generate_candidate_grasps(generator, pc, num_grasps=5)
@@ -308,9 +304,7 @@ def test_generate_grasps_rotations_are_valid():
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
         checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
-        generator = build_diffusion_grasp_generator(
-            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu"
-        )
+        generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu")
 
         pc = np.random.randn(100, 3).astype(np.float32)
         grasps = generate_candidate_grasps(generator, pc, num_grasps=10)
@@ -343,9 +337,7 @@ def test_generate_grasps_rejects_invalid_observation_shape():
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
         checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
-        generator = build_diffusion_grasp_generator(
-            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu"
-        )
+        generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu")
 
         # Invalid shape: 3D array (expected 2D)
         pc_invalid = np.random.randn(2, 50, 3).astype(np.float32)
@@ -364,9 +356,7 @@ def test_inference_grasps_follow_input_point_cloud_frame():
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
         checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
-        generator = build_diffusion_grasp_generator(
-            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu"
-        )
+        generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu")
 
         rng = np.random.RandomState(0)
         pc = rng.randn(100, 3).astype(np.float32)
@@ -374,9 +364,7 @@ def test_inference_grasps_follow_input_point_cloud_frame():
         pc_translated = pc + translation
 
         grasps = generate_candidate_grasps(generator, pc, num_grasps=10)
-        grasps_translated = generate_candidate_grasps(
-            generator, pc_translated, num_grasps=10
-        )
+        grasps_translated = generate_candidate_grasps(generator, pc_translated, num_grasps=10)
 
         assert grasps.shape == (10, 4, 4)
         assert grasps_translated.shape == (10, 4, 4)
@@ -397,9 +385,7 @@ def test_model_inference_is_repeatable_without_global_state():
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
         checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
-        generator = build_diffusion_grasp_generator(
-            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu"
-        )
+        generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu")
 
         pc = np.random.randn(100, 3).astype(np.float32)
 
@@ -471,9 +457,7 @@ def test_flow_grasp_generator_inference():
         checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
         from grasping_ai.inference.grasp_generator import build_flow_grasp_generator
 
-        generator = build_flow_grasp_generator(
-            checkpoint, feature_dim=8, num_flow_steps=5, device="cpu"
-        )
+        generator = build_flow_grasp_generator(checkpoint, feature_dim=8, num_flow_steps=5, device="cpu")
 
         pc = np.random.randn(50, 3).astype(np.float32)
         grasps = generate_candidate_grasps(generator, pc, num_grasps=4)
@@ -493,9 +477,7 @@ def test_generation_pipeline_and_writing():
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
         checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
-        generator = build_diffusion_grasp_generator(
-            checkpoint, feature_dim=8, num_diffusion_steps=2, device="cpu"
-        )
+        generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=2, device="cpu")
 
         pc = np.random.randn(30, 3).astype(np.float32)
         grasps = generate_candidate_grasps(generator, pc, 3)
@@ -628,9 +610,7 @@ def test_default_sampler_unchanged_defaults():
     conditioning = torch.randn(2, 4)
     rng = torch.Generator().manual_seed(11)
 
-    samples = sample_grasps_with_diffusion(
-        sampler, score_model, conditioning, 9, 3, rng
-    )
+    samples = sample_grasps_with_diffusion(sampler, score_model, conditioning, 9, 3, rng)
     assert samples.shape == (2, 3, 9)
     assert torch.isfinite(samples).all()
 
@@ -655,15 +635,9 @@ def test_generator_seed_is_configurable():
         checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
         pc = np.random.randn(60, 3).astype(np.float32)
 
-        gen_a = build_diffusion_grasp_generator(
-            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu", seed=1
-        )
-        gen_b = build_diffusion_grasp_generator(
-            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu", seed=2
-        )
-        gen_a2 = build_diffusion_grasp_generator(
-            checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu", seed=1
-        )
+        gen_a = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu", seed=1)
+        gen_b = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu", seed=2)
+        gen_a2 = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu", seed=1)
 
         grasps_a = generate_candidate_grasps(gen_a, pc, num_grasps=6)
         grasps_b = generate_candidate_grasps(gen_b, pc, num_grasps=6)
@@ -694,9 +668,7 @@ def test_flow_generator_seed_is_configurable():
         from grasping_ai.inference.grasp_generator import build_flow_grasp_generator
 
         pc = np.random.randn(40, 3).astype(np.float32)
-        gen = build_flow_grasp_generator(
-            checkpoint, feature_dim=8, num_flow_steps=5, device="cpu", seed=3
-        )
+        gen = build_flow_grasp_generator(checkpoint, feature_dim=8, num_flow_steps=5, device="cpu", seed=3)
         grasps = generate_candidate_grasps(gen, pc, num_grasps=4)
         assert grasps.shape == (4, 4, 4)
 
@@ -819,13 +791,9 @@ def _build_checkpoint_generator(builder: str) -> tuple[object, Path]:
 
         checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
         if builder == "diffusion":
-            generator = build_diffusion_grasp_generator(
-                checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu"
-            )
+            generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, num_diffusion_steps=5, device="cpu")
         else:
-            generator = build_flow_grasp_generator(
-                checkpoint, feature_dim=8, num_flow_steps=5, device="cpu"
-            )
+            generator = build_flow_grasp_generator(checkpoint, feature_dim=8, num_flow_steps=5, device="cpu")
         return generator, checkpoint_path
 
 
@@ -856,9 +824,7 @@ def test_generated_grasps_are_equivariant(builder: str):
     g_transform[:3, :3] = r_rot
     g_transform[:3, 3] = t
 
-    expected = np.stack(
-        [g_transform @ grasp @ np.linalg.inv(g_transform) for grasp in grasps]
-    )
+    expected = np.stack([g_transform @ grasp @ np.linalg.inv(g_transform) for grasp in grasps])
     assert np.allclose(grasps_transformed, expected, atol=1e-3)
 
 
@@ -1033,9 +999,7 @@ def test_trainer_additional_branches(tmp_path: Path) -> None:
     dummy_target = torch.randn(2, 9)
     dataloader = [(dummy_input, dummy_target)]
 
-    step_fn = build_training_step(
-        model, build_diffusion_score_loss(), opt, "cpu", seed=42
-    )
+    step_fn = build_training_step(model, build_diffusion_score_loss(), opt, "cpu", seed=42)
 
     run_training_loop(
         step_fn,
@@ -1053,9 +1017,7 @@ def test_equivariant_encoder_collinear_points_fallback() -> None:
     """Verify that the equivariant encoder falls back to a valid rotation frame if conditioning point clouds are collinear."""
     from grasping_ai.models.equivariant_encoder import compute_se3_frame
 
-    collinear_pts = torch.tensor(
-        [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]], dtype=torch.float32
-    )
+    collinear_pts = torch.tensor([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]], dtype=torch.float32)
     frame, _centroid = compute_se3_frame(collinear_pts)
     assert frame.shape == (1, 3, 3)
     assert torch.allclose(torch.det(frame), torch.tensor([1.0]), atol=1e-5)
@@ -1104,7 +1066,5 @@ def test_trainer_checkpoint_saving_branch(tmp_path: Path) -> None:
 
     ckpt_path = tmp_path / "auto_ckpt.pt"
     dataloader = [(torch.randn(2, 8), torch.randn(2, 2))]
-    run_training_loop(
-        dummy_step, dataloader, num_epochs=1, log_every=10, checkpoint_path=ckpt_path
-    )
+    run_training_loop(dummy_step, dataloader, num_epochs=1, log_every=10, checkpoint_path=ckpt_path)
     assert ckpt_path.is_file()

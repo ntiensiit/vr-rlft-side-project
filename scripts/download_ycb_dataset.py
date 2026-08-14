@@ -50,10 +50,7 @@ def download_file(url, filename, max_retries=5):
                         file_size_dl += len(buffer)
                         f.write(buffer)
                         if file_size > 0:
-                            status = (
-                                f"{int(file_size_dl / 1000000.0):10d}  "
-                                f"[{file_size_dl * 100.0 / file_size:3.2f}%]"
-                            )
+                            status = f"{int(file_size_dl / 1000000.0):10d}  [{file_size_dl * 100.0 / file_size:3.2f}%]"
                         else:
                             status = f"{int(file_size_dl / 1000000.0):10d}"
                         status = status + chr(8) * (len(status) + 1)
@@ -162,9 +159,8 @@ if __name__ == "__main__":
                         is_google_extracted = file_type == "google_16k" and os.path.exists(
                             os.path.join(object_dir, "google_16k")
                         )
-                        is_berkeley_extracted = (
-                            file_type == "berkeley_processed"
-                            and os.path.exists(os.path.join(object_dir, "clouds"))
+                        is_berkeley_extracted = file_type == "berkeley_processed" and os.path.exists(
+                            os.path.join(object_dir, "clouds")
                         )
                         if is_google_extracted or is_berkeley_extracted:
                             print(f"Skipping {object} {file_type}: already extracted.")

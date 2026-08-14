@@ -213,10 +213,7 @@ def simulate_grasp(
             finger_close = {"finger_joint1": close_q1, "finger_joint2": close_q2}
             for idx in gripper_ids:
                 joint_id = int(mj_model.actuator_trnid[idx, 0])
-                joint_name = (
-                    mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_id)
-                    or ""
-                )
+                joint_name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_id) or ""
                 for key, value in finger_open.items():
                     if key in joint_name:
                         open_cmd[idx] = value
@@ -257,9 +254,7 @@ def simulate_grasp(
         fk_position_error = float("inf")
     else:
         achieved_pose = fk_solver(q_target)
-        fk_position_error = float(
-            np.linalg.norm(achieved_pose[:3, 3] - hand_pose[:3, 3])
-        )
+        fk_position_error = float(np.linalg.norm(achieved_pose[:3, 3] - hand_pose[:3, 3]))
 
     final_pose = scene.body_pose(object_id)
     final_height = float(final_pose[2, 3])

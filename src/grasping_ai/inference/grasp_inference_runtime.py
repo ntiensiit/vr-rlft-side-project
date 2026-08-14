@@ -50,9 +50,7 @@ def run_single_object_grasp_inference(
         FileNotFoundError: If a required observation or YCB path is missing.
     """
     if observation_path is None and (ycb_root is None or object_id is None):
-        raise ValueError(
-            "Provide either observation_path or both ycb_root and object_id"
-        )
+        raise ValueError("Provide either observation_path or both ycb_root and object_id")
     if observation_path is not None and (ycb_root is not None or object_id is not None):
         raise ValueError("Pass observation_path or ycb_root/object_id, not both")
 
@@ -62,9 +60,7 @@ def run_single_object_grasp_inference(
         point_cloud = np.load(observation_path)
     else:
         if ycb_root is None or object_id is None:
-            raise ValueError(
-                "Provide both ycb_root and object_id when observation_path is not given"
-            )
+            raise ValueError("Provide both ycb_root and object_id when observation_path is not given")
         if not ycb_root.is_dir():
             raise FileNotFoundError(f"YCB root directory not found: {ycb_root}")
         mesh_path = resolve_ycb_object_id(ycb_root, object_id)
@@ -72,19 +68,13 @@ def run_single_object_grasp_inference(
         point_cloud = sample_point_cloud_from_mesh(mesh_path, num_grasps * 8, rng)
 
     if point_cloud.ndim != 2 or point_cloud.shape[1] != 3:
-        raise ValueError(
-            f"point_cloud must have shape (N, 3), got {point_cloud.shape}"
-        )
+        raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
 
     checkpoint = load_grasp_model_checkpoint(checkpoint_path, device)
     if method == "diffusion":
-        generator = build_diffusion_grasp_generator(
-            checkpoint, feature_dim, num_steps, device, seed
-        )
+        generator = build_diffusion_grasp_generator(checkpoint, feature_dim, num_steps, device, seed)
     elif method == "flow":
-        generator = build_flow_grasp_generator(
-            checkpoint, feature_dim, num_steps, device, seed
-        )
+        generator = build_flow_grasp_generator(checkpoint, feature_dim, num_steps, device, seed)
     else:
         raise ValueError(f"method must be 'diffusion' or 'flow', got '{method}'")
 

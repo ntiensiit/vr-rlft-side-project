@@ -69,12 +69,8 @@ def test_flow_checkpoint_persists_encoder_and_flow_field(tmp_path):
     )
     state_dict = torch.load(checkpoint, map_location="cpu")
     keys = list(state_dict["model_state_dict"].keys())
-    assert any(k.startswith("encoder.") for k in keys), (
-        f"flow checkpoint missing encoder keys: {keys}"
-    )
-    assert any(k.startswith("flow_field.") for k in keys), (
-        f"flow checkpoint missing flow_field keys: {keys}"
-    )
+    assert any(k.startswith("encoder.") for k in keys), f"flow checkpoint missing encoder keys: {keys}"
+    assert any(k.startswith("flow_field.") for k in keys), f"flow checkpoint missing flow_field keys: {keys}"
 
 
 def test_load_flow_model_checkpoint_reproduces_trained_state(tmp_path):
@@ -99,14 +95,10 @@ def test_load_flow_model_checkpoint_reproduces_trained_state(tmp_path):
         seed=1,
     )
 
-    model = load_flow_model_checkpoint(
-        checkpoint, feature_dim=16, hidden_dim=16, num_layers=2, device="cpu"
-    )
+    model = load_flow_model_checkpoint(checkpoint, feature_dim=16, hidden_dim=16, num_layers=2, device="cpu")
     expected = torch.load(checkpoint, map_location="cpu")["model_state_dict"]
     for key in expected:
-        assert torch.allclose(model.state_dict()[key], expected[key]), (
-            f"mismatch at {key}"
-        )
+        assert torch.allclose(model.state_dict()[key], expected[key]), f"mismatch at {key}"
 
 
 def test_flow_training_optimizes_encoder_and_flow_field(tmp_path):
@@ -271,7 +263,5 @@ def test_flow_network_builder_and_sampler_additional_coverage() -> None:
     net = FlowFieldNet(8, 16, 2)
     assert isinstance(net, FlowFieldNet)
 
-    with pytest.raises(
-        TypeError, match=r"checkpoint\['model_state_dict'\] must be a dictionary"
-    ):
+    with pytest.raises(TypeError, match=r"checkpoint\['model_state_dict'\] must be a dictionary"):
         load_flow_model_from_state({"model_state_dict": "not_a_dict"}, 8, 16, 2, "cpu")

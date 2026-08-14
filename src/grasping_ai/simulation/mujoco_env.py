@@ -51,6 +51,7 @@ class RewardConfig:
             A RewardConfig instance populated with configured parameters.
         """
         from grasping_ai.config.yaml_loader import config_get
+
         return cls(
             action_cost_weight=float(config_get(cfg, "rl", "reward", "action_cost_weight", default=0.01)),
             survival_bonus=float(config_get(cfg, "rl", "reward", "survival_bonus", default=1.0)),
@@ -143,12 +144,14 @@ def create_simulation(model: object) -> tuple[object, SimulationStep, ContactRep
             force = np.zeros(6)
             mujoco.mj_contactForce(current_model, current_data, i, force)
 
-            reports.append({
-                "position": np.array(c.pos, copy=True),
-                "normal": np.array(c.frame[:3], copy=True),
-                "force": force,
-                "body_names": np.array([body1_name, body2_name], dtype=object)
-            })
+            reports.append(
+                {
+                    "position": np.array(c.pos, copy=True),
+                    "normal": np.array(c.frame[:3], copy=True),
+                    "force": force,
+                    "body_names": np.array([body1_name, body2_name], dtype=object),
+                }
+            )
         return reports
 
     return state, step, contacts
@@ -198,9 +201,7 @@ def set_actuator_controls(state: object, ctrl: np.ndarray) -> None:
 
     nu: int = model.nu
     if ctrl.shape != (nu,):
-        raise ValueError(
-            f"ctrl shape {ctrl.shape} does not match model.nu ({nu})"
-        )
+        raise ValueError(f"ctrl shape {ctrl.shape} does not match model.nu ({nu})")
 
     data.ctrl[:] = ctrl
 
@@ -240,9 +241,7 @@ def set_joint_positions(state: object, positions: np.ndarray) -> None:
     data: Any = state_dict["data"]
 
     if positions.shape != (model.nq,):
-        raise ValueError(
-            f"positions shape {positions.shape} does not match model.nq ({model.nq})"
-        )
+        raise ValueError(f"positions shape {positions.shape} does not match model.nq ({model.nq})")
 
     data.qpos[:] = positions
     mujoco.mj_forward(model, data)
@@ -327,6 +326,7 @@ class MuJoCoGraspingEnv(gym.Env):
         if reward_config is None:
             try:
                 from grasping_ai.config.yaml_loader import load_project_yaml_config, parse_config_dir_from_argv
+
                 _cfg = load_project_yaml_config(parse_config_dir_from_argv())
                 reward_config = RewardConfig.load_from_config(_cfg)
             except Exception:
@@ -336,9 +336,7 @@ class MuJoCoGraspingEnv(gym.Env):
         self._grasp_success_granted = False
 
         model_handle = load_mujoco_model(robot_xml_path)
-        self._state, self._step_fn, self._contacts_fn = create_simulation(
-            model_handle
-        )
+        self._state, self._step_fn, self._contacts_fn = create_simulation(model_handle)
 
         state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
         mj_model: Any = state_dict["model"]
@@ -348,10 +346,7 @@ class MuJoCoGraspingEnv(gym.Env):
         nu: int = mj_model.nu
 
         if nu == 0:
-            raise ValueError(
-                "MuJoCo model has zero actuators; "
-                "the RL environment requires a non-empty action space"
-            )
+            raise ValueError("MuJoCo model has zero actuators; the RL environment requires a non-empty action space")
 
         obs_size = nq + nv
         self.observation_space = gym.spaces.Box(
@@ -404,9 +399,7 @@ class MuJoCoGraspingEnv(gym.Env):
             self._initial_object_height = None
         return self._get_observation(), {}
 
-    def step(
-        self, action: np.ndarray
-    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         """Advance the simulation by one step.
 
         Args:
@@ -442,7 +435,7 @@ class MuJoCoGraspingEnv(gym.Env):
         obs = self._get_observation()
 
         config = self._reward_config
-        reward = config.action_cost_weight * -float(np.sum(action ** 2))
+        reward = config.action_cost_weight * -float(np.sum(action**2))
         terminated = bool(config.terminate_on_non_finite and not np.isfinite(obs).all())
 
         if np.isfinite(obs).all():
@@ -486,9 +479,7 @@ class MuJoCoGraspingEnv(gym.Env):
             ``True`` if any contact report involves the object body.
         """
         reports = self._contacts_fn()
-        return any(
-            self._object_name in set(contact["body_names"]) for contact in reports
-        )
+        return any(self._object_name in set(contact["body_names"]) for contact in reports)
 
     def _get_observation(self) -> np.ndarray:
         """Read and concatenate qpos and qvel into a float32 observation.
@@ -501,4 +492,3 @@ class MuJoCoGraspingEnv(gym.Env):
         qpos = np.array(mj_data.qpos, copy=True)
         qvel = np.array(mj_data.qvel, copy=True)
         return np.concatenate([qpos, qvel]).astype(np.float32)
-

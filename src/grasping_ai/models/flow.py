@@ -62,9 +62,7 @@ class FlowGeneratorModel(torch.nn.Module):
         """Forward pass forwarding to the flow field."""
         return self.flow_field(x, conditioning)
 
-    def condition(
-        self, point_clouds: torch.Tensor
-    ) -> torch.Tensor:
+    def condition(self, point_clouds: torch.Tensor) -> torch.Tensor:
         """Encode a batch of point clouds into pooled conditioning features."""
         from grasping_ai.models.equivariant_encoder import (
             encode_point_cloud,
@@ -100,6 +98,7 @@ def build_flow_integrator(num_steps: int) -> FlowIntegrator:
         A callable that integrates ``(flow_field, x0, conditioning)`` forward
         in time and returns terminal samples with the same shape as ``x0``.
     """
+
     def integrator(
         flow_field: FlowField,
         x0: torch.Tensor,
@@ -183,6 +182,4 @@ def load_flow_model_checkpoint(
         A ``FlowGeneratorModel`` in evaluation mode on the requested device.
     """
     checkpoint = load_torch_checkpoint(checkpoint_path, device)
-    return load_flow_model_from_state(
-        checkpoint, feature_dim, hidden_dim, num_layers, device
-    )
+    return load_flow_model_from_state(checkpoint, feature_dim, hidden_dim, num_layers, device)

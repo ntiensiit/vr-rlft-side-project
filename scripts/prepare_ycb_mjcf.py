@@ -53,9 +53,9 @@ def convert_ycb_to_mjcf(ycb_root: Path, output_root: Path) -> list[Path]:
             f'<mujoco model="{object_id}">\n'
             '    <compiler angle="radian"/>\n'
             f'    <asset><mesh name="{object_id}_mesh" file="{mesh_dir}/{mesh.name}"/></asset>\n'
-            '    <worldbody>\n'
+            "    <worldbody>\n"
             f'        <body name="{object_id}" pos="0.5 0 0.1">\n'
-            '            <freejoint/>\n'
+            "            <freejoint/>\n"
             f'            <geom name="{object_id}_geom" type="mesh" mesh="{object_id}_mesh"/>\n'
             "        </body>\n"
             "    </worldbody>\n"
@@ -87,15 +87,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     if args.ycb_root is None:
-        parser.error(
-            "--ycb-root is required (set in configs/data/default.yaml paths.ycb_root "
-            "or pass explicitly)"
-        )
+        parser.error("--ycb-root is required (set in configs/data/default.yaml paths.ycb_root or pass explicitly)")
     if args.output_root is None:
-        parser.error(
-            "--output-root is required (set in configs/base.yaml paths.ycb_mjcf "
-            "or pass explicitly)"
-        )
+        parser.error("--output-root is required (set in configs/base.yaml paths.ycb_mjcf or pass explicitly)")
     generated = convert_ycb_to_mjcf(args.ycb_root, args.output_root)
     for path in generated:
         print(path)

@@ -6,9 +6,7 @@ from pathlib import Path
 from grasping_ai.training.checkpoint_io import read_model_checkpoint_metadata
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Print architecture metadata from a model checkpoint"
-    )
+    parser = argparse.ArgumentParser(description="Print architecture metadata from a model checkpoint")
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument(
         "--device",

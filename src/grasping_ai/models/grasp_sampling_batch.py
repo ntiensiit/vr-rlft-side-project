@@ -24,9 +24,7 @@ def batch_conditioned_grasp_samples(
         Sampled grasp poses with shape ``(B, num_samples, grasp_dim)``.
     """
     if conditioning.ndim != 2:
-        raise ValueError(
-            f"conditioning must have shape (B, F), got {conditioning.shape}"
-        )
+        raise ValueError(f"conditioning must have shape (B, F), got {conditioning.shape}")
     if num_samples <= 0:
         raise ValueError("num_samples must be a positive integer")
     if not isinstance(rng, torch.Generator):
@@ -37,13 +35,7 @@ def batch_conditioned_grasp_samples(
     dtype = conditioning.dtype
 
     total_samples = batch_size * num_samples
-    cond_flat = (
-        conditioning.unsqueeze(1)
-        .repeat(1, num_samples, 1)
-        .view(total_samples, feature_size)
-    )
-    initial_states = torch.randn(
-        total_samples, grasp_dim, generator=rng, device=device, dtype=dtype
-    )
+    cond_flat = conditioning.unsqueeze(1).repeat(1, num_samples, 1).view(total_samples, feature_size)
+    initial_states = torch.randn(total_samples, grasp_dim, generator=rng, device=device, dtype=dtype)
     samples_flat = sample_fn(initial_states, cond_flat)
     return samples_flat.view(batch_size, num_samples, grasp_dim)

@@ -56,8 +56,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.checkpoint is None:
         parser.error(
-            "--checkpoint is required (set in configs/model/default.yaml diffusion.checkpoint "
-            "or pass explicitly)"
+            "--checkpoint is required (set in configs/model/default.yaml diffusion.checkpoint or pass explicitly)"
         )
     if args.output is None:
         parser.error(
@@ -74,10 +73,5 @@ if __name__ == "__main__":
         args.seed,
     )
     point_clouds = list(acquire_point_cloud_stream(args.observations))
-    grasps = [
-        generate_candidate_grasps(generator, point_cloud, args.num_grasps)
-        for point_cloud in point_clouds
-    ]
-    write_generated_grasps(
-        args.output, {f"object_{i}": grasp for i, grasp in enumerate(grasps)}
-    )
+    grasps = [generate_candidate_grasps(generator, point_cloud, args.num_grasps) for point_cloud in point_clouds]
+    write_generated_grasps(args.output, {f"object_{i}": grasp for i, grasp in enumerate(grasps)})

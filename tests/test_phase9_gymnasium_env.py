@@ -121,9 +121,7 @@ def test_env_step_non_finite_rejection(panda_robot_xml):
         env.step(np.array([np.inf], dtype=np.float32))
 
 
-def test_env_step_terminal_returns_terminal_observation_without_reset(
-    panda_robot_xml, monkeypatch
-):
+def test_env_step_terminal_returns_terminal_observation_without_reset(panda_robot_xml, monkeypatch):
     """Verify a non-finite transition returns the terminal observation unchanged."""
     import grasping_ai.simulation.mujoco_env as mujoco_env_module
 
@@ -142,9 +140,7 @@ def test_env_step_terminal_returns_terminal_observation_without_reset(
 
     monkeypatch.setattr(mujoco_env_module, "reset_simulation", spy_reset)
 
-    obs, _reward, terminated, truncated, _info = env.step(
-        np.array([0.5], dtype=np.float32)
-    )
+    obs, _reward, terminated, truncated, _info = env.step(np.array([0.5], dtype=np.float32))
 
     assert terminated is True
     assert truncated is False
@@ -158,15 +154,11 @@ def test_env_step_padding_truncation(panda_robot_xml):
     env.reset(seed=42)
 
     # Over-sized action should be truncated
-    obs, _reward, _terminated, _truncated, _info = env.step(
-        np.array([0.5, 1.0], dtype=np.float32)
-    )
+    obs, _reward, _terminated, _truncated, _info = env.step(np.array([0.5, 1.0], dtype=np.float32))
     assert np.isfinite(obs).all()
 
     # Under-sized action should be padded
-    obs, _reward, _terminated, _truncated, _info = env.step(
-        np.array([], dtype=np.float32)
-    )
+    obs, _reward, _terminated, _truncated, _info = env.step(np.array([], dtype=np.float32))
     assert np.isfinite(obs).all()
 
 
@@ -174,9 +166,7 @@ def test_default_reward_preserves_legacy_behavior(panda_robot_xml):
     """Verify that the default reward computation matches legacy scaling (action cost + survival bonus)."""
     env = MuJoCoGraspingEnv(panda_robot_xml)
     env.reset(seed=42)
-    _obs, reward, terminated, truncated, _info = env.step(
-        np.array([0.5], dtype=np.float32)
-    )
+    _obs, reward, terminated, truncated, _info = env.step(np.array([0.5], dtype=np.float32))
     assert reward == pytest.approx(-0.01 * 0.25 + 1.0)
     assert terminated is False
     assert truncated is False
@@ -184,14 +174,10 @@ def test_default_reward_preserves_legacy_behavior(panda_robot_xml):
 
 def test_contact_reward_term(scene_xml):
     """Verify that the reward correctly adds contact bonuses when tracked objects are touched."""
-    env = MuJoCoGraspingEnv(
-        scene_xml, object_name="object", reward_config=RewardConfig(contact_reward=0.5)
-    )
+    env = MuJoCoGraspingEnv(scene_xml, object_name="object", reward_config=RewardConfig(contact_reward=0.5))
     env.reset(seed=42)
     env._has_object_contact = lambda: True  # type: ignore[method-assign]
-    _obs, reward, terminated, _truncated, _info = env.step(
-        np.array([0.0], dtype=np.float32)
-    )
+    _obs, reward, terminated, _truncated, _info = env.step(np.array([0.0], dtype=np.float32))
     assert reward == pytest.approx(1.0 + 0.5)
     assert terminated is False
 
@@ -232,9 +218,7 @@ def test_drop_below_threshold_terminates(scene_xml):
     env.reset(seed=42)
     initial = env._initial_object_height
     env._get_object_height = lambda: initial - 0.2  # type: ignore[method-assign]
-    _obs, _reward, terminated, truncated, _info = env.step(
-        np.array([0.0], dtype=np.float32)
-    )
+    _obs, _reward, terminated, truncated, _info = env.step(np.array([0.0], dtype=np.float32))
     assert terminated is True
     assert truncated is False
 
@@ -254,12 +238,8 @@ def test_non_finite_terminal_uses_config(panda_robot_xml, monkeypatch):
         reward_config=RewardConfig(terminate_on_non_finite=False),
     )
     env.reset(seed=42)
-    monkeypatch.setattr(
-        env, "_get_observation", lambda: np.full(18, np.nan, dtype=np.float32)
-    )
-    _obs, _reward, terminated, _truncated, _info = env.step(
-        np.array([0.0], dtype=np.float32)
-    )
+    monkeypatch.setattr(env, "_get_observation", lambda: np.full(18, np.nan, dtype=np.float32))
+    _obs, _reward, terminated, _truncated, _info = env.step(np.array([0.0], dtype=np.float32))
     assert terminated is False
 
 
@@ -274,9 +254,7 @@ def test_env_step_routes_through_shared_command_path(panda_robot_xml, monkeypatc
         calls.append(np.asarray(ctrl, copy=True))
         return set_actuator_controls(state, ctrl)
 
-    monkeypatch.setattr(
-        mujoco_env_module, "set_actuator_controls", spy_set_actuator_controls
-    )
+    monkeypatch.setattr(mujoco_env_module, "set_actuator_controls", spy_set_actuator_controls)
 
     env = MuJoCoGraspingEnv(panda_robot_xml)
     env.reset(seed=42)

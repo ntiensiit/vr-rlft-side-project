@@ -93,13 +93,10 @@ def run_rl_evaluation_main(
 
     if observation_dim != env_obs_dim:
         raise ValueError(
-            f"observation_dim ({observation_dim}) does not match "
-            f"environment observation dimension ({env_obs_dim})"
+            f"observation_dim ({observation_dim}) does not match environment observation dimension ({env_obs_dim})"
         )
     if action_dim != env_act_dim:
-        raise ValueError(
-            f"action_dim ({action_dim}) does not match environment action dimension ({env_act_dim})"
-        )
+        raise ValueError(f"action_dim ({action_dim}) does not match environment action dimension ({env_act_dim})")
 
     action_low = np.asarray(env.action_space.low, dtype=np.float64)
     action_high = np.asarray(env.action_space.high, dtype=np.float64)
@@ -140,9 +137,7 @@ def run_rl_evaluation_main(
                     "reward": float(reward),
                     "terminated": bool(terminated),
                     "truncated": bool(truncated),
-                    "info": {
-                        k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in info.items()
-                    },
+                    "info": {k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in info.items()},
                 }
             )
             final_terminated = final_terminated or bool(terminated)
@@ -183,9 +178,7 @@ if __name__ == "__main__":
 
     from grasping_ai.config.yaml_loader import optional_cli_path
 
-    parser = argparse.ArgumentParser(
-        description="Run deterministic rollouts of the exported RL policy"
-    )
+    parser = argparse.ArgumentParser(description="Run deterministic rollouts of the exported RL policy")
     parser.add_argument("--policy-checkpoint", type=Path, required=True)
     parser.add_argument("--robot-xml", type=Path, required=True)
     parser.add_argument("--ycb-root", type=Path, required=True)

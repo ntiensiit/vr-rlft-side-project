@@ -93,13 +93,9 @@ def build_supervised_training_pairs(
 
         grasp_indices = list(range(len(grasp_poses)))
         if isinstance(scores, np.ndarray) and scores.shape[0] == len(grasp_poses):
-            grasp_indices = [
-                idx for idx in grasp_indices if float(scores[idx]) >= min_grasp_score
-            ]
+            grasp_indices = [idx for idx in grasp_indices if float(scores[idx]) >= min_grasp_score]
             if not grasp_indices:
-                raise ValueError(
-                    f"Record {record} has no grasp poses above min_grasp_score={min_grasp_score}"
-                )
+                raise ValueError(f"Record {record} has no grasp poses above min_grasp_score={min_grasp_score}")
 
         if augment_rng is not None:
             from grasping_ai.data.transforms import (
@@ -120,20 +116,14 @@ def build_supervised_training_pairs(
                 raise ValueError(f"Augmentation removed grasp poses for {record}")
             grasp_indices = list(range(len(grasp_poses)))
             if isinstance(scores, np.ndarray) and scores.shape[0] == len(grasp_poses):
-                grasp_indices = [
-                    idx for idx in grasp_indices if float(scores[idx]) >= min_grasp_score
-                ]
+                grasp_indices = [idx for idx in grasp_indices if float(scores[idx]) >= min_grasp_score]
                 if not grasp_indices:
-                    raise ValueError(
-                        f"Record {record} has no grasp poses above min_grasp_score after augment"
-                    )
+                    raise ValueError(f"Record {record} has no grasp poses above min_grasp_score after augment")
 
         pc_t = torch.from_numpy(pc).float()
         frame, centroid = compute_se3_frame(pc_t.unsqueeze(0))
         world = world_transform_from_frame(frame, centroid)[0]
-        world_inv = torch.from_numpy(
-            invert_rigid_transform(world.detach().cpu().numpy())
-        ).float()
+        world_inv = torch.from_numpy(invert_rigid_transform(world.detach().cpu().numpy())).float()
 
         score_values: np.ndarray | None = None
         if isinstance(scores, np.ndarray) and scores.shape[0] == len(grasp_poses):
@@ -150,11 +140,7 @@ def build_supervised_training_pairs(
             t_vec = se3_to_vec(canonical.numpy())
             pair = (pc_t, torch.from_numpy(t_vec).float())
             repeats = 1
-            if (
-                score_values is not None
-                and score_repeat_factor > 0
-                and max_score > 0.0
-            ):
+            if score_values is not None and score_repeat_factor > 0 and max_score > 0.0:
                 normalized = float(score_values[grasp_index]) / max_score
                 repeats = max(
                     1,

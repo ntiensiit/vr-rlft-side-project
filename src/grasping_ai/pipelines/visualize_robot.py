@@ -175,9 +175,7 @@ def run_keyboard_tui(
 
         def publish_key(keycode: int) -> None:
             assert pub_sock is not None
-            payload = json.dumps(
-                {"topic": topic, "keycode": keycode}, separators=(",", ":")
-            ).encode("utf-8")
+            payload = json.dumps({"topic": topic, "keycode": keycode}, separators=(",", ":")).encode("utf-8")
             pub_sock.sendto(payload, (host, port))
 
     print(
@@ -341,10 +339,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         index = code - 49
         if index < int(mj_model.nu):
             control_state["selected"] = index
-            name = (
-                mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, index)
-                or f"actuator_{index}"
-            )
+            name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, index) or f"actuator_{index}"
             print(f"Selected actuator {index}: {name}")
         return
     if code in (263, 45, 91):
@@ -358,10 +353,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         value = float(np.clip(ctrl[selected] - step, lo, hi))
         ctrl[selected] = value
         mj_data.ctrl[selected] = value
-        name = (
-            mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, selected)
-            or f"actuator_{selected}"
-        )
+        name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, selected) or f"actuator_{selected}"
         print(f"actuator {selected} ({name}) = {value:.4f}")
         return
     if code in (262, 61, 93):
@@ -375,10 +367,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         value = float(np.clip(ctrl[selected] + step, lo, hi))
         ctrl[selected] = value
         mj_data.ctrl[selected] = value
-        name = (
-            mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, selected)
-            or f"actuator_{selected}"
-        )
+        name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, selected) or f"actuator_{selected}"
         print(f"actuator {selected} ({name}) = {value:.4f}")
         return
     if code == 71:
@@ -400,9 +389,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
     if code == 72:
         apply_home_keyframe(mj_model, mj_data)
         if int(mj_model.nkey) > 0 and mj_model.key_ctrl.shape[1] == mj_model.nu:
-            control_state["ctrl"] = np.array(
-                mj_model.key_ctrl[0], dtype=np.float64, copy=True
-            )
+            control_state["ctrl"] = np.array(mj_model.key_ctrl[0], dtype=np.float64, copy=True)
         else:
             control_state["ctrl"] = np.array(mj_data.ctrl, dtype=np.float64, copy=True)
         mj_data.ctrl[:] = control_state["ctrl"]
@@ -509,6 +496,4 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--keyboard-tui":
         run_keyboard_tui()
     else:
-        raise SystemExit(
-            "Use scripts/visualize_robot.py for the MuJoCo viewer, or pass --keyboard-tui."
-        )
+        raise SystemExit("Use scripts/visualize_robot.py for the MuJoCo viewer, or pass --keyboard-tui.")

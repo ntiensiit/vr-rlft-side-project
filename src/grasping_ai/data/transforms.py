@@ -137,6 +137,7 @@ def compose_transforms(*transforms: SampleTransform) -> SampleTransform:
     Returns:
         A callable that applies each transform in order to a sample.
     """
+
     def composed(
         points: np.ndarray,
         grasp_poses: np.ndarray | None,
@@ -151,9 +152,7 @@ def compose_transforms(*transforms: SampleTransform) -> SampleTransform:
     return composed
 
 
-def save_grasp_dataset_index(
-    dataset_root: Path, entries: list[dict[str, str]], filename: str = "index.json"
-) -> None:
+def save_grasp_dataset_index(dataset_root: Path, entries: list[dict[str, str]], filename: str = "index.json") -> None:
     """Persist a dataset index file describing available records.
 
     Args:

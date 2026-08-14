@@ -5,9 +5,7 @@ from grasping_ai.perception.geometry import apply_transform, invert_transform
 RigidTransform = np.ndarray
 
 
-def transform_between_frames(
-    source_to_target: RigidTransform, point_in_source: np.ndarray
-) -> np.ndarray:
+def transform_between_frames(source_to_target: RigidTransform, point_in_source: np.ndarray) -> np.ndarray:
     """Transform a point expressed in a source frame into a target frame.
 
     Args:
@@ -30,9 +28,7 @@ def transform_between_frames(
     raise ValueError("point_in_source must have shape (3,) or (N, 3)")
 
 
-def transform_grasp_pose(
-    grasp_to_world: RigidTransform, gripper_to_grasp: RigidTransform
-) -> RigidTransform:
+def transform_grasp_pose(grasp_to_world: RigidTransform, gripper_to_grasp: RigidTransform) -> RigidTransform:
     """Compose grasp-pose transforms into a single gripper-in-world transform.
 
     Args:
@@ -51,9 +47,7 @@ def transform_grasp_pose(
     return grasp_to_world @ gripper_to_grasp
 
 
-def convert_grasps_to_world_frame(
-    grasps: np.ndarray, object_to_world: RigidTransform
-) -> np.ndarray:
+def convert_grasps_to_world_frame(grasps: np.ndarray, object_to_world: RigidTransform) -> np.ndarray:
     """Convert object-frame grasp poses into the world frame.
 
     Args:

@@ -71,9 +71,7 @@ def evaluate_generated_grasps(
     if wrench_regularization < 0:
         raise ValueError("wrench_regularization must be non-negative")
 
-    collision_checker = build_collision_checker(
-        object_point_cloud, gripper_point_cloud, clearance=clearance
-    )
+    collision_checker = build_collision_checker(object_point_cloud, gripper_point_cloud, clearance=clearance)
     if filter_collisions:
         grasp_poses = filter_collision_free_grasps(collision_checker, grasp_poses)
         if grasp_poses.shape[0] == 0:
@@ -86,9 +84,7 @@ def evaluate_generated_grasps(
             del pose
             return file_contacts
 
-    fc_judge = build_force_closure_judge(
-        friction_coefficient, wrench_regularization=wrench_regularization
-    )
+    fc_judge = build_force_closure_judge(friction_coefficient, wrench_regularization=wrench_regularization)
 
     results: list[dict[str, float | bool]] = []
     for i in range(grasp_poses.shape[0]):
@@ -97,17 +93,11 @@ def evaluate_generated_grasps(
         if contact_set_provider is not None:
             contacts = contact_set_provider(pose)
         else:
-            contacts = generate_analytical_contacts(
-                object_point_cloud, gripper_point_cloud, pose, clearance
-            )
+            contacts = generate_analytical_contacts(object_point_cloud, gripper_point_cloud, pose, clearance)
 
         force_closure = evaluate_force_closure(fc_judge, contacts)
         wrench_matrix = compute_grasp_wrench_matrix(contacts, friction_coefficient)
-        wrench_rank = (
-            float(np.linalg.matrix_rank(wrench_matrix))
-            if wrench_matrix.size
-            else 0.0
-        )
+        wrench_rank = float(np.linalg.matrix_rank(wrench_matrix)) if wrench_matrix.size else 0.0
         grasp_quality = compute_grasp_quality(contacts, friction_coefficient)
         grasp_success = bool(collision_free and force_closure)
 
@@ -251,13 +241,9 @@ def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
         try:
             loaded = json.loads(stripped)
         except json.JSONDecodeError as e:
-            raise ValueError(
-                f"Failed to read JSONL records from {input_path}: {e}"
-            ) from e
+            raise ValueError(f"Failed to read JSONL records from {input_path}: {e}") from e
         if not isinstance(loaded, dict):
-            raise TypeError(
-                f"JSONL line {line_number} in {input_path} must be a mapping"
-            )
+            raise TypeError(f"JSONL line {line_number} in {input_path} must be a mapping")
         records.append(loaded)
     return records
 

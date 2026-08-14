@@ -32,9 +32,7 @@ def _resolve_end_effector_body_name(model: Any, robot_model: dict[str, object]) 
                 ee_body_name = name
                 break
         if ee_body_name is None:
-            ee_body_name = mujoco.mj_id2name(
-                model, mujoco.mjtObj.mjOBJ_BODY, model.nbody - 1
-            )
+            ee_body_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.nbody - 1)
     return str(ee_body_name)
 
 
@@ -71,9 +69,7 @@ def load_robot_model(robot_description_path: str) -> dict[str, object]:
 
     path = Path(robot_description_path)
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Robot description file '{robot_description_path}' not found"
-        )
+        raise FileNotFoundError(f"Robot description file '{robot_description_path}' not found")
 
     try:
         model = mujoco.MjModel.from_xml_path(str(path))
@@ -113,9 +109,7 @@ def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematic
         if not isinstance(joints, np.ndarray):
             raise TypeError("joints must be a numpy array")
         if joints.shape != (model.nq,):
-            raise ValueError(
-                f"joints shape {joints.shape} does not match model.nq ({model.nq})"
-            )
+            raise ValueError(f"joints shape {joints.shape} does not match model.nq ({model.nq})")
         if not np.isfinite(joints).all():
             raise ValueError("joints must contain only finite values")
 
@@ -160,18 +154,11 @@ def build_inverse_kinematics(
 
     local_data = mujoco.MjData(model)
 
-    def ik(
-        target_pose: RigidTransform, initial_joints: JointConfiguration
-    ) -> JointConfiguration:
+    def ik(target_pose: RigidTransform, initial_joints: JointConfiguration) -> JointConfiguration:
         if not isinstance(target_pose, np.ndarray) or target_pose.shape != (4, 4):
             raise ValueError("target_pose must be a (4, 4) numpy array")
-        if (
-            not isinstance(initial_joints, np.ndarray)
-            or initial_joints.shape != (model.nq,)
-        ):
-            raise ValueError(
-                f"initial_joints shape {initial_joints.shape} does not match model.nq ({model.nq})"
-            )
+        if not isinstance(initial_joints, np.ndarray) or initial_joints.shape != (model.nq,):
+            raise ValueError(f"initial_joints shape {initial_joints.shape} does not match model.nq ({model.nq})")
         if not np.isfinite(target_pose).all():
             raise ValueError("target_pose must contain only finite values")
         if not np.isfinite(initial_joints).all():
@@ -209,9 +196,7 @@ def build_inverse_kinematics(
                     mujoco.mjtJoint.mjJNT_SLIDE,
                 ]:
                     qadr = model.jnt_qposadr[j]
-                    q[qadr] = np.clip(
-                        q[qadr], model.jnt_range[j, 0], model.jnt_range[j, 1]
-                    )
+                    q[qadr] = np.clip(q[qadr], model.jnt_range[j, 0], model.jnt_range[j, 1])
 
         # Verify final error
         local_data.qpos[:] = q
@@ -222,10 +207,7 @@ def build_inverse_kinematics(
         final_err = np.linalg.norm(_se3_pose_error(target_pose, current_pose))
 
         if final_err > tolerance:
-            raise ValueError(
-                f"IK solver failed to converge within tolerance {tolerance} "
-                f"(final error: {final_err})"
-            )
+            raise ValueError(f"IK solver failed to converge within tolerance {tolerance} (final error: {final_err})")
 
         return q
 

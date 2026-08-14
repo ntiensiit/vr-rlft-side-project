@@ -46,9 +46,7 @@ def acquire_point_cloud_stream(observation_paths: list[Path]) -> Iterator[np.nda
         TypeError: If ``observation_paths`` is not a list of ``pathlib.Path``
             instances.
     """
-    if not isinstance(observation_paths, list) or not all(
-        isinstance(path, Path) for path in observation_paths
-    ):
+    if not isinstance(observation_paths, list) or not all(isinstance(path, Path) for path in observation_paths):
         raise TypeError("observation_paths must be a list of pathlib.Path instances")
     for path in observation_paths:
         yield acquire_point_cloud_from_observation(path)
@@ -67,9 +65,7 @@ def merge_point_clouds(clouds: list[np.ndarray]) -> np.ndarray:
         TypeError: If ``clouds`` is not a list of numpy arrays.
         ValueError: If any cloud is not a 2D array with three columns.
     """
-    if not isinstance(clouds, list) or not all(
-        isinstance(cloud, np.ndarray) for cloud in clouds
-    ):
+    if not isinstance(clouds, list) or not all(isinstance(cloud, np.ndarray) for cloud in clouds):
         raise TypeError("clouds must be a list of numpy arrays")
     for cloud in clouds:
         if cloud.ndim != 2 or cloud.shape[1] != 3:
@@ -79,9 +75,7 @@ def merge_point_clouds(clouds: list[np.ndarray]) -> np.ndarray:
     return np.concatenate(clouds, axis=0).astype(np.float32)
 
 
-def sample_point_cloud_from_mesh(
-    mesh_path: Path, num_samples: int, rng: np.random.Generator
-) -> np.ndarray:
+def sample_point_cloud_from_mesh(mesh_path: Path, num_samples: int, rng: np.random.Generator) -> np.ndarray:
     """Sample a point cloud from a mesh resource on disk.
 
     Args:
@@ -143,10 +137,6 @@ def sample_point_cloud_from_mesh(
     p1 = v1[sampled_indices]
     p2 = v2[sampled_indices]
 
-    sampled_points = (
-        u[:, np.newaxis] * p0 +
-        v[:, np.newaxis] * p1 +
-        w[:, np.newaxis] * p2
-    )
+    sampled_points = u[:, np.newaxis] * p0 + v[:, np.newaxis] * p1 + w[:, np.newaxis] * p2
 
     return sampled_points.astype(np.float32)

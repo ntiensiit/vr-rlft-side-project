@@ -110,9 +110,7 @@ def build_scene_xml(
 
     included_object_path = object_xml_path
     if object_name is not None:
-        included_object_path = _rename_object_body(
-            object_xml_path, object_name, out_dir
-        )
+        included_object_path = _rename_object_body(object_xml_path, object_name, out_dir)
 
     robot_for_include = _xml_with_absolute_meshdir(robot_xml_path, out_dir)
 
@@ -127,15 +125,13 @@ def build_scene_xml(
     ]
     if table_xml_path is not None:
         lines.append(f'    <include file="{table_xml_path.resolve().as_posix()}"/>')
-    lines.append('</mujoco>')
+    lines.append("</mujoco>")
 
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
 
-def _rename_object_body(
-    object_xml_path: Path, object_name: str, out_dir: Path
-) -> Path:
+def _rename_object_body(object_xml_path: Path, object_name: str, out_dir: Path) -> Path:
     """Write a copy of an object XML with its first body renamed.
 
     Args:
@@ -153,9 +149,7 @@ def _rename_object_body(
         tree = ET.parse(object_xml_path)
         root = tree.getroot()
     except Exception as e:
-        raise ValueError(
-            f"Failed to parse object XML file '{object_xml_path}': {e}"
-        ) from e
+        raise ValueError(f"Failed to parse object XML file '{object_xml_path}': {e}") from e
 
     body_renamed = False
     for body in root.findall(".//body"):
@@ -164,13 +158,9 @@ def _rename_object_body(
         break
 
     if not body_renamed:
-        raise ValueError(
-            f"No body element found in object XML '{object_xml_path}' to rename"
-        )
+        raise ValueError(f"No body element found in object XML '{object_xml_path}' to rename")
 
-    fd, obj_path_str = tempfile.mkstemp(
-        suffix=f"_{object_name}.xml", dir=str(out_dir)
-    )
+    fd, obj_path_str = tempfile.mkstemp(suffix=f"_{object_name}.xml", dir=str(out_dir))
     os.close(fd)
     modified_object_xml_path = Path(obj_path_str)
     tree.write(modified_object_xml_path, encoding="utf-8", xml_declaration=True)
@@ -238,7 +228,7 @@ def attach_object_to_scene(
         lines.append(f'    <include file="{robot_for_include.resolve().as_posix()}"/>')
     for path in state_dict["attached_xml_paths"]:
         lines.append(f'    <include file="{path.resolve().as_posix()}"/>')
-    lines.append('</mujoco>')
+    lines.append("</mujoco>")
 
     new_scene_xml_path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -363,9 +353,7 @@ class MuJoCoScene:
 
         scene_path = self._resolve_scene_path()
         self._model_handle = load_mujoco_model(scene_path)
-        self._state, self._step_fn, self._contacts_fn = create_simulation(
-            self._model_handle
-        )
+        self._state, self._step_fn, self._contacts_fn = create_simulation(self._model_handle)
         self._snapshot = self._capture_state()
 
     def _resolve_scene_path(self) -> Path:

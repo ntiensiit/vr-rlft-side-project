@@ -60,9 +60,7 @@ if __name__ == "__main__":
         else:
             args.checkpoint = config_path(cfg, "diffusion", "checkpoint")
     if args.checkpoint is None:
-        parser.error(
-            "--checkpoint is required (set in configs/model/default.yaml or pass explicitly)"
-        )
+        parser.error("--checkpoint is required (set in configs/model/default.yaml or pass explicitly)")
     if args.num_steps is None:
         if args.method == "flow":
             args.num_steps = int(config_get(cfg, "flow", "inference_steps"))

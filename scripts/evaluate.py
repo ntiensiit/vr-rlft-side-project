@@ -99,9 +99,7 @@ if __name__ == "__main__":
             parser.error("--multi-object requires a pickled dict grasp artifact")
         for index, object_key in enumerate(sorted(grasp_dict.keys())):
             if index >= len(args.object_ids):
-                parser.error(
-                    f"grasp artifact key {object_key!r} has no matching YCB object id"
-                )
+                parser.error(f"grasp artifact key {object_key!r} has no matching YCB object id")
             ycb_object_id = args.object_ids[index]
             observation_path = args.observations_dir / f"{ycb_object_id}.npy"
             if not observation_path.is_file():
@@ -141,8 +139,7 @@ if __name__ == "__main__":
         )
 
     per_object_aggregated = {
-        object_id: aggregate_evaluation_results({object_id: results})
-        for object_id, results in per_object.items()
+        object_id: aggregate_evaluation_results({object_id: results}) for object_id, results in per_object.items()
     }
     aggregated = aggregate_evaluation_results(per_object)
     write_evaluation_report(

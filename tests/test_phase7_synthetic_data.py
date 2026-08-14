@@ -143,9 +143,7 @@ def test_generate_analytical_grasps_validation():
     normals = np.random.randn(10, 3)
 
     with pytest.raises(ValueError, match="relaxed_antipodal_dot"):
-        generate_analytical_grasps(
-            points, normals, 2, 0.05, rng, relaxed_antipodal_dot=1.5
-        )
+        generate_analytical_grasps(points, normals, 2, 0.05, rng, relaxed_antipodal_dot=1.5)
     with pytest.raises(TypeError, match="allow_relaxed"):
         generate_analytical_grasps(
             points,
@@ -156,9 +154,7 @@ def test_generate_analytical_grasps_validation():
             allow_relaxed="yes",  # type: ignore[arg-type]
         )
     with pytest.raises(ValueError, match="strict_antipodal_dot"):
-        generate_analytical_grasps(
-            points, normals, 2, 0.05, rng, strict_antipodal_dot=1.5
-        )
+        generate_analytical_grasps(points, normals, 2, 0.05, rng, strict_antipodal_dot=1.5)
     with pytest.raises(ValueError, match="search_multiplier"):
         generate_analytical_grasps(points, normals, 2, 0.05, rng, search_multiplier=0)
 
@@ -337,9 +333,7 @@ def test_generate_synthetic_dataset_sim_fallback_to_analytical(tmp_path, monkeyp
 
     import importlib
 
-    simulate_grasp_module = importlib.import_module(
-        "grasping_ai.pipelines.simulate_grasp"
-    )
+    simulate_grasp_module = importlib.import_module("grasping_ai.pipelines.simulate_grasp")
     monkeypatch.setattr(simulate_grasp_module, "simulate_grasp", reject_all_sim)
     generate_synthetic_dataset(
         ycb_root=ycb_root,

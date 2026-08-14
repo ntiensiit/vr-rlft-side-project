@@ -54,8 +54,6 @@ def iter_conditioned_training_batches(
     Yields:
         Batched ``(conditioning, targets)`` tensors on ``device``.
     """
-    for point_clouds, targets in iter_supervised_training_batches(
-        pairs, batch_size, device, seed
-    ):
+    for point_clouds, targets in iter_supervised_training_batches(pairs, batch_size, device, seed):
         conditioning, _, _ = encode_grasp_conditioning(encoder, point_clouds)
         yield conditioning, targets

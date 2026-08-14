@@ -20,9 +20,7 @@ def panda_hand_to_contact_transform() -> np.ndarray:
     from grasping_ai.perception.geometry import make_transform
 
     position = np.array([0.0, 0.0, -0.102], dtype=np.float64)
-    quaternion_wxyz = np.array(
-        [0.707106781, 0.0, 0.0, 0.707106781], dtype=np.float64
-    )
+    quaternion_wxyz = np.array([0.707106781, 0.0, 0.0, 0.707106781], dtype=np.float64)
     rotation = pr.matrix_from_quaternion(quaternion_wxyz)
     return make_transform(rotation, position)
 
@@ -57,9 +55,7 @@ def gripper_actuator_indices(mj_model: Any) -> list[int]:
             continue
         if mj_model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_JOINT:
             joint_id = int(mj_model.actuator_trnid[i, 0])
-            jname = (
-                mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_id) or ""
-            ).lower()
+            jname = (mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_id) or "").lower()
             if "finger" in jname or "gripper" in jname:
                 indices.append(i)
     return indices
@@ -82,9 +78,7 @@ def load_gripper_model(gripper_description_path: str) -> dict[str, object]:
 
     path = Path(gripper_description_path)
     if not path.is_file():
-        raise FileNotFoundError(
-            f"Gripper description file '{gripper_description_path}' not found"
-        )
+        raise FileNotFoundError(f"Gripper description file '{gripper_description_path}' not found")
 
     try:
         model = mujoco.MjModel.from_xml_path(str(path))
@@ -140,9 +134,7 @@ def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[np.n
 
         expected_nu: Any = gripper_model["nu"]
         if command.shape != (expected_nu,):
-            raise ValueError(
-                f"command shape {command.shape} does not match gripper actuators ({expected_nu},)"
-            )
+            raise ValueError(f"command shape {command.shape} does not match gripper actuators ({expected_nu},)")
 
         set_actuator_controls({"model": model, "data": data}, command)
 
@@ -199,4 +191,3 @@ def make_close_command(gripper_model: dict[str, object]) -> np.ndarray:
         else:
             cmd[i] = 1.0
     return cmd
-

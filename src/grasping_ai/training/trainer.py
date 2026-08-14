@@ -3,10 +3,7 @@ from pathlib import Path
 
 import torch
 
-BatchSource = (
-    Iterable[tuple[torch.Tensor, torch.Tensor]]
-    | Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]]
-)
+BatchSource = Iterable[tuple[torch.Tensor, torch.Tensor]] | Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]]
 OptimizerFactory = Callable[[Iterator[torch.nn.Parameter]], torch.optim.Optimizer]
 TrainingStep = Callable[[torch.Tensor, torch.Tensor], dict[str, float]]
 LossForward = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
@@ -34,9 +31,7 @@ def build_supervised_training_step(
     return step
 
 
-def build_adam_optimizer(
-    parameters: Iterator[torch.nn.Parameter], learning_rate: float
-) -> torch.optim.Optimizer:
+def build_adam_optimizer(parameters: Iterator[torch.nn.Parameter], learning_rate: float) -> torch.optim.Optimizer:
     """Create an Adam optimizer for the given parameters.
 
     Args:
@@ -82,13 +77,10 @@ def build_training_step(
             DEFAULT_DIFFUSION_SCHEDULE,
             linear_beta_schedule,
         )
+
         num_steps = DEFAULT_DIFFUSION_SCHEDULE.num_steps
-        t = torch.randint(
-            0, num_steps, (batch_size_val,), device=device_obj, generator=generator
-        )
-        noise = torch.randn(
-            x_0.shape, dtype=x_0.dtype, device=device_obj, generator=generator
-        )
+        t = torch.randint(0, num_steps, (batch_size_val,), device=device_obj, generator=generator)
+        noise = torch.randn(x_0.shape, dtype=x_0.dtype, device=device_obj, generator=generator)
         beta = linear_beta_schedule().to(device_obj)
         alpha = 1.0 - beta
         alpha_bar = torch.cumprod(alpha, dim=0)

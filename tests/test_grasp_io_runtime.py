@@ -66,9 +66,7 @@ def test_write_generated_grasps_array_validates_shape(tmp_path: Path) -> None:
         write_generated_grasps_array(path, np.zeros((2, 3)))
 
 
-def test_run_single_object_grasp_inference_from_observation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_single_object_grasp_inference_from_observation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that grasp inference runtime executes correctly on input observation point cloud files."""
     obs_path = tmp_path / "obs.npy"
     np.save(obs_path, np.random.randn(64, 3).astype(np.float32))
@@ -158,9 +156,7 @@ def test_run_single_object_grasp_inference_rejects_unknown_method(
         )
 
 
-def test_run_single_object_grasp_inference_diffusion_and_flow(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_single_object_grasp_inference_diffusion_and_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that grasp inference runtime can run both diffusion and flow matching pipelines."""
     obs_path = tmp_path / "obs.npy"
     np.save(obs_path, np.zeros((32, 3)))
@@ -279,9 +275,7 @@ def test_run_single_object_grasp_inference_validations(tmp_path: Path) -> None:
         )
 
 
-def test_run_single_object_grasp_inference_from_ycb_mesh(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_single_object_grasp_inference_from_ycb_mesh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that grasp inference runtime successfully samples meshes for YCB objects to run inference."""
     ycb_dir = tmp_path / "ycb"
     ycb_dir.mkdir()
@@ -344,9 +338,7 @@ def test_generate_grasps_type_and_value_errors(tmp_path: Path) -> None:
         load_generated_grasps("not_a_path")  # type: ignore[arg-type]
 
     dict_path = tmp_path / "dict_grasps.npy"
-    write_generated_grasps(
-        dict_path, {"obj1": _sample_grasps(1), "obj2": _sample_grasps(1)}
-    )
+    write_generated_grasps(dict_path, {"obj1": _sample_grasps(1), "obj2": _sample_grasps(1)})
     with pytest.raises(ValueError, match="Object key 'missing_key' not found"):
         load_generated_grasps(dict_path, object_key="missing_key")
 
@@ -362,9 +354,7 @@ def test_generate_grasps_type_and_value_errors(tmp_path: Path) -> None:
         write_generated_grasps_array("not_a_path", _sample_grasps(1))  # type: ignore[arg-type]
 
 
-def test_write_generated_grasps_exception_and_array_writer(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_write_generated_grasps_exception_and_array_writer(monkeypatch, tmp_path: Path) -> None:
     """Verify that disk save failures raise custom ValueErrors, and that plain array saves function correctly."""
 
     def bad_save(*args, **kwargs):

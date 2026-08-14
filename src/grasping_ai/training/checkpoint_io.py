@@ -30,9 +30,7 @@ def load_torch_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
         raise ValueError(f"Failed to load checkpoint: {e}") from e
 
     if not isinstance(checkpoint, dict):
-        raise ValueError(
-            f"Checkpoint at {checkpoint_path} must deserialize to a dictionary"
-        )
+        raise ValueError(f"Checkpoint at {checkpoint_path} must deserialize to a dictionary")
     return checkpoint
 
 

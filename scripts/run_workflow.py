@@ -127,9 +127,7 @@ def run_workflow_main(
             object_id,
         ]
     print(">>>", " ".join(grasp_inference_cmd))
-    subprocess.run(
-        grasp_inference_cmd, cwd=root, env=workflow_env, check=True, capture_output=False
-    )
+    subprocess.run(grasp_inference_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
 
     if robot_xml_path is not None and ycb_root_mjcf is not None and object_id is not None:
         sim_cmd: list[str] = [
@@ -157,9 +155,7 @@ def run_workflow_main(
         print(">>>", " ".join(sim_cmd))
         subprocess.run(sim_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
     else:
-        print(
-            "skipping MuJoCo simulation stage: robot-xml / ycb-mjcf / object-id not fully provided"
-        )
+        print("skipping MuJoCo simulation stage: robot-xml / ycb-mjcf / object-id not fully provided")
 
     # Stage 3: analytical evaluation.
     if observation_path is not None:
@@ -181,8 +177,7 @@ def run_workflow_main(
     gripper_pc_path = Path("data/observations/gripper.npy")
     if not gripper_pc_path.is_file():
         raise FileNotFoundError(
-            f"Gripper point cloud not found at {gripper_pc_path}; "
-            "run scripts/prepare_observations.py first"
+            f"Gripper point cloud not found at {gripper_pc_path}; run scripts/prepare_observations.py first"
         )
 
     eval_cmd: list[str] = [
@@ -267,44 +262,28 @@ def run_workflow_main(
                     if key in record:
                         summary[f"analytical_{key}"] = float(record[key])
                 if "object_success_rate" in record:
-                    summary["analytical_object_success_rate"] = float(
-                        record["object_success_rate"]
-                    )
+                    summary["analytical_object_success_rate"] = float(record["object_success_rate"])
                 break
         except (OSError, ValueError):
             pass
     if sim_path.is_file():
         try:
             outcomes = [
-                record
-                for record in read_jsonl_records(sim_path)
-                if record.get("record_type") == "grasp_outcome"
+                record for record in read_jsonl_records(sim_path) if record.get("record_type") == "grasp_outcome"
             ]
             if outcomes:
                 n = len(outcomes)
-                successes = sum(
-                    1 for outcome in outcomes if bool(outcome.get("success"))
-                )
+                successes = sum(1 for outcome in outcomes if bool(outcome.get("success")))
                 summary["simulated_success_rate"] = float(successes / n)
-                summary["simulated_object_success_rate"] = aggregate_grasp_success_rate(
-                    {"object_0": successes > 0}
-                )
+                summary["simulated_object_success_rate"] = aggregate_grasp_success_rate({"object_0": successes > 0})
         except (OSError, ValueError):
             pass
     if rl_path.is_file():
         try:
-            episodes = [
-                record
-                for record in read_jsonl_records(rl_path)
-                if record.get("record_type") == "episode"
-            ]
+            episodes = [record for record in read_jsonl_records(rl_path) if record.get("record_type") == "episode"]
             if episodes:
-                mean_return = sum(
-                    float(record["summary"]["return_total"]) for record in episodes
-                ) / len(episodes)
-                mean_len = sum(
-                    float(record["summary"]["length"]) for record in episodes
-                ) / len(episodes)
+                mean_return = sum(float(record["summary"]["return_total"]) for record in episodes) / len(episodes)
+                mean_len = sum(float(record["summary"]["length"]) for record in episodes) / len(episodes)
                 summary["rl_mean_return"] = float(mean_return)
                 summary["rl_mean_length"] = float(mean_len)
         except (OSError, ValueError, KeyError, TypeError):
@@ -326,9 +305,7 @@ if __name__ == "__main__":
     )
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(
-        config_dir, "base", "data", "model", "training", "evaluation", "robot", "simulation"
-    )
+    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "training", "evaluation", "robot", "simulation")
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -427,15 +404,9 @@ if __name__ == "__main__":
         if args.method == "flow":
             args.checkpoint = config_path(cfg, "flow", "checkpoint")
         if args.checkpoint is None:
-            parser.error(
-                "--checkpoint is required (set in configs/model/default.yaml "
-                "or pass explicitly)"
-            )
+            parser.error("--checkpoint is required (set in configs/model/default.yaml or pass explicitly)")
     if args.output_dir is None:
-        parser.error(
-            "--output-dir is required (set in configs/base.yaml paths.output_dir "
-            "or pass explicitly)"
-        )
+        parser.error("--output-dir is required (set in configs/base.yaml paths.output_dir or pass explicitly)")
     diffusion_steps = int(config_get(cfg, "diffusion", "inference_steps"))
     if args.method == "flow" and args.num_steps == diffusion_steps:
         args.num_steps = int(config_get(cfg, "flow", "inference_steps"))

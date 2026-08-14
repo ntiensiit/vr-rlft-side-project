@@ -28,6 +28,7 @@ class DiffusionSchedule:
             A DiffusionSchedule instance populated with configured parameters.
         """
         from grasping_ai.config.yaml_loader import config_get
+
         return cls(
             beta_start=float(config_get(cfg, "diffusion", "beta_start", default=1e-4)),
             beta_end=float(config_get(cfg, "diffusion", "beta_end", default=0.02)),
@@ -37,6 +38,7 @@ class DiffusionSchedule:
 
 try:
     from grasping_ai.config.yaml_loader import load_project_yaml_config, parse_config_dir_from_argv
+
     _cfg = load_project_yaml_config(parse_config_dir_from_argv())
     DEFAULT_DIFFUSION_SCHEDULE = DiffusionSchedule.load_from_config(_cfg)
 except Exception:

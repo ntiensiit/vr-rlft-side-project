@@ -41,9 +41,7 @@ def chain_run():
         check=False,
     )
     if completed.returncode != 0:
-        pytest.fail(
-            f"Artifact chain failed:\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
-        )
+        pytest.fail(f"Artifact chain failed:\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}")
     return completed
 
 
@@ -100,9 +98,7 @@ def test_evaluation_report_uses_grasp_success_key(chain_run):
 
     Checks that success_rate, collision_free_rate, and force_closure_rate are logged.
     """
-    records = read_jsonl_records(
-        ARTIFACTS / "reports" / "diffusion_analytical_evaluation_report.jsonl"
-    )
+    records = read_jsonl_records(ARTIFACTS / "reports" / "diffusion_analytical_evaluation_report.jsonl")
     object_records = [r for r in records if r.get("record_type") == "object"]
     summary_records = [r for r in records if r.get("record_type") == "summary"]
     assert len(object_records) >= 3

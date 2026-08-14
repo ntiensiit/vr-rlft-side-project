@@ -10,9 +10,7 @@ from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 PolicyActionSampler = Callable[[np.ndarray], np.ndarray]
 
 
-def load_rl_policy_checkpoint(
-    checkpoint_path: Path, device: str
-) -> dict[str, torch.Tensor]:
+def load_rl_policy_checkpoint(checkpoint_path: Path, device: str) -> dict[str, torch.Tensor]:
     """Load an RL policy checkpoint from disk.
 
     Args:
@@ -76,8 +74,7 @@ def build_rl_policy_runner(
             )
         if ckpt_action_dim != action_dim:
             raise ValueError(
-                f"checkpoint action_dim ({ckpt_action_dim}) does not match "
-                f"requested action_dim ({action_dim})"
+                f"checkpoint action_dim ({ckpt_action_dim}) does not match requested action_dim ({action_dim})"
             )
     else:
         # Legacy checkpoints carry no metadata; infer from parameter names.
@@ -92,22 +89,16 @@ def build_rl_policy_runner(
     policy = build_policy_network(observation_dim, action_dim, hidden_dim, num_layers)
     if isinstance(policy, torch.nn.Module):
         if model_state is not None:
-            policy.load_state_dict(
-                cast(dict[str, Any], model_state)
-            )
+            policy.load_state_dict(cast(dict[str, Any], model_state))
         policy.to(torch.device(device))
         policy.eval()
 
     clip_low = None if action_low is None else np.asarray(action_low, dtype=np.float64)
     clip_high = None if action_high is None else np.asarray(action_high, dtype=np.float64)
     if clip_low is not None and clip_low.shape != (action_dim,):
-        raise ValueError(
-            f"action_low must have shape ({action_dim},), got {clip_low.shape}"
-        )
+        raise ValueError(f"action_low must have shape ({action_dim},), got {clip_low.shape}")
     if clip_high is not None and clip_high.shape != (action_dim,):
-        raise ValueError(
-            f"action_high must have shape ({action_dim},), got {clip_high.shape}"
-        )
+        raise ValueError(f"action_high must have shape ({action_dim},), got {clip_high.shape}")
 
     device_obj = torch.device(device)
     action_rng = None
@@ -120,22 +111,12 @@ def build_rl_policy_runner(
         if not isinstance(observation, np.ndarray):
             raise TypeError("observation must be a numpy array")
         if observation.ndim != 1 or observation.shape[0] != observation_dim:
-            raise ValueError(
-                f"observation must have shape ({observation_dim},), "
-                f"got {observation.shape}"
-            )
+            raise ValueError(f"observation must have shape ({observation_dim},), got {observation.shape}")
 
-        obs_tensor = (
-            torch.from_numpy(observation)
-            .float()
-            .unsqueeze(0)
-            .to(device_obj)
-        )
+        obs_tensor = torch.from_numpy(observation).float().unsqueeze(0).to(device_obj)
         with torch.no_grad():
             if stochastic and action_rng is not None:
-                action_tensor = select_action(
-                    policy, obs_tensor, action_rng, noise_scale=exploration_noise
-                )
+                action_tensor = select_action(policy, obs_tensor, action_rng, noise_scale=exploration_noise)
             else:
                 action_tensor = policy(obs_tensor)
         action = action_tensor.squeeze(0).cpu().numpy()
@@ -146,9 +127,7 @@ def build_rl_policy_runner(
     return runner
 
 
-def run_policy_step(
-    runner: PolicyActionSampler, observation: np.ndarray
-) -> np.ndarray:
+def run_policy_step(runner: PolicyActionSampler, observation: np.ndarray) -> np.ndarray:
     """Run a single inference step of an RL policy.
 
     Args:

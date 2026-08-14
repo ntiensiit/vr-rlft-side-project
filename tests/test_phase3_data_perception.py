@@ -341,9 +341,7 @@ def test_voxel_downsample():
     downsampled = voxel_downsample(points, voxel_size=0.1)
     # The first two points should fall in the same voxel and be averaged
     assert len(downsampled) == 2
-    assert np.allclose(downsampled[0], [0.015, 0.015, 0.015]) or np.allclose(
-        downsampled[1], [0.015, 0.015, 0.015]
-    )
+    assert np.allclose(downsampled[0], [0.015, 0.015, 0.015]) or np.allclose(downsampled[1], [0.015, 0.015, 0.015])
 
 
 def test_build_kdtree():
@@ -761,13 +759,9 @@ def test_generate_analytical_grasps_validations_and_fallbacks() -> None:
         generate_analytical_grasps(pts, normals, 2, 0.05, rng, allow_relaxed="yes")  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="relaxed_antipodal_dot"):
-        generate_analytical_grasps(
-            pts, normals, 2, 0.05, rng, relaxed_antipodal_dot=2.0
-        )
+        generate_analytical_grasps(pts, normals, 2, 0.05, rng, relaxed_antipodal_dot=2.0)
 
-    grasps = generate_analytical_grasps(
-        pts, normals, num_grasps=2, gripper_width=0.05, rng=rng
-    )
+    grasps = generate_analytical_grasps(pts, normals, num_grasps=2, gripper_width=0.05, rng=rng)
     assert len(grasps) > 0
     assert grasps[0].shape == (4, 4)
 
@@ -796,9 +790,7 @@ def test_training_pairs_validations_and_error_paths(tmp_path: Path) -> None:
 
     empty_dir = tmp_path / "empty_ds"
     empty_dir.mkdir()
-    with pytest.raises(
-        ValueError, match=r"No dataset record files|contains no valid grasp samples"
-    ):
+    with pytest.raises(ValueError, match=r"No dataset record files|contains no valid grasp samples"):
         validate_grasp_dataset(empty_dir)
 
     with pytest.raises(TypeError, match="dataset_root"):
@@ -887,9 +879,7 @@ def test_generate_analytical_grasps_degenerate_parallel_normals() -> None:
     pts = np.array([[0.0, 0.0, 0.0], [0.02, 0.0, 0.0]], dtype=np.float64)
     normals = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]], dtype=np.float64)
 
-    grasps = generate_analytical_grasps(
-        pts, normals, num_grasps=1, gripper_width=0.05, rng=rng
-    )
+    grasps = generate_analytical_grasps(pts, normals, num_grasps=1, gripper_width=0.05, rng=rng)
     assert isinstance(grasps, np.ndarray)
 
 
@@ -928,9 +918,7 @@ def test_generate_analytical_grasps_relaxed_fallback_and_parallel_normals() -> N
     pts = np.array([[0.0, 0.0, 0.0], [0.02, 0.0, 0.0]])
     normals = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]])
 
-    grasps = generate_analytical_grasps(
-        pts, normals, num_grasps=1, gripper_width=0.05, allow_relaxed=True, rng=rng
-    )
+    grasps = generate_analytical_grasps(pts, normals, num_grasps=1, gripper_width=0.05, allow_relaxed=True, rng=rng)
     assert len(grasps) >= 1
 
     pts_zero_dist = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])

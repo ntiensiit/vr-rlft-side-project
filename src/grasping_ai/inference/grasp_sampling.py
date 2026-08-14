@@ -23,9 +23,7 @@ def prepare_point_cloud_tensor(point_cloud: np.ndarray, device: str) -> torch.Te
         Point cloud tensor with shape ``(1, N, 3)`` on ``device``.
     """
     if point_cloud.ndim != 2 or point_cloud.shape[1] != 3:
-        raise ValueError(
-            f"point_cloud must have shape (N, 3), got {point_cloud.shape}"
-        )
+        raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
     return torch.from_numpy(point_cloud).float().to(device).unsqueeze(0)
 
 

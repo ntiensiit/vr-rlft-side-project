@@ -41,15 +41,11 @@ def run_rl_training_pipeline(
     if not isinstance(robot_xml_path, Path):
         raise TypeError("robot_xml_path must be a pathlib.Path instance")
     if not robot_xml_path.is_file():
-        raise FileNotFoundError(
-            f"Robot XML file not found: {robot_xml_path}"
-        )
+        raise FileNotFoundError(f"Robot XML file not found: {robot_xml_path}")
     if object_ids and not isinstance(ycb_root, Path):
         raise TypeError("ycb_root must be a pathlib.Path instance")
     if object_ids and not ycb_root.is_dir():
-        raise FileNotFoundError(
-            f"YCB root directory not found: {ycb_root}"
-        )
+        raise FileNotFoundError(f"YCB root directory not found: {ycb_root}")
     if observation_dim <= 0:
         raise ValueError("observation_dim must be positive")
     if action_dim <= 0:
@@ -64,8 +60,7 @@ def run_rl_training_pipeline(
         raise ValueError("gamma must be in [0, 1]")
     if len(object_ids) > 1:
         raise ValueError(
-            "object_ids must contain at most one object; the environment "
-            "tracks a single object body during RL training"
+            "object_ids must contain at most one object; the environment tracks a single object body during RL training"
         )
 
     env_xml_path = robot_xml_path
@@ -85,6 +80,7 @@ def run_rl_training_pipeline(
 
     try:
         from grasping_ai.config.yaml_loader import load_project_yaml_config, parse_config_dir_from_argv
+
         _cfg = load_project_yaml_config(parse_config_dir_from_argv())
         reward_config = RewardConfig.load_from_config(_cfg)
     except Exception:
@@ -106,14 +102,10 @@ def run_rl_training_pipeline(
 
     if observation_dim != obs_shape[0]:
         raise ValueError(
-            f"observation_dim ({observation_dim}) does not match "
-            f"environment observation dimension ({obs_shape[0]})"
+            f"observation_dim ({observation_dim}) does not match environment observation dimension ({obs_shape[0]})"
         )
     if action_dim != act_shape[0]:
-        raise ValueError(
-            f"action_dim ({action_dim}) does not match "
-            f"environment action dimension ({act_shape[0]})"
-        )
+        raise ValueError(f"action_dim ({action_dim}) does not match environment action dimension ({act_shape[0]})")
 
     policy_kwargs = {
         "net_arch": {"pi": [hidden_dim, hidden_dim], "vf": [hidden_dim, hidden_dim]},
@@ -162,6 +154,7 @@ def run_rl_training_pipeline(
     legacy_policy.load_state_dict(legacy_state)
 
     from grasping_ai.models.rl_policy import save_rl_policy_checkpoint
+
     save_rl_policy_checkpoint(
         policy=legacy_policy,
         policy_checkpoint_path=policy_checkpoint_path,

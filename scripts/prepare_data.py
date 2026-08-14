@@ -150,9 +150,7 @@ def generate_synthetic_dataset(
     from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
 
     object_position = (
-        sim_object_position
-        if sim_object_position is not None
-        else np.array([0.5, 0.0, 0.1], dtype=np.float64)
+        sim_object_position if sim_object_position is not None else np.array([0.5, 0.0, 0.1], dtype=np.float64)
     )
     if object_position.shape != (3,):
         raise ValueError("sim_object_position must have shape (3,)")
@@ -265,9 +263,7 @@ def generate_synthetic_dataset(
 
                 sim_filtered: list[tuple[np.ndarray, float]] = []
                 close_command = cast(np.ndarray, gripper_close_command)
-                table_xml_path = (
-                    table_xml if table_xml is not None and table_xml.is_file() else None
-                )
+                table_xml_path = table_xml if table_xml is not None and table_xml.is_file() else None
                 for pose, score in analytical_scored:
                     world_pose = convert_grasps_to_world_frame(
                         pose.reshape(1, 4, 4),
@@ -303,10 +299,7 @@ def generate_synthetic_dataset(
                     scored_grasps = sim_filtered
                     label_source = f"{grasp_source}+sim"
                 elif sim_validate_fallback_analytical and analytical_scored:
-                    print(
-                        f"{name}: no sim-validated grasps; keeping "
-                        f"{len(analytical_scored)} analytical labels."
-                    )
+                    print(f"{name}: no sim-validated grasps; keeping {len(analytical_scored)} analytical labels.")
                     scored_grasps = analytical_scored
                     label_source = f"{grasp_source}+sim_fallback"
                 else:
@@ -406,9 +399,7 @@ if __name__ == "__main__":
     )
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(
-        config_dir, "base", "data", "object", "evaluation", "gripper", "env"
-    )
+    cfg = load_project_yaml_config(config_dir, "base", "data", "object", "evaluation", "gripper", "env")
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -480,8 +471,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.output_index is None:
         parser.error(
-            "--output-index is required (set in configs/data/default.yaml paths.output_index "
-            "or pass explicitly)"
+            "--output-index is required (set in configs/data/default.yaml paths.output_index or pass explicitly)"
         )
 
     target_dir = args.output_dir if args.output_dir is not None else args.dataset_root
@@ -493,19 +483,13 @@ if __name__ == "__main__":
             parser.error("--output-dir or --dataset-root is required when --mode is synthetic")
 
         gripper_close = config_get(cfg, "robot", "gripper", "close_command")
-        close_command = (
-            np.asarray(gripper_close, dtype=np.float64)
-            if isinstance(gripper_close, list)
-            else None
-        )
+        close_command = np.asarray(gripper_close, dtype=np.float64) if isinstance(gripper_close, list) else None
         synthetic_cfg = cast(dict[str, object], config_get(cfg, "synthetic", default={}) or {})
         metrics_cfg = cast(dict[str, object], config_get(cfg, "metrics", default={}) or {})
         limits_cfg = cast(dict[str, object], config_get(cfg, "limits", default={}) or {})
         sim_position = config_float_list(cfg, "synthetic", "sim_object_position")
         sim_object_position = (
-            np.asarray(sim_position, dtype=np.float64)
-            if sim_position
-            else np.array([0.5, 0.0, 0.1], dtype=np.float64)
+            np.asarray(sim_position, dtype=np.float64) if sim_position else np.array([0.5, 0.0, 0.1], dtype=np.float64)
         )
         sim_table = config_get(cfg, "synthetic", "sim_table_xml")
         table_xml = Path(str(sim_table)) if isinstance(sim_table, str) else None
@@ -555,16 +539,10 @@ if __name__ == "__main__":
             max_angular_velocity=float(limits_cfg.get("max_angular_velocity", 0.1)),
             quality_report_path=args.quality_report,
             sim_object_position=sim_object_position,
-            sim_validate_require_lift=bool(
-                synthetic_cfg.get("sim_validate_require_lift", False)
-            ),
+            sim_validate_require_lift=bool(synthetic_cfg.get("sim_validate_require_lift", False)),
             sim_validate_require_ik=bool(synthetic_cfg.get("sim_validate_require_ik", True)),
-            sim_validate_min_contacts=float(
-                synthetic_cfg.get("sim_validate_min_contacts", 1.0)
-            ),
-            sim_validate_fallback_analytical=bool(
-                synthetic_cfg.get("sim_validate_fallback_analytical", True)
-            ),
+            sim_validate_min_contacts=float(synthetic_cfg.get("sim_validate_min_contacts", 1.0)),
+            sim_validate_fallback_analytical=bool(synthetic_cfg.get("sim_validate_fallback_analytical", True)),
             table_xml=table_xml,
         )
         prepare_data_index(target_dir, args.output_index)

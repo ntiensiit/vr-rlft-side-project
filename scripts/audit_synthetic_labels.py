@@ -73,13 +73,9 @@ def audit_synthetic_labels(
             if len(contacts) < 2:
                 continue
             contact_scored += 1
-            recomputed_scores.append(
-                compute_grasp_quality(contacts, friction_coefficient)
-            )
+            recomputed_scores.append(compute_grasp_quality(contacts, friction_coefficient))
 
-        collision_checker = build_collision_checker(
-            point_cloud, gripper_point_cloud, clearance=collision_clearance
-        )
+        collision_checker = build_collision_checker(point_cloud, gripper_point_cloud, clearance=collision_clearance)
         collision_free = filter_collision_free_grasps(collision_checker, grasp_poses)
 
         stored_mean = None
@@ -92,15 +88,9 @@ def audit_synthetic_labels(
                 "num_grasps": num_grasps,
                 "contact_scored_rate": float(contact_scored / max(num_grasps, 1)),
                 "collision_free_rate": float(collision_free.shape[0] / max(num_grasps, 1)),
-                "mean_recomputed_score": float(np.mean(recomputed_scores))
-                if recomputed_scores
-                else 0.0,
-                "min_recomputed_score": float(np.min(recomputed_scores))
-                if recomputed_scores
-                else 0.0,
-                "max_recomputed_score": float(np.max(recomputed_scores))
-                if recomputed_scores
-                else 0.0,
+                "mean_recomputed_score": float(np.mean(recomputed_scores)) if recomputed_scores else 0.0,
+                "min_recomputed_score": float(np.min(recomputed_scores)) if recomputed_scores else 0.0,
+                "max_recomputed_score": float(np.max(recomputed_scores)) if recomputed_scores else 0.0,
                 "stored_mean_score": stored_mean,
             }
         )
@@ -162,8 +152,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.dataset_root is None:
         parser.error(
-            "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root "
-            "or pass explicitly)"
+            "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root or pass explicitly)"
         )
 
     report = audit_synthetic_labels(

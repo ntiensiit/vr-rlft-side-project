@@ -13,9 +13,7 @@ if __name__ == "__main__":
     import argparse
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(
-        config_dir, "base", "data", "model", "training", "gripper", "env", "object"
-    )
+    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "training", "gripper", "env", "object")
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -83,23 +81,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.robot_xml is None:
         parser.error(
-            "--robot-xml is required (set in configs/gripper/default.yaml robot.description "
-            "or pass explicitly)"
+            "--robot-xml is required (set in configs/gripper/default.yaml robot.description or pass explicitly)"
         )
     if args.ycb_root is None:
-        parser.error(
-            "--ycb-root is required (set in configs/base.yaml paths.ycb_mjcf "
-            "or pass explicitly)"
-        )
+        parser.error("--ycb-root is required (set in configs/base.yaml paths.ycb_mjcf or pass explicitly)")
     if args.object_ids is None:
-        parser.error(
-            "--object-ids is required (set in configs/object/default.yaml objects.ids "
-            "or pass explicitly)"
-        )
+        parser.error("--object-ids is required (set in configs/object/default.yaml objects.ids or pass explicitly)")
     if args.policy_checkpoint is None:
         parser.error(
-            "--policy-checkpoint is required (set in configs/model/default.yaml rl.checkpoint "
-            "or pass explicitly)"
+            "--policy-checkpoint is required (set in configs/model/default.yaml rl.checkpoint or pass explicitly)"
         )
     run_rl_training_pipeline(
         robot_xml_path=args.robot_xml,

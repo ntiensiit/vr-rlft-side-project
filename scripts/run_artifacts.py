@@ -26,9 +26,7 @@ def main() -> None:
     config_dir = parse_config_dir_from_argv()
     if not config_dir.is_absolute():
         config_dir = root / config_dir
-    cfg = load_project_yaml_config(
-        config_dir, "base", "data", "model", "training", "evaluation", "robot", "simulation"
-    )
+    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "training", "evaluation", "robot", "simulation")
     artifacts = root / str(config_get(cfg, "paths", "output_dir"))
     data_processed = root / str(config_get(cfg, "paths", "dataset_root"))
     ycb_root = root / str(config_get(cfg, "paths", "ycb_root"))
@@ -48,16 +46,10 @@ def main() -> None:
 
     diffusion_checkpoint = root / str(config_get(cfg, "diffusion", "checkpoint"))
     rl_checkpoint = root / str(config_get(cfg, "rl", "checkpoint"))
-    grasp_candidates = root / str(
-        config_get(cfg, "diffusion", "exports", "grasp_candidates")
-    )
+    grasp_candidates = root / str(config_get(cfg, "diffusion", "exports", "grasp_candidates"))
     grasp_poses = root / str(config_get(cfg, "diffusion", "exports", "grasp_poses"))
-    simulation_report = root / str(
-        config_get(cfg, "diffusion", "exports", "simulation_report")
-    )
-    evaluation_report = root / str(
-        config_get(cfg, "diffusion", "exports", "evaluation_report")
-    )
+    simulation_report = root / str(config_get(cfg, "diffusion", "exports", "simulation_report"))
+    evaluation_report = root / str(config_get(cfg, "diffusion", "exports", "evaluation_report"))
     robot_xml = root / str(config_get(cfg, "robot", "description"))
     diffusion_tb = root / str(config_get(cfg, "diffusion", "tensorboard"))
     rl_tb = root / str(config_get(cfg, "rl", "tensorboard"))
@@ -70,9 +62,7 @@ def main() -> None:
     observations_arg = observations.resolve().relative_to(root_resolved).as_posix()
     data_processed_arg = data_processed.resolve().relative_to(root_resolved).as_posix()
     output_index_arg = output_index.resolve().relative_to(root_resolved).as_posix()
-    diffusion_checkpoint_arg = (
-        diffusion_checkpoint.resolve().relative_to(root_resolved).as_posix()
-    )
+    diffusion_checkpoint_arg = diffusion_checkpoint.resolve().relative_to(root_resolved).as_posix()
     grasp_candidates_arg = grasp_candidates.resolve().relative_to(root_resolved).as_posix()
     grasp_poses_arg = grasp_poses.resolve().relative_to(root_resolved).as_posix()
     simulation_report_arg = simulation_report.resolve().relative_to(root_resolved).as_posix()
@@ -82,8 +72,7 @@ def main() -> None:
     rl_checkpoint_arg = rl_checkpoint.resolve().relative_to(root_resolved).as_posix()
     rl_tb_arg = rl_tb.resolve().relative_to(root_resolved).as_posix()
     observation_files = [
-        (observations / f"{object_id}.npy").resolve().relative_to(root_resolved).as_posix()
-        for object_id in object_ids
+        (observations / f"{object_id}.npy").resolve().relative_to(root_resolved).as_posix() for object_id in object_ids
     ]
 
     commands: list[list[str]] = [
@@ -244,24 +233,15 @@ def main() -> None:
             "config_dir": config_dir_arg,
         }
     ]
-    manifest_records.extend(
-        {"record_type": "command", **entry} for entry in log
-    )
-    manifest_records.extend(
-        {"record_type": "retained_artifact", "path": rel}
-        for rel in retained_artifacts
-    )
+    manifest_records.extend({"record_type": "command", **entry} for entry in log)
+    manifest_records.extend({"record_type": "retained_artifact", "path": rel} for rel in retained_artifacts)
     write_jsonl_records(manifest_path, manifest_records)
 
-    tracking_backend = str(
-        config_get(cfg, "tracking", "backend", default="none")
-    ).lower()
+    tracking_backend = str(config_get(cfg, "tracking", "backend", default="none")).lower()
     if tracking_backend == "wandb":
         import wandb
 
-        wandb_project = str(
-            config_get(cfg, "tracking", "project", default="vr-rlft-side-project")
-        )
+        wandb_project = str(config_get(cfg, "tracking", "project", default="vr-rlft-side-project"))
         wandb_entity = config_get(cfg, "tracking", "entity", default=None)
         wandb_mode = str(config_get(cfg, "tracking", "mode", default="offline"))
         wandb_init: dict[str, object] = {
@@ -315,9 +295,7 @@ def main() -> None:
 
     observation_dim = int(config_get(cfg, "rl", "observation_dim"))
     action_dim = int(config_get(cfg, "rl", "action_dim"))
-    infer_path_arg = (artifacts / "rl_inference_smoke.py").resolve().relative_to(
-        root_resolved
-    ).as_posix()
+    infer_path_arg = (artifacts / "rl_inference_smoke.py").resolve().relative_to(root_resolved).as_posix()
     infer_script = (
         "from pathlib import Path\n"
         "import numpy as np\n"

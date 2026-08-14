@@ -51,6 +51,7 @@ class GraspGeneratorModel(torch.nn.Module):
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         from grasping_ai.models.equivariant_encoder import build_equivariant_encoder
+
         self.encoder = build_equivariant_encoder(feature_dim, num_layers)
         self.score_net = ScoreNetwork(feature_dim, hidden_dim, num_layers)
 
@@ -99,14 +100,8 @@ def build_diffusion_sampler(
     )
 
     schedule = DiffusionSchedule(
-        beta_start=(
-            DEFAULT_DIFFUSION_SCHEDULE.beta_start
-            if beta_start is None
-            else beta_start
-        ),
-        beta_end=(
-            DEFAULT_DIFFUSION_SCHEDULE.beta_end if beta_end is None else beta_end
-        ),
+        beta_start=(DEFAULT_DIFFUSION_SCHEDULE.beta_start if beta_start is None else beta_start),
+        beta_end=(DEFAULT_DIFFUSION_SCHEDULE.beta_end if beta_end is None else beta_end),
         num_steps=num_steps,
     )
     beta = linear_beta_schedule(schedule)

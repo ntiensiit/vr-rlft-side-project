@@ -156,9 +156,7 @@ def test_collision_metric_returns_valid_output():
 
 def test_force_closure_metric_returns_valid_output():
     """Verify force closure LP solver works."""
-    judge = build_force_closure_judge(
-        friction_coefficient=0.5, wrench_regularization=1.0
-    )
+    judge = build_force_closure_judge(friction_coefficient=0.5, wrench_regularization=1.0)
 
     # Empty contacts -> not force closed
     assert evaluate_force_closure(judge, []) is False
@@ -235,9 +233,7 @@ def test_run_simulation_creates_outcome_report(panda_robot_xml, minimal_ycb_root
     assert "contact_count" in outcome
 
 
-def test_run_simulation_validates_success_contract_params(
-    panda_robot_xml, minimal_ycb_root
-):
+def test_run_simulation_validates_success_contract_params(panda_robot_xml, minimal_ycb_root):
     """Verify simulate_grasp validates lift and stability thresholds."""
     grasp = np.eye(4)
     grasp[:3, 3] = [0.0, 0.0, 0.3]
@@ -311,9 +307,7 @@ def test_evaluate_creates_report_from_synthetic_inputs():
         write_evaluation_report(report_path, aggregated)
         assert report_path.exists()
         records = read_jsonl_records(report_path)
-        summary = next(
-            record for record in records if record.get("record_type") == "summary"
-        )
+        summary = next(record for record in records if record.get("record_type") == "summary")
         assert "success_rate" in summary
 
 
@@ -344,9 +338,7 @@ def test_phase6_pipelines_do_not_leak_global_state(panda_robot_xml, minimal_ycb_
     assert np.allclose(outcome2["grasp_pose"], grasp2)
 
 
-def test_simulate_grasp_renames_object_body_to_object_identifier(
-    panda_robot_xml, minimal_ycb_root_differing_body_name
-):
+def test_simulate_grasp_renames_object_body_to_object_identifier(panda_robot_xml, minimal_ycb_root_differing_body_name):
     """Verify object body is renamed to the identifier so lookups succeed.
 
     Args:
@@ -388,9 +380,7 @@ def test_simulate_grasp_renames_object_body_to_object_identifier(
     assert np.allclose(outcome["grasp_pose"], contact_grasp)
 
 
-def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(
-    panda_robot_xml, minimal_ycb_root_at_height
-):
+def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(panda_robot_xml, minimal_ycb_root_at_height):
     """Verify IK failure returns an unsuccessful outcome without simulating."""
     grasp = np.eye(4)
     grasp[:3, 3] = [0.0, 0.0, 1.0]
@@ -411,9 +401,7 @@ def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(
     assert np.allclose(outcome["grasp_pose"], grasp)
 
 
-def test_simulate_grasp_ik_failure_aligns_freejoint_object(
-    panda_robot_xml, minimal_ycb_root_freejoint
-):
+def test_simulate_grasp_ik_failure_aligns_freejoint_object(panda_robot_xml, minimal_ycb_root_freejoint):
     """Verify unreachable grasps still run physics when the object can teleport."""
     grasp = np.eye(4)
     grasp[:3, 3] = [0.0, 0.0, 1.0]
