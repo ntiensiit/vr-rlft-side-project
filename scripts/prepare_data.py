@@ -207,7 +207,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.output_index is None:
         parser.error(
-            "--output-index is required (set in configs/data.yaml paths.output_index "
+            "--output-index is required (set in configs/data/default.yaml paths.output_index "
             "or pass explicitly)"
         )
 

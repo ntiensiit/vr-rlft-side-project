@@ -1,3 +1,4 @@
+# @package _global_
 metrics:
   friction_coefficient: 0.5
   wrench_regularization: 1.0

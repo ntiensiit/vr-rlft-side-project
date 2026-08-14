@@ -13,6 +13,7 @@ build/
 dist/
 .venv/
 .env
+wandb/
 
 artifacts/checkpoints/*.pt
 artifacts/exports/*.npy

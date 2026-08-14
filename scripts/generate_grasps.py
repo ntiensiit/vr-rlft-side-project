@@ -56,12 +56,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.checkpoint is None:
         parser.error(
-            "--checkpoint is required (set in configs/model.yaml diffusion.checkpoint "
+            "--checkpoint is required (set in configs/model/default.yaml diffusion.checkpoint "
             "or pass explicitly)"
         )
     if args.output is None:
         parser.error(
-            "--output is required (set in configs/model.yaml "
+            "--output is required (set in configs/model/default.yaml "
             "diffusion.exports.grasp_candidates or pass explicitly)"
         )
 

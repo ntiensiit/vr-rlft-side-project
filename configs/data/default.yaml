@@ -1,3 +1,4 @@
+# @package _global_
 paths:
   dataset_root: data/processed
   ycb_root: data/raw/ycb

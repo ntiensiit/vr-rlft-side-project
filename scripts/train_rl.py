@@ -81,7 +81,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.robot_xml is None:
         parser.error(
-            "--robot-xml is required (set in configs/robot.yaml robot.description "
+            "--robot-xml is required (set in configs/robot/default.yaml robot.description "
             "or pass explicitly)"
         )
     if args.ycb_root is None:
@@ -91,12 +91,12 @@ if __name__ == "__main__":
         )
     if args.object_ids is None:
         parser.error(
-            "--object-ids is required (set in configs/data.yaml objects.ids "
+            "--object-ids is required (set in configs/data/default.yaml objects.ids "
             "or pass explicitly)"
         )
     if args.policy_checkpoint is None:
         parser.error(
-            "--policy-checkpoint is required (set in configs/model.yaml rl.checkpoint "
+            "--policy-checkpoint is required (set in configs/model/default.yaml rl.checkpoint "
             "or pass explicitly)"
         )
     run_rl_training_pipeline(

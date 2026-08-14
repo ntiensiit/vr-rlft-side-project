@@ -82,7 +82,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.report is None:
         parser.error(
-            "--report is required (set in configs/model.yaml "
+            "--report is required (set in configs/model/default.yaml "
             "diffusion.exports.evaluation_report or pass explicitly)"
         )
 

@@ -85,7 +85,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.ycb_root is None:
         parser.error(
-            "--ycb-root is required (set in configs/data.yaml paths.ycb_root "
+            "--ycb-root is required (set in configs/data/default.yaml paths.ycb_root "
             "or pass explicitly)"
         )
     if args.output_dir is None:

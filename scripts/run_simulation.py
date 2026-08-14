@@ -68,12 +68,12 @@ if __name__ == "__main__":
         )
     if args.robot_xml is None:
         parser.error(
-            "--robot-xml is required (set in configs/robot.yaml robot.description "
+            "--robot-xml is required (set in configs/robot/default.yaml robot.description "
             "or pass explicitly)"
         )
     if args.output is None:
         parser.error(
-            "--output is required (set in configs/model.yaml "
+            "--output is required (set in configs/model/default.yaml "
             "diffusion.exports.simulation_report or pass explicitly)"
         )
 

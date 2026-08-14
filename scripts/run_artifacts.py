@@ -18,7 +18,9 @@ def main() -> None:
 
     Executes the full pipeline from YCB MJCF preparation through diffusion
     training, grasp generation, simulation, evaluation, and RL training.
-    Records repo-relative commands in ``artifacts/manifest.jsonl``.
+    Records repo-relative commands in ``artifacts/manifest.jsonl``. When
+    ``tracking.backend`` is ``wandb``, also publishes retained outputs to W&B
+    and appends a ``wandb_tracking`` manifest record.
     """
     root = Path(__file__).resolve().parents[1]
     config_dir = parse_config_dir_from_argv()
@@ -250,6 +252,66 @@ def main() -> None:
         for rel in retained_artifacts
     )
     write_jsonl_records(manifest_path, manifest_records)
+
+    tracking_backend = str(
+        config_get(cfg, "tracking", "backend", default="none")
+    ).lower()
+    if tracking_backend == "wandb":
+        import wandb
+
+        wandb_project = str(
+            config_get(cfg, "tracking", "project", default="vr-rlft-side-project")
+        )
+        wandb_entity = config_get(cfg, "tracking", "entity", default=None)
+        wandb_mode = str(config_get(cfg, "tracking", "mode", default="offline"))
+        wandb_init: dict[str, object] = {
+            "project": wandb_project,
+            "job_type": "artifact-chain",
+            "mode": wandb_mode,
+            "config": {
+                "config_dir": config_dir_arg,
+                "artifact_count": len(retained_artifacts),
+            },
+            "tags": ["artifact-chain"],
+        }
+        if isinstance(wandb_entity, str) and wandb_entity:
+            wandb_init["entity"] = wandb_entity
+        wandb_run = wandb.init(**wandb_init)
+        try:
+            wandb_artifact = wandb.Artifact(
+                name="artifact-chain",
+                type="pipeline-output",
+                metadata={"config_dir": config_dir_arg},
+            )
+            manifest_rel = manifest_path.resolve().relative_to(root_resolved).as_posix()
+            wandb_artifact.add_file(str(manifest_path), name=manifest_rel)
+            for rel in retained_artifacts:
+                artifact_file = root / rel
+                if artifact_file.is_file():
+                    wandb_artifact.add_file(str(artifact_file), name=rel)
+            wandb_run.log_artifact(wandb_artifact)
+            if wandb_mode == "offline":
+                artifact_digest = getattr(wandb_artifact, "digest", None)
+                artifact_version = str(artifact_digest) if artifact_digest else "offline"
+            else:
+                wandb_artifact.wait()
+                artifact_version = str(wandb_artifact.version)
+            manifest_records.append(
+                {
+                    "record_type": "wandb_tracking",
+                    "run_id": wandb_run.id,
+                    "artifact_version": artifact_version,
+                    "project": wandb_project,
+                }
+            )
+            write_jsonl_records(manifest_path, manifest_records)
+            print(
+                "W&B artifact chain published:",
+                f"run_id={wandb_run.id}",
+                f"version={artifact_version}",
+            )
+        finally:
+            wandb_run.finish()
 
     observation_dim = int(config_get(cfg, "rl", "observation_dim"))
     action_dim = int(config_get(cfg, "rl", "action_dim"))

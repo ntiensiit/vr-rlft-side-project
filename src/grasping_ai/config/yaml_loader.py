@@ -68,29 +68,89 @@ def _deep_merge_mappings(
     return merged
 
 
-def load_project_yaml_config(config_dir: Path, *config_names: str) -> dict[str, object]:
-    """Load and deep-merge named project YAML configs from a directory.
+def load_project_yaml_config(
+    config_dir: Path,
+    *config_names: str,
+    overrides: list[str] | None = None,
+) -> dict[str, object]:
+    """Load and compose the project Hydra config from a directory.
 
-    Missing config files are skipped so callers can request optional layers.
+    When ``config.yaml`` is present, composes all configured defaults via
+    Hydra and returns a plain mapping. Otherwise falls back to deep-merging
+    the requested ``<name>.yaml`` layers for legacy or partial test configs.
 
     Args:
-        config_dir: Directory containing ``<name>.yaml`` files.
-        *config_names: Basenames without the ``.yaml`` suffix, merged in order.
+        config_dir: Directory containing ``config.yaml`` or layer YAML files.
+        *config_names: Ignored when ``config.yaml`` exists; otherwise basenames
+            without ``.yaml``, merged in order.
+        overrides: Optional Hydra override strings such as ``seed=100``.
 
     Returns:
-        A merged mapping of all present config files.
+        A merged configuration mapping.
 
     Raises:
-        TypeError: If ``config_dir`` is not a ``pathlib.Path`` instance.
+        TypeError: If ``config_dir`` is not a ``pathlib.Path`` instance or the
+            composed root is not a mapping.
+        FileNotFoundError: If Hydra cannot find ``config.yaml``.
     """
     if not isinstance(config_dir, Path):
         raise TypeError("config_dir must be a pathlib.Path instance")
+
+    config_yaml = config_dir / "config.yaml"
+    if config_yaml.is_file():
+        from hydra import compose, initialize_config_dir
+        from omegaconf import OmegaConf
+
+        if overrides is None:
+            overrides = parse_config_overrides_from_argv()
+        with initialize_config_dir(
+            config_dir=str(config_dir.resolve()),
+            version_base=None,
+        ):
+            cfg = compose(config_name="config", overrides=overrides or [])
+        merged = OmegaConf.to_container(cfg, resolve=True)
+        if not isinstance(merged, dict):
+            raise TypeError("Hydra config root must be a mapping")
+        return merged
+
     merged: dict[str, object] = {}
     for name in config_names:
         path = config_dir / f"{name}.yaml"
         if path.is_file():
             merged = merge_yaml_mappings(merged, load_yaml_mapping(path))
     return merged
+
+
+def parse_config_overrides_from_argv(argv: list[str] | None = None) -> list[str]:
+    """Parse Hydra-style override strings from command-line arguments.
+
+    Args:
+        argv: Optional argument vector. When omitted, ``sys.argv[1:]`` is used.
+
+    Returns:
+        Override strings of the form ``key=value`` or ``group=key`` that are
+        not consumed by argparse flags.
+    """
+    import sys
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    overrides: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--config-dir":
+            index += 2
+            continue
+        if arg.startswith("--config-dir="):
+            index += 1
+            continue
+        if arg.startswith("--") and "=" not in arg:
+            index += 2 if index + 1 < len(args) and not args[index + 1].startswith("-") else 1
+            continue
+        if "=" in arg and not arg.startswith("-"):
+            overrides.append(arg)
+        index += 1
+    return overrides
 
 
 def parse_config_dir_from_argv(argv: list[str] | None = None) -> Path:

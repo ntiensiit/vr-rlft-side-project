@@ -23,7 +23,7 @@ def test_load_yaml_mapping_reads_base_config() -> None:
 
 
 def test_load_project_yaml_config_merges_layers() -> None:
-    cfg = load_project_yaml_config(Path("configs"), "base", "model", "training")
+    cfg = load_project_yaml_config(Path("configs"))
     assert cfg["device"] == "cpu"
     assert config_get(cfg, "architecture", "feature_dim") == 32
     assert config_get(cfg, "supervised", "batch_size") == 2
@@ -32,6 +32,14 @@ def test_load_project_yaml_config_merges_layers() -> None:
     )
     assert config_get(cfg, "rl", "learning_rate") == 0.0003
     assert config_get(cfg, "rl", "observation_dim") == 31
+
+
+def test_load_project_yaml_config_applies_hydra_overrides() -> None:
+    cfg = load_project_yaml_config(
+        Path("configs"),
+        overrides=["seed=100"],
+    )
+    assert cfg["seed"] == 100
 
 
 def test_merge_yaml_mappings_deep_merges_nested_objects() -> None:
@@ -54,7 +62,7 @@ def test_merge_yaml_mappings_overrides_scalar_keys() -> None:
 
 
 def test_config_path_and_list_helpers() -> None:
-    cfg = load_project_yaml_config(Path("configs"), "data", "robot")
+    cfg = load_project_yaml_config(Path("configs"))
     assert config_path(cfg, "paths", "dataset_root") == Path("data/processed")
     assert config_str_list(cfg, "objects", "ids") == [
         "003_cracker_box",
@@ -108,11 +116,15 @@ def test_load_project_yaml_config_validates_config_dir() -> None:
 
 
 def test_load_project_yaml_config_skips_missing_layers(tmp_path: Path) -> None:
-    """Merge only config layers that exist on disk."""
+    """Compose only defaults that exist when ``config.yaml`` is present."""
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
     (config_dir / "base.yaml").write_text("seed: 7\n", encoding="utf-8")
-    cfg = load_project_yaml_config(config_dir, "base", "missing_layer")
+    (config_dir / "config.yaml").write_text(
+        "defaults:\n  - base\n  - _self_\n",
+        encoding="utf-8",
+    )
+    cfg = load_project_yaml_config(config_dir)
     assert cfg["seed"] == 7
 
 

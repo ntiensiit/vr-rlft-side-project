@@ -1,3 +1,4 @@
+# @package _global_
 dt: 0.002
 num_steps: 50
 contact_body_names: []

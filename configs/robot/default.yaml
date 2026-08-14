@@ -1,3 +1,4 @@
+# @package _global_
 robot:
   description: deploy/robot.xml
   gripper:

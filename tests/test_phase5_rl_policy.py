@@ -56,8 +56,8 @@ def test_stable_baselines_dependency_available():
 
 
 def test_training_config_file_exists():
-    """Verify that configs/training.yaml exists."""
-    config_path = os.path.join("configs", "training.yaml")
+    """Verify that configs/training/default.yaml exists."""
+    config_path = os.path.join("configs", "training", "default.yaml")
     assert os.path.isfile(config_path)
 
 

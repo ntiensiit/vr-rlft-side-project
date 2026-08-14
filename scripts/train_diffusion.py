@@ -81,12 +81,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.dataset_root is None:
         parser.error(
-            "--dataset-root is required (set in configs/data.yaml paths.dataset_root "
+            "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root "
             "or pass explicitly)"
         )
     if args.checkpoint is None:
         parser.error(
-            "--checkpoint is required (set in configs/model.yaml diffusion.checkpoint "
+            "--checkpoint is required (set in configs/model/default.yaml diffusion.checkpoint "
             "or pass explicitly)"
         )
     run_diffusion_training_pipeline(

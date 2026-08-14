@@ -53,8 +53,8 @@ def test_phase1_package_import_remains_stable():
 
 
 def test_model_config_file_exists():
-    """Verify that configs/model.yaml exists."""
-    config_path = os.path.join("configs", "model.yaml")
+    """Verify that configs/model/default.yaml exists."""
+    config_path = os.path.join("configs", "model", "default.yaml")
     assert os.path.isfile(config_path)
 
 

@@ -50,7 +50,7 @@ def test_phase1_package_import_remains_stable():
 
 def test_data_config_file_exists():
     """Verify data configuration file existence."""
-    path = Path("configs/data.yaml")
+    path = Path("configs/data/default.yaml")
     assert path.is_file()
 
 

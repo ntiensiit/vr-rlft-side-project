@@ -1,0 +1,9 @@
+defaults:
+  - base
+  - model: default
+  - data: default
+  - robot: default
+  - simulation: default
+  - training: default
+  - evaluation: default
+  - _self_
