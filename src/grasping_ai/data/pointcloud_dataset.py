@@ -25,9 +25,12 @@ def discover_dataset_files(dataset_root: Path) -> list[Path]:
     if not dataset_root.is_dir():
         raise ValueError(f"Dataset root '{dataset_root}' is not a directory")
 
+    from loguru import logger
+
     records = sorted([p for p in dataset_root.rglob("*.npy") if p.is_file()])
     if not records:
         raise ValueError(f"No dataset record files (.npy) found under '{dataset_root}'")
+    logger.info("Discovered {} dataset record files under {}", len(records), dataset_root)
     return records
 
 

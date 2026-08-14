@@ -117,6 +117,6 @@ jobs:
         run: uv pip uninstall -y triton || true
       - name: Pytest (excluding slow / artifact-chain tests)
         run: >
-          xvfb-run -a uv run --frozen pytest -n auto -q -m "not slow"
+          xvfb-run -a uv run --frozen pytest -c pytest.toml -n auto -q -m "not slow"
           --cov=src/grasping_ai --cov-config=coverage.toml
           --cov-report=term-missing --cov-fail-under=97

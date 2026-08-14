@@ -30,6 +30,9 @@ def acquire_point_cloud_from_observation(observation_path: Path) -> np.ndarray:
         raise ValueError("Invalid observation shape: expected (N, 3)")
     if not np.isfinite(pts).all():
         raise ValueError("Observation point cloud contains non-finite values")
+    from loguru import logger
+
+    logger.info("Acquired point cloud observation from: {} (shape={})", observation_path, pts.shape)
     return pts
 
 

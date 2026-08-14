@@ -30,6 +30,9 @@ ignore = ["PLR2004", "D100", "D104", "D107"]
 [lint.pydocstyle]
 convention = "google"
 
+[lint.isort]
+force-to-top = ["open3d"]
+
 [lint.per-file-ignores]
 "tests/**/*.py" = ["PLR2004", "S101", "ARG", "FBT", "PLC0415", "PLR0915", "PT011", "PT012", "E501"]
 "scripts/**/*.py" = ["PLR0912", "PLR0913", "PLR0917", "PLC0415", "TRY003", "PLR0915"]

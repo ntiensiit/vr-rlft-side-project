@@ -110,12 +110,14 @@ def simulate_grasp(
     else:
         initial_joints = np.zeros(nq_robot)
 
+    from loguru import logger
+
     ik_failed = False
     try:
         q_target = solve_inverse_kinematics(ik_solver, hand_pose, initial_joints)
     except ValueError as exc:
         if not quiet:
-            print(f"IK failed: {exc}")
+            logger.warning("IK failed: {}", exc)
         q_target = initial_joints
         ik_failed = True
 
@@ -138,7 +140,7 @@ def simulate_grasp(
                         break
         if qposadr is None:
             if not quiet:
-                print("IK failed and object has no freejoint; skipping physics for this grasp.")
+                logger.warning("IK failed and object has no freejoint; skipping physics for this grasp.")
             return {
                 "success": False,
                 "initial_height": 0.0,
@@ -164,7 +166,7 @@ def simulate_grasp(
                 break
         mujoco.mj_forward(mj_model, mj_data)
         if not quiet:
-            print("Placing object at the gripper because the arm cannot reach this pose.")
+            logger.warning("Placing object at the gripper because the arm cannot reach this pose.")
 
     initial_pose = scene.body_pose(object_id)
     initial_height = float(initial_pose[2, 3])

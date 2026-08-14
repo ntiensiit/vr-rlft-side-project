@@ -74,6 +74,9 @@ if __name__ == "__main__":
             "diffusion.exports.simulation_report or pass explicitly)"
         )
 
+    from grasping_ai.utils.logging_utils import setup_logging
+    setup_logging(module_name="simulation")
+
     grasp_poses = np.load(args.grasps)
     if args.grasp_pose_format == "object":
         from grasping_ai.perception.geometry import identity_transform

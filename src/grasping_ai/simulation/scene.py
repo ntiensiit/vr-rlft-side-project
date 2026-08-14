@@ -106,6 +106,15 @@ def build_scene_xml(
     if table_xml_path is not None and not table_xml_path.is_file():
         raise FileNotFoundError(f"Table XML path '{table_xml_path}' does not exist")
 
+    from loguru import logger
+
+    logger.info(
+        "Assembling scene XML with robot: {}, object: {} (name={}), table: {}",
+        robot_xml_path,
+        object_xml_path,
+        object_name,
+        table_xml_path,
+    )
     out_dir = _resolve_scene_output_dir(output_dir)
 
     included_object_path = object_xml_path

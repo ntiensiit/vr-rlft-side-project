@@ -109,22 +109,23 @@ The current scope includes:
 - Reinforcement learning for grasping where required by the final architecture.
 - Quantitative experiments.
 
-### 4.2 Not yet specified
+#### 4.2 Resolved Specifications
 
-The following details have not been fixed by the current project context:
+The following details have been specified and implemented during recent phases:
 
-- The exact robot model to be used.
-- The exact gripper model.
-- The exact grasp-pose training dataset other than the explicitly mentioned YCB object set.
-- Whether diffusion or kinematic flow will be the final grasp-generation method.
-- Whether the equivariant encoder will be implemented from scratch, modified from an existing implementation, or reused from an existing model.
-- Which RL algorithm will be used.
-- Whether RL will be used for grasp generation, grasp refinement, grasp execution, or another stage.
+- **Robot & Gripper:** Franka Emika Panda model (in `deploy/robot.xml` and `deploy/franka_emika_panda/panda.xml`) with a contact-to-hand transform base offset and fingertip pad friction.
+- **Grasp Generation:** Both conditional diffusion (`train_diffusion.py`) and flow-matching (`train_flow.py`) methods are implemented.
+- **Grasp Representation:** 9D vector representation (3 translation components + first 2 columns of the rotation matrix).
+- **Configuration System:** Hydra (`hydra-core`) config composition via `configs/config.yaml` and config groups.
+- **Experiment Tracking:** TensorBoard for local scalar tracking and Weights & Biases (optional) for artifact versioning and lineage.
+
+### 4.3 Not yet specified / Open Decisions
+
+The following details remain open or optional:
+
 - Whether a real robot will be integrated.
-- The final experimental protocol and dataset split.
-- The final hyperparameters and training schedule.
-
-These decisions should not be treated as fixed project requirements until they are explicitly determined.
+- The final reinforcement learning architecture details (exact observation/action space and reward tuning for complex tasks).
+- Genuine nontrivial equivariant encoder vs. the current deterministic SE(3) canonicalization encoder.
 
 ## 5. System Architecture
 
@@ -204,9 +205,9 @@ Its responsibilities include:
 
 - Coordinate transformations.
 - Robot kinematics.
-- Inverse kinematics where required.
-- End-effector control.
-- Gripper control.
+- Inverse kinematics (IK) and forward kinematics (FK).
+- Gripper control and mapping (e.g. width-to-joint mapping).
+- Panda contact-frame to hand-frame transformation (`panda_hand_to_contact_transform`).
 
 The robotics layer should not contain model-training logic.
 
@@ -216,15 +217,13 @@ MuJoCo provides the physics simulation environment.
 
 The simulation layer is responsible for:
 
-- Loading the simulation model.
+- Loading the simulation model (Franka Emika Panda).
 - Loading YCB objects.
-- Creating scenes.
-- Managing simulation state.
-- Stepping the physics simulation.
-- Handling contacts and physical interaction.
-- Providing observations and outcomes to higher-level components.
+- Managing simulation state and headless batch execution.
+- Handling contacts and physical interaction (including high-friction pads).
+- Providing outcomes (e.g., success metrics) to evaluation components.
 
-The simulation environment should not directly contain diffusion training or model implementation.
+**Visualization and Teleoperation split (ADR-0006):** Simulation execution (`run_simulation.py`) is headless. Interaction visualization and teleoperation are handled by the passive MuJoCo viewer (`visualize_robot.py`) and a terminal TUI via the `robot/keyboard` UDP topic.
 
 ### 5.7 Reinforcement learning layer
 
@@ -272,7 +271,7 @@ Other evaluation signals considered in the architecture include:
 - Contact quality.
 - Stability.
 - Object lift success.
-- Overall grasp success rate.
+- Grasp success (`grasp_success`, replacing `lift_success`)
 
 These should be implemented as evaluation components rather than embedded inside the model.
 
@@ -367,25 +366,19 @@ Policy training
 
 ## 7. Grasp Representation
 
-A grasp pose is represented by position and orientation:
+A grasp pose is represented as a 9D vector:
 
 ```text
-G = (R, t)
+G_9D = [t_x, t_y, t_z, r_11, r_21, r_31, r_12, r_22, r_32]
 ```
 
-and belongs to the rigid-body transformation space SE(3).
+where:
+- `t` represents the 3D position (translation).
+- The remaining 6 components represent the first two columns of the rotation matrix `R` (a 6D rotation subset).
 
-This representation is important because grasp generation is not only a position prediction problem. The model must also determine the orientation of the gripper relative to the object.
+This 9D vector is converted to and from a standard 4x4 SE(3) matrix `(R, t)` using helper functions in `grasping_ai.data.grasp_vector`.
 
-The project therefore requires understanding:
-
-- 3D coordinate frames.
-- Rotation.
-- Translation.
-- Rigid transformations.
-- SE(3).
-- SO(3).
-- Transformation of grasp poses between coordinate frames.
+This representation is important because grasp generation is not only a position prediction problem. The model must also determine the orientation of the gripper relative to the object. 9D continuous representation avoids discontinuities associated with quaternions or Euler angles during training.
 
 ## 8. Force Closure and Grasp Evaluation
 
@@ -419,7 +412,7 @@ Force-closure evaluation
 Simulation execution
         |
         v
-Lift or grasp success
+Grasp success (`grasp_success`, replacing `lift_success`)
 ```
 
 A quantitative evaluation should eventually report metrics across multiple objects and grasp attempts rather than relying only on visual inspection.
@@ -522,6 +515,7 @@ The project context has identified or recommended the following technologies.
 - Python: primary implementation language.
 - PyTorch: neural-network and deep-learning implementation.
 - MuJoCo: physics simulation.
+- Hydra (`hydra-core`): configuration composition and CLI overrides.
 
 ### 3D and numerical processing
 
@@ -558,12 +552,22 @@ grasping_ai/
 │
 ├── configs/
 │   ├── base.yaml
-│   ├── data.yaml
-│   ├── model.yaml
-│   ├── training.yaml
-│   ├── evaluation.yaml
-│   ├── simulation.yaml
-│   └── robot.yaml
+│   ├── config.yaml
+│   ├── data/
+│   │   └── default.yaml
+│   ├── env/
+│   │   └── default.yaml
+│   ├── evaluation/
+│   │   └── default.yaml
+│   ├── gripper/
+│   │   └── default.yaml
+│   ├── model/
+│   │   ├── default.yaml
+│   │   └── flow.yaml
+│   ├── object/
+│   │   └── default.yaml
+│   └── training/
+│       └── default.yaml
 │
 ├── data/
 │   ├── raw/
@@ -605,8 +609,9 @@ grasping_ai/
 │   └── README.md
 │
 ├── tests/
-│   ├── unit/
-│   └── integration/
+│   ├── conftest.py
+│   ├── test_phase*.py
+│   └── test_*.py
 │
 ├── docs/
 │   ├── architecture.md
@@ -1037,3 +1042,7 @@ Current ADRs:
 - [ADR-0003: Flow model checkpoint contract — jointly train encoder + flow field](adr/003-flow-checkpoint-joint-encoder.md)
 - [ADR-0004: Dead-helper wiring, deduplication, and dependency retention](adr/004-dead-helper-wiring-and-refactoring.md)
 - [ADR-0005: Runtime workflow integration scripts](adr/005-runtime-workflow-integration.md)
+- [ADR-0006: Robot viewer and keyboard-topic teleoperation split](adr/006-robot-viewer-keyboard-topic-split.md)
+- [ADR-0007: W&B artifact versioning for the artifact chain](adr/007-wandb-artifact-versioning.md)
+- [ADR-0008: Hydra configuration composition](adr/008-hydra-configuration.md)
+- [ADR-0009: Panda contact-frame grasps and sim fidelity](adr/009-panda-contact-frame.md)

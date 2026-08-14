@@ -24,10 +24,13 @@ def load_generated_grasps(
         TypeError: If ``grasps_path`` is not a ``pathlib.Path`` instance.
         ValueError: If the file format or ``object_key`` selection is invalid.
     """
+    from loguru import logger
+
     if not isinstance(grasps_path, Path):
         raise TypeError("grasps_path must be a pathlib.Path instance")
 
     loaded = np.load(grasps_path, allow_pickle=True)
+    logger.info("Loaded grasps from: {}", grasps_path)
     if isinstance(loaded, np.ndarray) and loaded.dtype == object:
         data: object = loaded.item()
     else:
@@ -67,8 +70,11 @@ def write_generated_grasps(
         raise TypeError("output_path must be a pathlib.Path instance")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    from loguru import logger
+
     try:
         np.save(output_path, cast(Any, grasps_by_object), allow_pickle=True)
+        logger.info("Saved generated grasps to: {}", output_path)
     except Exception as e:
         raise ValueError(f"Failed to write generated grasps: {e}") from e
 

@@ -118,9 +118,12 @@ def resolve_ycb_object_directory(ycb_root: Path, object_name: str) -> Path:
     if not ycb_root.is_dir():
         raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
 
+    from loguru import logger
+
     # 1. Check exact match
     direct_path = ycb_root / object_name
     if direct_path.is_dir():
+        logger.info("Resolved YCB object '{}' directly to directory: {}", object_name, direct_path)
         return direct_path
 
     # 2. Check suffix/prefix match
@@ -145,7 +148,9 @@ def resolve_ycb_object_directory(ycb_root: Path, object_name: str) -> Path:
 
     matched = build_ycb_object_name_classifier(ycb_root)(object_name)
     if matched is not None:
-        return ycb_root / matched
+        resolved = ycb_root / matched
+        logger.info("Resolved YCB object '{}' via classifier to directory: {}", object_name, resolved)
+        return resolved
 
     raise FileNotFoundError(f"YCB object '{object_name}' not found under '{ycb_root}'")
 

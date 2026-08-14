@@ -100,22 +100,49 @@ if __name__ == "__main__":
         )
     if args.checkpoint is None:
         parser.error("--checkpoint is required (set in configs/model/default.yaml flow.checkpoint or pass explicitly)")
-    run_flow_training_pipeline(
-        dataset_root=args.dataset_root,
-        checkpoint_path=args.checkpoint,
-        feature_dim=args.feature_dim,
-        hidden_dim=args.hidden_dim,
-        num_layers=args.num_layers,
-        learning_rate=args.learning_rate,
-        num_epochs=args.num_epochs,
-        batch_size=args.batch_size,
-        device=args.device,
-        seed=args.seed,
-        experiment_log_dir=args.experiment_log_dir,
-        pretrained_encoder_path=args.pretrained_encoder,
-        resume_checkpoint_path=args.resume,
-        augment=args.augment,
-        min_grasp_score=args.min_grasp_score,
-        score_repeat_factor=args.score_repeat_factor,
-        score_repeat_power=args.score_repeat_power,
-    )
+    from grasping_ai.utils.logging_utils import setup_logging, init_mlflow
+    setup_logging(module_name="train_flow")
+    use_mlflow = init_mlflow(cfg)
+
+    if use_mlflow:
+        import mlflow
+        with mlflow.start_run(run_name="flow_training"):
+            run_flow_training_pipeline(
+                dataset_root=args.dataset_root,
+                checkpoint_path=args.checkpoint,
+                feature_dim=args.feature_dim,
+                hidden_dim=args.hidden_dim,
+                num_layers=args.num_layers,
+                learning_rate=args.learning_rate,
+                num_epochs=args.num_epochs,
+                batch_size=args.batch_size,
+                device=args.device,
+                seed=args.seed,
+                experiment_log_dir=args.experiment_log_dir,
+                pretrained_encoder_path=args.pretrained_encoder,
+                resume_checkpoint_path=args.resume,
+                augment=args.augment,
+                min_grasp_score=args.min_grasp_score,
+                score_repeat_factor=args.score_repeat_factor,
+                score_repeat_power=args.score_repeat_power,
+            )
+    else:
+        run_flow_training_pipeline(
+            dataset_root=args.dataset_root,
+            checkpoint_path=args.checkpoint,
+            feature_dim=args.feature_dim,
+            hidden_dim=args.hidden_dim,
+            num_layers=args.num_layers,
+            learning_rate=args.learning_rate,
+            num_epochs=args.num_epochs,
+            batch_size=args.batch_size,
+            device=args.device,
+            seed=args.seed,
+            experiment_log_dir=args.experiment_log_dir,
+            pretrained_encoder_path=args.pretrained_encoder,
+            resume_checkpoint_path=args.resume,
+            augment=args.augment,
+            min_grasp_score=args.min_grasp_score,
+            score_repeat_factor=args.score_repeat_factor,
+            score_repeat_power=args.score_repeat_power,
+        )

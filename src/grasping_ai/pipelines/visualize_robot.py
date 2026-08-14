@@ -3,6 +3,7 @@ import socket
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from loguru import logger
 
 import numpy as np
 
@@ -183,18 +184,18 @@ def run_keyboard_tui(
         "Start scripts/visualize_robot.py in another terminal first, then use keys:\n"
         "  1-9 select actuator; left/right nudge; g gripper; h home; space pause; q quit"
     )
-    print(f"Publishing {topic} -> udp://{host}:{port}")
+    logger.info("Publishing {} -> udp://{}:{}", topic, host, port)
     try:
         while True:
             if should_stop is not None and should_stop():
                 break
             keycode = read_key()
             if keycode == -1:
-                print("TUI quit")
+                logger.info("TUI quit")
                 break
             if keycode is not None:
                 publish_key(keycode)
-                print(f"sent {topic} keycode={keycode}")
+                logger.info("sent {} keycode={}", topic, keycode)
             sleep(0.02)
     finally:
         if owns_publisher and pub_sock is not None:
@@ -266,7 +267,7 @@ def run_robot_viewer(
                     keycodes.append(keycode)
             return keycodes
 
-        print(f"Listening for robot/keyboard on udp://{host}:{port}")
+        logger.info("Listening for robot/keyboard on udp://{}:{}", host, port)
     try:
         run_robot_control_loop(
             mj_model,
@@ -340,7 +341,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         if index < int(mj_model.nu):
             control_state["selected"] = index
             name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, index) or f"actuator_{index}"
-            print(f"Selected actuator {index}: {name}")
+            logger.info("Selected actuator {}: {}", index, name)
         return
     if code in (263, 45, 91):
         if mj_model.actuator_ctrllimited[selected]:
@@ -354,7 +355,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         ctrl[selected] = value
         mj_data.ctrl[selected] = value
         name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, selected) or f"actuator_{selected}"
-        print(f"actuator {selected} ({name}) = {value:.4f}")
+        logger.info("actuator {} ({}) = {:.4f}", selected, name, value)
         return
     if code in (262, 61, 93):
         if mj_model.actuator_ctrllimited[selected]:
@@ -368,12 +369,12 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         ctrl[selected] = value
         mj_data.ctrl[selected] = value
         name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, selected) or f"actuator_{selected}"
-        print(f"actuator {selected} ({name}) = {value:.4f}")
+        logger.info("actuator {} ({}) = {:.4f}", selected, name, value)
         return
     if code == 71:
         gripper_ids = control_state["gripper_ids"]
         if not gripper_ids:
-            print("No gripper actuator found")
+            logger.warning("No gripper actuator found")
             return
         control_state["gripper_open"] = not control_state["gripper_open"]
         for idx in gripper_ids:
@@ -384,7 +385,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
                 lo, hi = -3.14, 3.14
             ctrl[idx] = hi if control_state["gripper_open"] else lo
             mj_data.ctrl[idx] = ctrl[idx]
-        print("Gripper open" if control_state["gripper_open"] else "Gripper closed")
+        logger.info("Gripper open" if control_state["gripper_open"] else "Gripper closed")
         return
     if code == 72:
         apply_home_keyframe(mj_model, mj_data)
@@ -393,11 +394,11 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         else:
             control_state["ctrl"] = np.array(mj_data.ctrl, dtype=np.float64, copy=True)
         mj_data.ctrl[:] = control_state["ctrl"]
-        print("Reset to home keyframe")
+        logger.info("Reset to home keyframe")
         return
     if code == 32:
         control_state["paused"] = not control_state["paused"]
-        print("Paused" if control_state["paused"] else "Running")
+        logger.info("Paused" if control_state["paused"] else "Running")
 
 
 def apply_robot_control(control_state: dict[str, Any]) -> None:
@@ -462,7 +463,7 @@ def run_robot_control_loop(
         "  space        pause/resume physics\n"
         "  close window to exit"
     )
-    print("Launching MuJoCo control viewer...")
+    logger.info("Launching MuJoCo control viewer...")
     viewer = launch_passive(
         mj_model,
         mj_data,

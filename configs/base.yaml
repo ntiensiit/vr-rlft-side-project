@@ -6,6 +6,9 @@ tracking:
   project: vr-rlft-side-project
   entity: null
   mode: offline
+  mlflow:
+    tracking_uri: ${oc.env:MLFLOW_TRACKING_URI,"./mlruns"}
+    experiment_name: ${experiment_name}
 paths:
   input_dir: ${oc.env:MGS_INPUT_DIR,"data"}
   output_dir: ${oc.env:MGS_OUTPUT_DIR,"artifacts"}

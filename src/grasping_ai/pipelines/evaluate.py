@@ -71,9 +71,13 @@ def evaluate_generated_grasps(
     if wrench_regularization < 0:
         raise ValueError("wrench_regularization must be non-negative")
 
+    from loguru import logger
+
     collision_checker = build_collision_checker(object_point_cloud, gripper_point_cloud, clearance=clearance)
+    logger.info("Evaluating {} grasp poses", grasp_poses.shape[0])
     if filter_collisions:
         grasp_poses = filter_collision_free_grasps(collision_checker, grasp_poses)
+        logger.info("Filtered to {} collision-free grasp poses", grasp_poses.shape[0])
         if grasp_poses.shape[0] == 0:
             return []
 

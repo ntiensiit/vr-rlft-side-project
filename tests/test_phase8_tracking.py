@@ -59,16 +59,25 @@ def test_training_loop_tracking(tmp_path):
     log_dir = tmp_path / "tb_logs"
 
     metadata = {"lr": 1e-3, "batch_size": 2}
-    run_training_loop(
-        step,
-        dataloader,
-        num_epochs=1,
-        checkpoint_path=checkpoint_path,
-        log_every=1,
-        experiment_log_dir=log_dir,
-        metadata=metadata,
-        seed=42,
-    )
+
+    from unittest.mock import patch
+    with patch("mlflow.active_run", return_value=True), \
+         patch("mlflow.log_param") as mock_log_param, \
+         patch("mlflow.log_metric") as mock_log_metric, \
+         patch("mlflow.log_artifact") as mock_log_art:
+        run_training_loop(
+            step,
+            dataloader,
+            num_epochs=1,
+            checkpoint_path=checkpoint_path,
+            log_every=1,
+            experiment_log_dir=log_dir,
+            metadata=metadata,
+            seed=42,
+        )
+        assert mock_log_param.call_count == 2
+        assert mock_log_metric.call_count == 1
+        assert mock_log_art.call_count == 1
 
     assert checkpoint_path.is_file()
     assert log_dir.is_dir()
@@ -172,3 +181,124 @@ def test_supervised_reproducibility(tmp_path):
             diff = True
             break
     assert diff, "Different seeds should produce different model initialization and noise"
+
+    # Test invalid pretrained_encoder_path type
+    import pytest
+    with pytest.raises(TypeError):
+        run_diffusion_training_pipeline(
+            dataset_root=dataset_root,
+            checkpoint_path=tmp_path / "fail.pt",
+            feature_dim=8,
+            hidden_dim=16,
+            num_layers=1,
+            learning_rate=1e-3,
+            num_epochs=1,
+            batch_size=1,
+            device="cpu",
+            pretrained_encoder_path="not_a_path_object",
+        )
+
+    # Test valid pretrained_encoder_path loading
+    run_diffusion_training_pipeline(
+        dataset_root=dataset_root,
+        checkpoint_path=tmp_path / "pretrained_loaded.pt",
+        feature_dim=8,
+        hidden_dim=16,
+        num_layers=1,
+        learning_rate=1e-3,
+        num_epochs=1,
+        batch_size=1,
+        device="cpu",
+        pretrained_encoder_path=checkpoint_path1,
+    )
+
+
+def test_setup_logging():
+    """Test setup_logging with console and file logs."""
+    from grasping_ai.utils.logging_utils import setup_logging
+    from pathlib import Path
+    from datetime import datetime
+
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    expected_file = Path("logs") / f"{current_date}-test_run.log"
+
+    if expected_file.exists():
+        expected_file.unlink()
+
+    setup_logging(module_name="test_run", level="DEBUG")
+
+    from loguru import logger
+    logger.debug("test log message")
+
+    assert expected_file.is_file()
+    content = expected_file.read_text()
+    assert "test log message" in content
+
+    # Clean up
+    logger.remove()
+    expected_file.unlink()
+
+
+def test_init_mlflow():
+    """Test init_mlflow with different configurations."""
+    from grasping_ai.utils.logging_utils import init_mlflow
+
+    # 1. backend != mlflow
+    config_none = {"tracking": {"backend": "none"}}
+    assert init_mlflow(config_none) is False
+
+    # 2. backend == mlflow
+    from unittest.mock import patch
+    with patch("mlflow.set_tracking_uri") as mock_set_uri, \
+         patch("mlflow.set_experiment") as mock_set_exp:
+
+        config_mlflow = {
+            "tracking": {
+                "backend": "mlflow",
+                "mlflow": {
+                    "tracking_uri": "http://localhost:5000",
+                    "experiment_name": "test_experiment"
+                }
+            }
+        }
+        assert init_mlflow(config_mlflow) is True
+        mock_set_uri.assert_called_once_with("http://localhost:5000")
+        mock_set_exp.assert_called_once_with("test_experiment")
+
+
+def test_save_training_checkpoint_errors():
+    """Verify that trainer functions check input types and raise errors."""
+    from grasping_ai.training.trainer import save_training_checkpoint, load_training_checkpoint
+    import pytest
+
+    model = DummyModel()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+    with pytest.raises(TypeError):
+        save_training_checkpoint(model, optimizer, 1, "not_a_path_object")
+
+    with pytest.raises(TypeError):
+        load_training_checkpoint("not_a_path_object", model, optimizer, "cpu")
+
+
+def test_training_loop_dataloader_types(tmp_path):
+    """Test trainer.py run_training_loop with different dataloader types."""
+    from grasping_ai.training.trainer import run_training_loop, build_training_step
+
+    model = DummyModel()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    loss_fn = torch.nn.MSELoss()
+    step = build_training_step(model, loss_fn, optimizer, "cpu", seed=42)
+    checkpoint_path = tmp_path / "chk.pt"
+
+    batch = (torch.randn(2, 128), torch.randn(2, 9))
+
+    # 1. Callable dataloader
+    callable_dl = lambda: [batch]
+    run_training_loop(step, callable_dl, num_epochs=1, checkpoint_path=checkpoint_path, log_every=1)
+
+    # 2. Iterator dataloader
+    iter_dl = iter([batch])
+    run_training_loop(step, iter_dl, num_epochs=1, checkpoint_path=checkpoint_path, log_every=1)
+
+

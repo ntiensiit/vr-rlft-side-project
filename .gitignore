@@ -27,3 +27,8 @@ data/processed/ycb_mjcf/
 data/observations/
 data/interim/*
 !data/interim/.gitkeep
+
+# Logging and Tracking
+logs/*
+!logs/README.md
+mlruns/

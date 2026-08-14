@@ -250,6 +250,20 @@ def test_run_flow_training_pipeline_validations_and_resume(tmp_path: Path) -> No
         pretrained_encoder_path=checkpoint_1,
         resume_checkpoint_path=checkpoint_1,
     )
+    with pytest.raises(TypeError, match="pretrained_encoder"):
+        run_flow_training_pipeline(
+            dataset_root=dataset_root,
+            checkpoint_path=checkpoint_2,
+            feature_dim=8,
+            hidden_dim=8,
+            num_layers=2,
+            learning_rate=0.001,
+            num_epochs=1,
+            batch_size=1,
+            device="cpu",
+            pretrained_encoder_path="invalid_path_type",
+        )
+
     assert checkpoint_2.is_file()
 
 

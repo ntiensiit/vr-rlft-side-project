@@ -1,4 +1,5 @@
 [project]
+# Package layout preserves "src" directory structure.
 name = "vr-rlft-side-project"
 version = "0.1.0"
 description = "Add your description here"
@@ -23,6 +24,8 @@ dependencies = [
     "torchvision>=0.28.0",
     "wandb>=0.28.1",
     "hydra-core>=1.3.5",
+    "loguru>=0.7.2",
+    "mlflow>=2.15.0",
 ]
 
 [build-system]
@@ -40,34 +43,4 @@ dev = [
     "hypothesis>=6",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/grasping_ai"]
 
-# Headless CI has no GPU. Official Linux torch wheels pull triton, and
-# Optimizer.__init__ -> _disable_dynamo imports it and segfaults on runners.
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-torchvision = { index = "pytorch-cpu" }
-
-[tool.ruff.lint.isort]
-force-to-top = ["open3d"]
-
-[tool.pytest.ini_options]
-minversion = "8.0"
-testpaths = ["tests"]
-pythonpath = ["src"]
-addopts = [
-    "-ra",
-    "--strict-markers",
-]
-filterwarnings = [
-    "ignore::DeprecationWarning",
-]
-markers = [
-    "slow: end-to-end / artifact-chain tests that exercise full pipelines and may take tens of seconds; skip with ``-m 'not slow'``",
-]

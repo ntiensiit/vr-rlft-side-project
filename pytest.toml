@@ -1,0 +1,14 @@
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+markers = [
+    "slow: end-to-end / artifact-chain tests that exercise full pipelines and may take tens of seconds; skip with ``-m 'not slow'``",
+]

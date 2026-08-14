@@ -149,4 +149,13 @@ def build_supervised_training_pairs(
             for _ in range(repeats):
                 pairs.append(pair)
 
+    from loguru import logger
+
+    logger.info(
+        "Built {} supervised training pairs from {} records (augment={}, min_grasp_score={})",
+        len(pairs),
+        len(records),
+        augment,
+        min_grasp_score,
+    )
     return pairs

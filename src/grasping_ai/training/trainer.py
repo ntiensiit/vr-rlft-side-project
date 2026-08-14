@@ -115,6 +115,8 @@ def run_training_loop(
         metadata: Optional dictionary of experiment hyperparameters/run metadata.
         seed: Optional training seed to record in the checkpoint.
     """
+    from loguru import logger
+
     writer = None
     if experiment_log_dir is not None:
         from torch.utils.tensorboard import SummaryWriter
@@ -123,6 +125,15 @@ def run_training_loop(
         if metadata:
             for k, v in metadata.items():
                 writer.add_text(f"metadata/{k}", str(v), global_step=0)
+
+    try:
+        import mlflow
+        if mlflow.active_run() and metadata:
+            # Flatten or format metadata values for MLflow parameters
+            for k, v in metadata.items():
+                mlflow.log_param(k, str(v))
+    except ImportError:
+        pass
 
     try:
         step_count = 0
@@ -141,9 +152,15 @@ def run_training_loop(
                 step_count += 1
                 if log_every > 0 and step_count % log_every == 0:
                     loss_val = metrics.get("loss", 0.0)
-                    print(f"Epoch {epoch}, Step {step_count}: Loss = {loss_val:.4f}")
+                    logger.info("Epoch {}, Step {}: Loss = {:.4f}", epoch, step_count, loss_val)
                     if writer is not None:
                         writer.add_scalar("loss", float(loss_val), global_step=step_count)
+                    try:
+                        import mlflow
+                        if mlflow.active_run():
+                            mlflow.log_metric("loss", float(loss_val), step=step_count)
+                    except ImportError:
+                        pass
     finally:
         if writer is not None:
             writer.close()
@@ -152,6 +169,12 @@ def run_training_loop(
     optimizer = getattr(training_step, "optimizer", None)
     if model is not None and optimizer is not None:
         save_training_checkpoint(model, optimizer, num_epochs, checkpoint_path, seed)
+        try:
+            import mlflow
+            if mlflow.active_run():
+                mlflow.log_artifact(str(checkpoint_path))
+        except ImportError:
+            pass
 
 
 def save_training_checkpoint(

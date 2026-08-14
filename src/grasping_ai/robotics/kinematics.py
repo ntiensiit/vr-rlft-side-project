@@ -33,6 +33,9 @@ def _resolve_end_effector_body_name(model: Any, robot_model: dict[str, object]) 
                 break
         if ee_body_name is None:
             ee_body_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.nbody - 1)
+    from loguru import logger
+
+    logger.info("Resolved end-effector body name: {}", ee_body_name)
     return str(ee_body_name)
 
 
