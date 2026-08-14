@@ -12,7 +12,7 @@ warn_unused_ignores = true
 files = ["src", "tests"]
 exclude = ["\\.venv", "build", "dist"]
 
-[[tool.mypy.overrides]]
+[[mypy.overrides]]
 module = [
     "loguru.*",
     "mlflow.*",
