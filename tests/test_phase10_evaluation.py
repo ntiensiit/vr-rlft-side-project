@@ -170,29 +170,45 @@ def test_evaluate_generated_grasps_analytical():
         object_pc,
         gripper_pc,
         friction_coefficient=0.5,
-        clearance=0.01,
+        clearance=0.002,
     )
 
     assert len(evals) == 1
     assert evals[0]["collision_free"] is True
     assert evals[0]["force_closure"] is True
-    assert evals[0]["grasp_quality"] > 0.0
+    assert evals[0]["grasp_success"] is True
 
 
 def test_aggregate_evaluation_results():
     """Verify that aggregate_evaluation_results computes correct statistics over multiple objects and runs."""
     per_obj = {
         "bottle": [
-            {"collision_free": True, "force_closure": True, "grasp_quality": 0.5},
-            {"collision_free": False, "force_closure": False, "grasp_quality": 0.0},
+            {
+                "collision_free": True,
+                "force_closure": True,
+                "grasp_success": True,
+                "grasp_quality": 0.5,
+            },
+            {
+                "collision_free": False,
+                "force_closure": False,
+                "grasp_success": False,
+                "grasp_quality": 0.0,
+            },
         ],
         "can": [
-            {"collision_free": True, "force_closure": False, "grasp_quality": 0.0},
+            {
+                "collision_free": True,
+                "force_closure": False,
+                "grasp_success": False,
+                "grasp_quality": 0.0,
+            },
         ],
     }
 
     report = aggregate_evaluation_results(per_obj)
-    assert report["success_rate"] == pytest.approx(1.0 / 3.0)  # 1 out of 3 force closure
+    assert report["success_rate"] == pytest.approx(1.0 / 3.0)
+    assert report["force_closure_rate"] == pytest.approx(1.0 / 3.0)
     assert report["collision_free_rate"] == pytest.approx(2.0 / 3.0)
     assert report["mean_grasp_quality"] == pytest.approx(0.5 / 3.0)
 
@@ -207,12 +223,13 @@ def test_evaluate_script_plain_array(temp_files):
         grasps,
         object_point_cloud,
         gripper_point_cloud,
-        clearance=0.01,
+        clearance=0.002,
     )
     assert len(evals) == 2
 
     # Write report
-    write_evaluation_report(temp_files["report_path"], evals)
+    report = aggregate_evaluation_results({"default": evals})
+    write_evaluation_report(temp_files["report_path"], report)
     assert temp_files["report_path"].is_file()
 
 
@@ -226,7 +243,7 @@ def test_evaluate_script_dictionary(temp_files):
         grasps,
         object_point_cloud,
         gripper_point_cloud,
-        clearance=0.01,
+        clearance=0.002,
     )
     assert len(evals) == 2
 
@@ -340,6 +357,13 @@ def test_collision_and_evaluate_pipeline_validations() -> None:
     with pytest.raises(ValueError, match="grasp_poses must have shape"):
         evaluate_generated_grasps(
             np.zeros((2, 3)),
+            np.zeros((10, 3)),
+            np.zeros((5, 3)),
+        )
+
+    with pytest.raises(ValueError, match="grasp_poses must have shape"):
+        evaluate_generated_grasps(
+            np.zeros((1, 3, 4)),
             np.zeros((10, 3)),
             np.zeros((5, 3)),
         )

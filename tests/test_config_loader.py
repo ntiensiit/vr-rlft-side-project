@@ -3,8 +3,11 @@ from pathlib import Path
 import pytest
 
 from grasping_ai.config.yaml_loader import (
+    config_bool,
+    config_float,
     config_float_list,
     config_get,
+    config_int,
     config_path,
     config_str_list,
     load_project_yaml_config,
@@ -12,6 +15,7 @@ from grasping_ai.config.yaml_loader import (
     merge_yaml_mappings,
     optional_cli_path,
     parse_config_dir_from_argv,
+    parse_config_overrides_from_argv,
     require_config_value,
 )
 
@@ -134,6 +138,17 @@ def test_load_project_yaml_config_skips_missing_layers(tmp_path: Path) -> None:
     assert cfg["seed"] == 7
 
 
+def test_load_project_yaml_config_merges_yaml_without_hydra(tmp_path: Path) -> None:
+    """Merge layered YAML files when ``config.yaml`` is absent."""
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    (config_dir / "base.yaml").write_text("seed: 7\n", encoding="utf-8")
+    (config_dir / "data.yaml").write_text("foo: 1\n", encoding="utf-8")
+    cfg = load_project_yaml_config(config_dir, "base", "data")
+    assert cfg["seed"] == 7
+    assert cfg["foo"] == 1
+
+
 def test_parse_config_dir_from_argv_defaults_to_configs() -> None:
     """Default ``--config-dir`` to ``configs`` when argv is empty."""
     assert parse_config_dir_from_argv([]) == Path("configs")
@@ -142,6 +157,20 @@ def test_parse_config_dir_from_argv_defaults_to_configs() -> None:
 def test_parse_config_dir_from_argv_reads_flag() -> None:
     """Parse an explicit ``--config-dir`` flag from argv."""
     assert parse_config_dir_from_argv(["--config-dir", "custom"]) == Path("custom")
+
+
+def test_parse_config_overrides_from_argv() -> None:
+    """Parse Hydra-style overrides while skipping argparse flags."""
+    argv = [
+        "--config-dir",
+        "configs",
+        "--config-dir=other",
+        "--epochs",
+        "10",
+        "seed=42",
+        "training.batch_size=8",
+    ]
+    assert parse_config_overrides_from_argv(argv) == ["seed=42", "training.batch_size=8"]
 
 
 def test_config_get_returns_default_for_missing_path() -> None:
@@ -220,6 +249,26 @@ def test_config_float_list_rejects_non_numeric_items() -> None:
 def test_config_float_list_converts_integers() -> None:
     """Convert integer list entries to floats."""
     assert config_float_list({"g": {"v": [0, 1]}}, "g", "v") == [0.0, 1.0]
+
+
+def test_config_scalar_helpers() -> None:
+    """Verify typed scalar config readers and validation errors."""
+    assert config_float({}, "missing", default=0.5) == 0.5
+    assert config_float({"m": {"lr": 0.001}}, "m", "lr", default=0.1) == pytest.approx(0.001)
+    with pytest.raises(TypeError, match="must be a number"):
+        config_float({"m": {"lr": "bad"}}, "m", "lr", default=0.1)
+    with pytest.raises(TypeError, match="must be a number"):
+        config_float({"m": {"lr": True}}, "m", "lr", default=0.1)
+
+    assert config_int({}, "missing", default=100) == 100
+    assert config_int({"d": {"steps": 64}}, "d", "steps", default=1) == 64
+    with pytest.raises(TypeError, match="must be an integer"):
+        config_int({"d": {"steps": "bad"}}, "d", "steps", default=1)
+
+    assert config_bool({}, "missing", default=True) is True
+    assert config_bool({"f": {"enabled": False}}, "f", "enabled", default=True) is False
+    with pytest.raises(TypeError, match="must be a boolean"):
+        config_bool({"f": {"enabled": 1}}, "f", "enabled", default=True)
 
 
 def test_optional_cli_path_treats_none_literal_as_absent() -> None:
