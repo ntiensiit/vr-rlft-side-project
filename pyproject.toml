@@ -40,7 +40,11 @@ dev = [
     "pytest-xdist>=3.5.0",
     "mypy>=1.13",
     "mujoco>=3.11.0",
-    "hypothesis>=6",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
 
 
