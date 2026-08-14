@@ -7,6 +7,7 @@ from grasping_ai.config.yaml_loader import (
     config_get,
     config_path,
     load_project_yaml_config,
+    optional_cli_path,
     parse_config_dir_from_argv,
 )
 from grasping_ai.pipelines.evaluate import write_jsonl_records
@@ -16,7 +17,7 @@ if __name__ == "__main__":
     import argparse
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "robot", "simulation")
+    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "gripper", "env", "object")
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -35,7 +36,7 @@ if __name__ == "__main__":
         type=Path,
         default=config_path(cfg, "robot", "description"),
     )
-    parser.add_argument("--table-xml", type=Path, default=None)
+    parser.add_argument("--table-xml", type=optional_cli_path, default=None)
     parser.add_argument(
         "--output",
         type=Path,
@@ -68,7 +69,7 @@ if __name__ == "__main__":
         )
     if args.robot_xml is None:
         parser.error(
-            "--robot-xml is required (set in configs/robot/default.yaml robot.description "
+            "--robot-xml is required (set in configs/gripper/default.yaml robot.description "
             "or pass explicitly)"
         )
     if args.output is None:

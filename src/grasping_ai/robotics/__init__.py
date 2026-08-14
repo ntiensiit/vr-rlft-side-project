@@ -1,4 +1,9 @@
-from grasping_ai.robotics.gripper import load_gripper_model, make_close_command
+from grasping_ai.robotics.gripper import (
+    load_gripper_model,
+    make_close_command,
+    panda_hand_to_contact_transform,
+    panda_width_to_finger_joints,
+)
 from grasping_ai.robotics.kinematics import (
     build_forward_kinematics,
     build_inverse_kinematics,
@@ -20,6 +25,8 @@ __all__ = [
     "load_gripper_model",
     "load_robot_model",
     "make_close_command",
+    "panda_hand_to_contact_transform",
+    "panda_width_to_finger_joints",
     "solve_inverse_kinematics",
     "transform_between_frames",
     "transform_grasp_pose",

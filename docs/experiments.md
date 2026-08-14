@@ -31,5 +31,11 @@ store data under `wandb/`; sync with `wandb sync` when ready.
 See [ADR-0007](./adr/007-wandb-artifact-versioning.md) for rationale (W&B vs
 MLflow, complementary use with TensorBoard).
 
+## Grasp frames (Panda)
+
+Synthetic and generated grasps store **contact-frame** poses (origin at the
+antipodal midpoint). ``simulate_grasp`` converts to the Panda **hand frame**
+before IK (ADR-0009). Constants live in ``configs/gripper/default.yaml``.
+
 For per-phase design and verification status, see
 `docs/PROJECT.md` and `CHECKLIST.md`.

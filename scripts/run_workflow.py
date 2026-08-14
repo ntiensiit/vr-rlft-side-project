@@ -321,6 +321,7 @@ if __name__ == "__main__":
         config_get,
         config_path,
         load_project_yaml_config,
+        optional_cli_path,
         parse_config_dir_from_argv,
     )
 
@@ -389,7 +390,7 @@ if __name__ == "__main__":
     parser.add_argument("--rl-policy-checkpoint", type=Path, default=None)
     parser.add_argument("--rl-episodes", type=int, default=None)
     parser.add_argument("--rl-max-steps", type=int, default=None)
-    parser.add_argument("--table-xml", type=Path, default=None)
+    parser.add_argument("--table-xml", type=optional_cli_path, default=None)
     parser.add_argument(
         "--num-simulation-steps",
         type=int,

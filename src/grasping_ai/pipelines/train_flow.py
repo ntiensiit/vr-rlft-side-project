@@ -102,6 +102,9 @@ def run_flow_training_pipeline(
     pretrained_encoder_path: Path | None = None,
     resume_checkpoint_path: Path | None = None,
     augment: bool = False,
+    min_grasp_score: float = 0.0,
+    score_repeat_factor: int = 0,
+    score_repeat_power: float = 1.0,
 ) -> None:
     """Run the end-to-end flow-matching training pipeline for grasp generation.
 
@@ -172,7 +175,14 @@ def run_flow_training_pipeline(
                 encoder_state[key] = value
         cast(torch.nn.Module, model.encoder).load_state_dict(encoder_state, strict=False)
 
-    pairs = build_supervised_training_pairs(dataset_root, augment=augment, seed=seed)
+    pairs = build_supervised_training_pairs(
+        dataset_root,
+        augment=augment,
+        seed=seed,
+        min_grasp_score=min_grasp_score,
+        score_repeat_factor=score_repeat_factor,
+        score_repeat_power=score_repeat_power,
+    )
 
     loss_fn = build_flow_matching_loss()
     training_step = build_flow_training_step(

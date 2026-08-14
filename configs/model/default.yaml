@@ -18,6 +18,9 @@ diffusion:
     grasp_poses: artifacts/exports/diffusion_grasp_poses_003_cracker_box.npy
     simulation_report: artifacts/reports/diffusion_simulation_outcomes_003_cracker_box.jsonl
     evaluation_report: artifacts/reports/diffusion_analytical_evaluation_report.jsonl
+  beta_start: 1.0e-4
+  beta_end: 0.02
+  num_steps: 100
 flow:
   train_steps: 100
   inference_steps: 5

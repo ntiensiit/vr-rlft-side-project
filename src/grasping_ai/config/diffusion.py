@@ -17,8 +17,30 @@ class DiffusionSchedule:
     beta_end: float = 0.02
     num_steps: int = 100
 
+    @classmethod
+    def load_from_config(cls, cfg: dict[str, object]) -> "DiffusionSchedule":
+        """Load DiffusionSchedule parameters from a configuration dictionary.
 
-DEFAULT_DIFFUSION_SCHEDULE = DiffusionSchedule()
+        Args:
+            cfg: The project configuration mapping.
+
+        Returns:
+            A DiffusionSchedule instance populated with configured parameters.
+        """
+        from grasping_ai.config.yaml_loader import config_get
+        return cls(
+            beta_start=float(config_get(cfg, "diffusion", "beta_start", default=1e-4)),
+            beta_end=float(config_get(cfg, "diffusion", "beta_end", default=0.02)),
+            num_steps=int(config_get(cfg, "diffusion", "num_steps", default=100)),
+        )
+
+
+try:
+    from grasping_ai.config.yaml_loader import load_project_yaml_config, parse_config_dir_from_argv
+    _cfg = load_project_yaml_config(parse_config_dir_from_argv())
+    DEFAULT_DIFFUSION_SCHEDULE = DiffusionSchedule.load_from_config(_cfg)
+except Exception:
+    DEFAULT_DIFFUSION_SCHEDULE = DiffusionSchedule()
 
 
 def linear_beta_schedule(

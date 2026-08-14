@@ -302,15 +302,20 @@ def test_simulate_grasp_renames_object_body_to_object_identifier(
         minimal_ycb_root_differing_body_name: YCB root whose object body name
             differs from the object identifier.
     """
+    from grasping_ai.robotics.gripper import panda_hand_to_contact_transform
     from grasping_ai.robotics.kinematics import build_forward_kinematics, load_robot_model
+    from grasping_ai.robotics.transforms import transform_grasp_pose
 
     r_model = load_robot_model(str(panda_robot_xml))
     q_home = np.array(
         [0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853, 0.04, 0.04]
     )
-    grasp = build_forward_kinematics(r_model)(q_home)
+    hand_pose = build_forward_kinematics(r_model)(q_home)
+    contact_grasp = transform_grasp_pose(
+        hand_pose, panda_hand_to_contact_transform()
+    )
     outcome = simulate_grasp(
-        grasp, "mustard_bottle", minimal_ycb_root_differing_body_name,
+        contact_grasp, "mustard_bottle", minimal_ycb_root_differing_body_name,
         panda_robot_xml, None, 5, np.zeros(1),
     )
     assert set(outcome.keys()) == {
@@ -319,7 +324,7 @@ def test_simulate_grasp_renames_object_body_to_object_identifier(
     }
     assert outcome["initial_height"] == pytest.approx(0.5)
     assert outcome["final_height"] == pytest.approx(0.5)
-    assert np.allclose(outcome["grasp_pose"], grasp)
+    assert np.allclose(outcome["grasp_pose"], contact_grasp)
 
 
 def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(

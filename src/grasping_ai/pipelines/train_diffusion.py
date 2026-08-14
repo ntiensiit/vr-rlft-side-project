@@ -27,6 +27,9 @@ def run_diffusion_training_pipeline(
     pretrained_encoder_path: Path | None = None,
     resume_checkpoint_path: Path | None = None,
     augment: bool = False,
+    min_grasp_score: float = 0.0,
+    score_repeat_factor: int = 0,
+    score_repeat_power: float = 1.0,
 ) -> None:
     """Run the end-to-end diffusion training pipeline for grasp generation.
 
@@ -45,6 +48,9 @@ def run_diffusion_training_pipeline(
         pretrained_encoder_path: Optional encoder checkpoint to warm-start from.
         resume_checkpoint_path: Optional checkpoint to resume optimizer state from.
         augment: When ``True``, apply SO(3)/translation jitter to training pairs.
+        min_grasp_score: Drop grasps below this score when dataset records include scores.
+        score_repeat_factor: Duplicate higher-scoring grasps when positive.
+        score_repeat_power: Exponent for score-based pair repetition.
 
     Raises:
         TypeError: If ``dataset_root`` is not a ``pathlib.Path`` instance.
@@ -99,7 +105,12 @@ def run_diffusion_training_pipeline(
 
     try:
         training_pairs = build_supervised_training_pairs(
-            dataset_root, augment=augment, seed=seed
+            dataset_root,
+            augment=augment,
+            seed=seed,
+            min_grasp_score=min_grasp_score,
+            score_repeat_factor=score_repeat_factor,
+            score_repeat_power=score_repeat_power,
         )
     except Exception as e:
         raise ValueError(f"Failed to build supervised training pairs: {e}") from e

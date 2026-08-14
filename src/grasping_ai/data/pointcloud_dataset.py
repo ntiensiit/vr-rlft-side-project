@@ -136,6 +136,9 @@ def generate_analytical_grasps(
     rng: np.random.Generator,
     allow_relaxed: bool = False,
     relaxed_antipodal_dot: float = 0.0,
+    strict_antipodal_dot: float = 0.5,
+    strict_alignment_dot: float = 0.5,
+    search_multiplier: int = 20,
 ) -> np.ndarray:
     """Generate analytical antipodal grasps from a point cloud with normals.
 
@@ -155,6 +158,11 @@ def generate_analytical_grasps(
             the strict search produces no grasps.
         relaxed_antipodal_dot: Cosine threshold on ``dot(n_i, -n_j)`` used by
             the relaxed fallback. Values must lie in ``[-1, 1]``.
+        strict_antipodal_dot: Cosine threshold on ``dot(n_i, -n_j)`` for the
+            strict antipodal search.
+        strict_alignment_dot: Cosine threshold on action-line alignment with
+            contact normals during the strict search.
+        search_multiplier: Number of random attempts per requested grasp.
 
     Returns:
         Array of grasp poses of shape ``(K, 4, 4)`` where K <= num_grasps.
@@ -173,12 +181,18 @@ def generate_analytical_grasps(
         raise TypeError("allow_relaxed must be a boolean")
     if not -1.0 <= relaxed_antipodal_dot <= 1.0:
         raise ValueError("relaxed_antipodal_dot must be in [-1, 1]")
+    if not -1.0 <= strict_antipodal_dot <= 1.0:
+        raise ValueError("strict_antipodal_dot must be in [-1, 1]")
+    if not -1.0 <= strict_alignment_dot <= 1.0:
+        raise ValueError("strict_alignment_dot must be in [-1, 1]")
+    if not isinstance(search_multiplier, int) or search_multiplier <= 0:
+        raise ValueError("search_multiplier must be a positive integer")
 
     tree = build_kdtree(points)
     valid_grasps: list[np.ndarray] = []
     n = points.shape[0]
 
-    attempts = num_grasps * 20
+    attempts = num_grasps * search_multiplier
     for _ in range(attempts):
         if len(valid_grasps) >= num_grasps:
             break
@@ -209,9 +223,9 @@ def generate_analytical_grasps(
 
             # Antipodal condition: normals face each other, and action line aligns with normals
             if (
-                np.dot(n_i, -n_j) > 0.5
-                and np.dot(n_i, d) > 0.5
-                and np.dot(n_j, -d) > 0.5
+                np.dot(n_i, -n_j) > strict_antipodal_dot
+                and np.dot(n_i, d) > strict_alignment_dot
+                and np.dot(n_j, -d) > strict_alignment_dot
             ):
                 z_axis = d
                 avg_normal = 0.5 * (n_i + n_j)

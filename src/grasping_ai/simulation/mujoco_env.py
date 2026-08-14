@@ -40,6 +40,28 @@ class RewardConfig:
     drop_height_threshold: float = 0.1
     terminate_on_non_finite: bool = True
 
+    @classmethod
+    def load_from_config(cls, cfg: dict[str, object]) -> "RewardConfig":
+        """Load RewardConfig parameters from a configuration dictionary.
+
+        Args:
+            cfg: The project configuration mapping.
+
+        Returns:
+            A RewardConfig instance populated with configured parameters.
+        """
+        from grasping_ai.config.yaml_loader import config_get
+        return cls(
+            action_cost_weight=float(config_get(cfg, "rl", "reward", "action_cost_weight", default=0.01)),
+            survival_bonus=float(config_get(cfg, "rl", "reward", "survival_bonus", default=1.0)),
+            contact_reward=float(config_get(cfg, "rl", "reward", "contact_reward", default=0.0)),
+            lift_reward_weight=float(config_get(cfg, "rl", "reward", "lift_reward_weight", default=0.0)),
+            grasp_success_bonus=float(config_get(cfg, "rl", "reward", "grasp_success_bonus", default=0.0)),
+            lift_height_threshold=float(config_get(cfg, "rl", "reward", "lift_height_threshold", default=0.05)),
+            drop_height_threshold=float(config_get(cfg, "rl", "reward", "drop_height_threshold", default=0.1)),
+            terminate_on_non_finite=bool(config_get(cfg, "rl", "reward", "terminate_on_non_finite", default=True)),
+        )
+
 
 def load_mujoco_model(model_xml_path: Path) -> object:
     """Load a MuJoCo simulation model from an XML file.
@@ -302,7 +324,14 @@ class MuJoCoGraspingEnv(gym.Env):
             raise TypeError("reward_config must be a RewardConfig or None")
 
         self._object_name = object_name
-        self._reward_config = reward_config or RewardConfig()
+        if reward_config is None:
+            try:
+                from grasping_ai.config.yaml_loader import load_project_yaml_config, parse_config_dir_from_argv
+                _cfg = load_project_yaml_config(parse_config_dir_from_argv())
+                reward_config = RewardConfig.load_from_config(_cfg)
+            except Exception:
+                reward_config = RewardConfig()
+        self._reward_config = reward_config
         self._initial_object_height: float | None = None
         self._grasp_success_granted = False
 

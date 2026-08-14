@@ -39,6 +39,9 @@ def build_supervised_training_pairs(
     dataset_root: Path,
     augment: bool = False,
     seed: int | None = None,
+    min_grasp_score: float = 0.0,
+    score_repeat_factor: int = 0,
+    score_repeat_power: float = 1.0,
 ) -> list[tuple[torch.Tensor, torch.Tensor]]:
     """Load grasp dataset records as canonical-frame ``(point_cloud, grasp_9d)`` pairs.
 
@@ -50,6 +53,12 @@ def build_supervised_training_pairs(
         dataset_root: Root directory of the grasp-pose dataset.
         augment: When ``True``, apply SO(3)/translation jitter to each sample.
         seed: Optional seed controlling augmentation randomness.
+        min_grasp_score: Drop grasps whose score is below this threshold when
+            scores are present in the dataset record.
+        score_repeat_factor: When positive and scores are present, duplicate
+            higher-scoring grasps up to this many weighted copies per grasp.
+        score_repeat_power: Exponent applied to normalized scores when repeating
+            grasps for weighted sampling.
 
     Returns:
         List of ``(point_cloud, grasp_vector)`` tensor pairs.
@@ -74,12 +83,23 @@ def build_supervised_training_pairs(
         sample = load_grasp_sample(record)
         pc = sample["point_cloud"]
         grasp_poses = sample["grasp_poses"]
+        scores = sample.get("scores")
         if not isinstance(pc, np.ndarray):
             raise TypeError(f"Record {record} point cloud must be a numpy array")
         if not isinstance(grasp_poses, np.ndarray):
             raise TypeError(f"Record {record} grasp poses must be a numpy array")
         if len(grasp_poses) == 0:
             raise ValueError(f"Record {record} has no target grasp poses")
+
+        grasp_indices = list(range(len(grasp_poses)))
+        if isinstance(scores, np.ndarray) and scores.shape[0] == len(grasp_poses):
+            grasp_indices = [
+                idx for idx in grasp_indices if float(scores[idx]) >= min_grasp_score
+            ]
+            if not grasp_indices:
+                raise ValueError(
+                    f"Record {record} has no grasp poses above min_grasp_score={min_grasp_score}"
+                )
 
         if augment_rng is not None:
             from grasping_ai.data.transforms import (
@@ -92,9 +112,21 @@ def build_supervised_training_pairs(
                 make_random_rotation_jitter(augment_rng),
                 make_translation_jitter(augment_rng, scale=0.01),
             )
-            pc, grasp_poses, _ = sample_transform(pc, grasp_poses, None)
+            pc, grasp_poses, transformed_scores = sample_transform(
+                pc, grasp_poses, scores if isinstance(scores, np.ndarray) else None
+            )
+            scores = transformed_scores
             if grasp_poses is None:
                 raise ValueError(f"Augmentation removed grasp poses for {record}")
+            grasp_indices = list(range(len(grasp_poses)))
+            if isinstance(scores, np.ndarray) and scores.shape[0] == len(grasp_poses):
+                grasp_indices = [
+                    idx for idx in grasp_indices if float(scores[idx]) >= min_grasp_score
+                ]
+                if not grasp_indices:
+                    raise ValueError(
+                        f"Record {record} has no grasp poses above min_grasp_score after augment"
+                    )
 
         pc_t = torch.from_numpy(pc).float()
         frame, centroid = compute_se3_frame(pc_t.unsqueeze(0))
@@ -102,10 +134,33 @@ def build_supervised_training_pairs(
         world_inv = torch.from_numpy(
             invert_rigid_transform(world.detach().cpu().numpy())
         ).float()
-        for t_matrix in grasp_poses:
+
+        score_values: np.ndarray | None = None
+        if isinstance(scores, np.ndarray) and scores.shape[0] == len(grasp_poses):
+            score_values = scores
+
+        max_score = 0.0
+        if score_values is not None and score_repeat_factor > 0:
+            max_score = float(np.max(score_values[grasp_indices]))
+
+        for grasp_index in grasp_indices:
+            t_matrix = grasp_poses[grasp_index]
             t_tensor = torch.from_numpy(cast(np.ndarray, t_matrix)).float()
             canonical = world_inv @ t_tensor @ world
             t_vec = se3_to_vec(canonical.numpy())
-            pairs.append((pc_t, torch.from_numpy(t_vec).float()))
+            pair = (pc_t, torch.from_numpy(t_vec).float())
+            repeats = 1
+            if (
+                score_values is not None
+                and score_repeat_factor > 0
+                and max_score > 0.0
+            ):
+                normalized = float(score_values[grasp_index]) / max_score
+                repeats = max(
+                    1,
+                    round(normalized**score_repeat_power * score_repeat_factor),
+                )
+            for _ in range(repeats):
+                pairs.append(pair)
 
     return pairs

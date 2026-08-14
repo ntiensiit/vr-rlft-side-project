@@ -170,6 +170,22 @@ def parse_config_dir_from_argv(argv: list[str] | None = None) -> Path:
     return parsed.config_dir
 
 
+def optional_cli_path(value: str) -> Path | None:
+    """Parse an optional filesystem path from a CLI string value.
+
+    Args:
+        value: Raw argument text from argparse. The literals ``none`` and an
+            empty string are treated as absent.
+
+    Returns:
+        A ``pathlib.Path`` when ``value`` names a path, otherwise ``None``.
+    """
+    text = str(value).strip()
+    if text.lower() in {"", "none"}:
+        return None
+    return Path(text)
+
+
 def config_get(
     config: dict[str, object],
     *keys: str,

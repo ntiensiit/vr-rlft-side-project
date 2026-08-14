@@ -10,6 +10,7 @@ from grasping_ai.config.yaml_loader import (
     load_project_yaml_config,
     load_yaml_mapping,
     merge_yaml_mappings,
+    optional_cli_path,
     parse_config_dir_from_argv,
     require_config_value,
 )
@@ -214,3 +215,11 @@ def test_config_float_list_rejects_non_numeric_items() -> None:
 def test_config_float_list_converts_integers() -> None:
     """Convert integer list entries to floats."""
     assert config_float_list({"g": {"v": [0, 1]}}, "g", "v") == [0.0, 1.0]
+
+
+def test_optional_cli_path_treats_none_literal_as_absent() -> None:
+    """Treat CLI ``none`` literals as absent optional paths."""
+    assert optional_cli_path("None") is None
+    assert optional_cli_path("none") is None
+    assert optional_cli_path("") is None
+    assert optional_cli_path(" deploy/table.xml ") == Path("deploy/table.xml")

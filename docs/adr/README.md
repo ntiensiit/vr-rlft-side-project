@@ -14,6 +14,7 @@ rationale, and consequences of a single choice.
 | 0006  | [Robot viewer and keyboard-topic teleoperation split](./006-robot-viewer-keyboard-topic-split.md) | Accepted | 2026-08-14 |
 | 0007  | [W&B artifact versioning for the artifact chain](./007-wandb-artifact-versioning.md) | Accepted | 2026-08-14 |
 | 0008  | [Hydra configuration composition](./008-hydra-configuration.md) | Accepted | 2026-08-14 |
+| 0009  | [Panda contact-frame grasps and sim fidelity](./009-panda-contact-frame.md) | Accepted | 2026-08-14 |
 
 ## Conventions
 

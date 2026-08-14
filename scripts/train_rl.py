@@ -13,7 +13,9 @@ if __name__ == "__main__":
     import argparse
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "training", "robot")
+    cfg = load_project_yaml_config(
+        config_dir, "base", "data", "model", "training", "gripper", "env", "object"
+    )
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -81,7 +83,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.robot_xml is None:
         parser.error(
-            "--robot-xml is required (set in configs/robot/default.yaml robot.description "
+            "--robot-xml is required (set in configs/gripper/default.yaml robot.description "
             "or pass explicitly)"
         )
     if args.ycb_root is None:
@@ -91,7 +93,7 @@ if __name__ == "__main__":
         )
     if args.object_ids is None:
         parser.error(
-            "--object-ids is required (set in configs/data/default.yaml objects.ids "
+            "--object-ids is required (set in configs/object/default.yaml objects.ids "
             "or pass explicitly)"
         )
     if args.policy_checkpoint is None:

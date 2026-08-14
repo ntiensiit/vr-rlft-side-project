@@ -55,7 +55,7 @@ def make_observations(ycb_root: Path, output_dir: Path, num_samples: int, seed: 
 
 if __name__ == "__main__":
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data")
+    cfg = load_project_yaml_config(config_dir, "base", "data", "object")
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(

@@ -695,6 +695,20 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
     assert pairs[0][0].shape == (20, 3)
     assert pairs[0][1].shape == (9,)
 
+    scored_dir = tmp_path / "scored_dataset"
+    scored_dir.mkdir()
+    scored_file = scored_dir / "scored_sample.npy"
+    scores = np.array([0.2, 0.9], dtype=np.float32)
+    np.save(
+        scored_file,
+        {"point_cloud": pc, "grasp_poses": grasps, "scores": scores},
+        allow_pickle=True,
+    )
+    filtered_pairs = build_supervised_training_pairs(
+        scored_dir, min_grasp_score=0.5, score_repeat_factor=2, score_repeat_power=1.0
+    )
+    assert len(filtered_pairs) == 2
+
     invalid_file = dataset_dir / "invalid_sample.npy"
     np.save(invalid_file, {"point_cloud": "not_array", "grasp_poses": grasps}, allow_pickle=True)
     with pytest.raises(TypeError, match="must be a numpy array"):

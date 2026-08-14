@@ -12,6 +12,8 @@ from grasping_ai.robotics.gripper import (
     load_gripper_model,
     make_close_command,
     make_open_command,
+    panda_hand_to_contact_transform,
+    panda_width_to_finger_joints,
 )
 from grasping_ai.robotics.kinematics import (
     build_forward_kinematics,
@@ -175,6 +177,46 @@ def test_transform_grasp_pose():
 
     gr2w = transform_grasp_pose(g2w, gr2g)
     assert np.allclose(gr2w[:3, 3], [1.0, 2.0, 0.0])
+
+
+def test_panda_hand_to_contact_transform_round_trip() -> None:
+    """Panda hand-to-contact transform is rigid and matches config offsets."""
+    from grasping_ai.perception.geometry import invert_transform
+
+    hand_to_contact = panda_hand_to_contact_transform()
+    assert hand_to_contact.shape == (4, 4)
+    assert np.isclose(np.linalg.det(hand_to_contact[:3, :3]), 1.0, atol=1e-6)
+    assert np.allclose(hand_to_contact[:3, 3], [0.0, 0.0, -0.102])
+
+    contact_to_hand = invert_transform(hand_to_contact)
+    identity = hand_to_contact @ contact_to_hand
+    assert np.allclose(identity, np.eye(4), atol=1e-6)
+
+
+def test_panda_width_to_finger_joints() -> None:
+    """Width mapping matches Panda slide joint semantics."""
+    q1, q2 = panda_width_to_finger_joints(0.08)
+    assert np.isclose(q1, 0.04)
+    assert np.isclose(q2, 0.0)
+
+    q1_min, q2_min = panda_width_to_finger_joints(0.0)
+    assert np.isclose(q1_min, 0.0015)
+    assert np.isclose(q2_min, -0.0385)
+
+
+def test_deploy_robot_fingertip_friction() -> None:
+    """Panda fingertip pad defaults use high friction from mj-grasp-sim."""
+    text = Path("deploy/robot.xml").read_text(encoding="utf-8")
+    assert text.count('friction="2.4 0.3 0.1"') >= 5
+
+
+def test_gripper_config_documents_panda_contact_offset() -> None:
+    """Gripper config group records Panda base-to-contact constants."""
+    from grasping_ai.config.yaml_loader import config_get, load_project_yaml_config
+
+    cfg = load_project_yaml_config(Path("configs"))
+    position = config_get(cfg, "robot", "gripper", "base_to_contact", "position")
+    assert position == [0, 0, -0.102]
 
 
 def test_convert_grasps_to_world_frame():

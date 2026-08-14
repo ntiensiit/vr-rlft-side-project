@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - ADRs [0001](docs/adr/001-phase4-canonicalization-vs-equivariant.md)–[0008](docs/adr/008-hydra-configuration.md); CI; artifact-chain script (`run_artifacts.py`) and runtime workflow scripts — [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
 - Hydra config composition (`hydra-core`, `configs/config.yaml`, config groups) — [ADR-0008](docs/adr/008-hydra-configuration.md).
+- Panda sim fidelity: contact-to-hand transform, width-to-joint mapping, fingertip friction — [ADR-0009](docs/adr/009-panda-contact-frame.md).
 - `scripts/visualize_robot.py` and keyboard TUI in `pipelines/visualize_robot.py` (``python -m grasping_ai.pipelines.visualize_robot --keyboard-tui``) with UDP topic `robot/keyboard` — [ADR-0006](docs/adr/006-robot-viewer-keyboard-topic-split.md).
 - Flow training/inference (`FlowGeneratorModel`, `scripts/train_flow.py`).
 - Shared modules from dedup/refactor: `grasp_vector`, `training_pairs`, `grasp_sampling`, `checkpoint_io`, `supervised_training`, `grasp_sampling_batch`, `grasp_inference_runtime` — [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md), [ADR-0005](docs/adr/005-runtime-workflow-integration.md).

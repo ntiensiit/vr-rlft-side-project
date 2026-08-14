@@ -15,18 +15,25 @@ def simulate_grasp(
     lift_height_threshold: float = 0.05,
     max_linear_velocity: float = 0.05,
     max_angular_velocity: float = 0.1,
+    grasp_width: float | None = None,
+    quiet: bool = False,
 ) -> dict[str, np.ndarray | bool | float]:
     """Execute a single grasp in a MuJoCo simulation and report its outcome.
 
     Args:
-        grasp_pose: Grasp pose expressed in the world frame as a ``(4, 4)``
-            transformation.
+        grasp_pose: Contact-frame grasp pose in the world frame as a ``(4, 4)``
+            transformation (origin at the antipodal contact midpoint). The pose is
+            converted to the Panda hand frame before inverse kinematics.
         object_id: Logical YCB object identifier to load.
         ycb_root: Root directory of the YCB object set.
         robot_xml_path: Path to the robot MJCF description.
         table_xml_path: Optional path to a workbench/table MJCF description.
         num_simulation_steps: Number of physics steps to execute.
         gripper_close_command: Gripper command used to close the gripper.
+        grasp_width: Optional finger opening width in meters. When supplied and
+            the model exposes two finger joint actuators, close targets are
+            derived via ``panda_width_to_finger_joints``.
+        quiet: When ``True``, suppress IK fallback diagnostic prints.
         lift_height_threshold: Minimum world-frame height gain required to
             count the grasp as a successful lift.
         max_linear_velocity: Maximum acceptable linear velocity of the object.
@@ -54,6 +61,8 @@ def simulate_grasp(
         raise ValueError("max_linear_velocity must be non-negative")
     if max_angular_velocity < 0:
         raise ValueError("max_angular_velocity must be non-negative")
+    if grasp_width is not None and grasp_width < 0:
+        raise ValueError("grasp_width must be non-negative when provided")
 
     import mujoco  # type: ignore[import-untyped]
 
@@ -63,6 +72,8 @@ def simulate_grasp(
         load_gripper_model,
         make_close_command,
         make_open_command,
+        panda_hand_to_contact_transform,
+        panda_width_to_finger_joints,
     )
     from grasping_ai.robotics.kinematics import (
         build_forward_kinematics,
@@ -70,8 +81,12 @@ def simulate_grasp(
         load_robot_model,
         solve_inverse_kinematics,
     )
+    from grasping_ai.robotics.transforms import transform_grasp_pose
     from grasping_ai.simulation.scene import MuJoCoScene, collect_contacts, step_scene
     from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
+
+    hand_to_contact = panda_hand_to_contact_transform()
+    hand_pose = transform_grasp_pose(grasp_pose, invert_transform(hand_to_contact))
 
     object_dir = resolve_ycb_object_directory(ycb_root, object_id)
     object_xml_path = find_ycb_mjcf(object_dir)
@@ -97,9 +112,10 @@ def simulate_grasp(
 
     ik_failed = False
     try:
-        q_target = solve_inverse_kinematics(ik_solver, grasp_pose, initial_joints)
+        q_target = solve_inverse_kinematics(ik_solver, hand_pose, initial_joints)
     except ValueError as exc:
-        print(f"IK failed: {exc}")
+        if not quiet:
+            print(f"IK failed: {exc}")
         q_target = initial_joints
         ik_failed = True
 
@@ -121,7 +137,8 @@ def simulate_grasp(
                         qposadr = int(mj_model.jnt_qposadr[joint_id])
                         break
         if qposadr is None:
-            print("IK failed and object has no freejoint; skipping physics for this grasp.")
+            if not quiet:
+                print("IK failed and object has no freejoint; skipping physics for this grasp.")
             return {
                 "success": False,
                 "initial_height": 0.0,
@@ -132,7 +149,7 @@ def simulate_grasp(
                 "fk_position_error": float("inf"),
             }
         object_pose = scene.body_pose(object_id)
-        new_object_pose = ee_pose @ invert_transform(grasp_pose) @ object_pose
+        new_object_pose = ee_pose @ invert_transform(hand_pose) @ object_pose
         mj_data.qpos[qposadr : qposadr + 3] = new_object_pose[:3, 3]
         quat = np.zeros(4)
         mujoco.mju_mat2Quat(
@@ -146,7 +163,8 @@ def simulate_grasp(
                 mj_data.qvel[dofadr : dofadr + 6] = 0.0
                 break
         mujoco.mj_forward(mj_model, mj_data)
-        print("Placing object at the gripper because the arm cannot reach this pose.")
+        if not quiet:
+            print("Placing object at the gripper because the arm cannot reach this pose.")
 
     initial_pose = scene.body_pose(object_id)
     initial_height = float(initial_pose[2, 3])
@@ -188,6 +206,23 @@ def simulate_grasp(
         for i, idx in enumerate(gripper_ids):
             open_cmd[idx] = open_vals[i]
             close_cmd[idx] = close_vals[i]
+        if grasp_width is not None and len(gripper_ids) == 2:
+            open_q1, open_q2 = panda_width_to_finger_joints(grasp_width)
+            close_q1, close_q2 = 0.0, -0.04
+            finger_open = {"finger_joint1": open_q1, "finger_joint2": open_q2}
+            finger_close = {"finger_joint1": close_q1, "finger_joint2": close_q2}
+            for idx in gripper_ids:
+                joint_id = int(mj_model.actuator_trnid[idx, 0])
+                joint_name = (
+                    mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_id)
+                    or ""
+                )
+                for key, value in finger_open.items():
+                    if key in joint_name:
+                        open_cmd[idx] = value
+                for key, value in finger_close.items():
+                    if key in joint_name:
+                        close_cmd[idx] = value
         close_len = gripper_close_command.shape[0]
         for i, idx in enumerate(gripper_ids):
             if i >= close_len:
@@ -223,7 +258,7 @@ def simulate_grasp(
     else:
         achieved_pose = fk_solver(q_target)
         fk_position_error = float(
-            np.linalg.norm(achieved_pose[:3, 3] - grasp_pose[:3, 3])
+            np.linalg.norm(achieved_pose[:3, 3] - hand_pose[:3, 3])
         )
 
     final_pose = scene.body_pose(object_id)

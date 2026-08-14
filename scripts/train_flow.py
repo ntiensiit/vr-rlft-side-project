@@ -12,7 +12,7 @@ if __name__ == "__main__":
     import argparse
 
     config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "training")
+    cfg = load_project_yaml_config(config_dir, "base", "data", "model", "training", "object")
     pre_parser = argparse.ArgumentParser(add_help=False)
     pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
     parser = argparse.ArgumentParser(
@@ -78,6 +78,21 @@ if __name__ == "__main__":
         action="store_true",
         help="Apply SO(3)/translation jitter during supervised pair construction",
     )
+    parser.add_argument(
+        "--min-grasp-score",
+        type=float,
+        default=float(config_get(cfg, "supervised", "min_grasp_score", default=0.0)),
+    )
+    parser.add_argument(
+        "--score-repeat-factor",
+        type=int,
+        default=int(config_get(cfg, "supervised", "score_repeat_factor", default=0)),
+    )
+    parser.add_argument(
+        "--score-repeat-power",
+        type=float,
+        default=float(config_get(cfg, "supervised", "score_repeat_power", default=1.0)),
+    )
     args = parser.parse_args()
     if args.dataset_root is None:
         parser.error(
@@ -104,4 +119,7 @@ if __name__ == "__main__":
         pretrained_encoder_path=args.pretrained_encoder,
         resume_checkpoint_path=args.resume,
         augment=args.augment,
+        min_grasp_score=args.min_grasp_score,
+        score_repeat_factor=args.score_repeat_factor,
+        score_repeat_power=args.score_repeat_power,
     )

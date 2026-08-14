@@ -6,6 +6,44 @@ import mujoco  # type: ignore[import-untyped]
 import numpy as np
 
 
+def panda_hand_to_contact_transform() -> np.ndarray:
+    """Return the Panda hand-base to contact-center rigid transform.
+
+    Values match ``configs/gripper/default.yaml`` and the MuJoCo Grasping
+    Simulator Panda gripper definition (translation along hand z, wxyz quaternion).
+
+    Returns:
+        A ``(4, 4)`` homogeneous transform ``T_hand_contact``.
+    """
+    import pytransform3d.rotations as pr
+
+    from grasping_ai.perception.geometry import make_transform
+
+    position = np.array([0.0, 0.0, -0.102], dtype=np.float64)
+    quaternion_wxyz = np.array(
+        [0.707106781, 0.0, 0.0, 0.707106781], dtype=np.float64
+    )
+    rotation = pr.matrix_from_quaternion(quaternion_wxyz)
+    return make_transform(rotation, position)
+
+
+def panda_width_to_finger_joints(width: float) -> tuple[float, float]:
+    """Map a Panda finger opening width in meters to slide-joint targets.
+
+    Args:
+        width: Desired opening width in meters.
+
+    Returns:
+        A tuple ``(finger_joint1, finger_joint2)`` clipped to Panda slide ranges.
+    """
+    clamped_width = float(np.clip(width, 0.003, 0.08))
+    target_q1 = clamped_width / 2.0
+    target_q2 = -0.04 + (clamped_width / 2.0)
+    target_q1 = float(np.clip(target_q1, 0.0, 0.04))
+    target_q2 = float(np.clip(target_q2, -0.04, 0.0))
+    return target_q1, target_q2
+
+
 def gripper_actuator_indices(mj_model: Any) -> list[int]:
     """Return actuator indices that drive the gripper rather than the arm."""
     indices: list[int] = []
@@ -161,3 +199,4 @@ def make_close_command(gripper_model: dict[str, object]) -> np.ndarray:
         else:
             cmd[i] = 1.0
     return cmd
+

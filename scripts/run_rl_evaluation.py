@@ -181,6 +181,8 @@ def run_rl_evaluation_main(
 if __name__ == "__main__":
     import argparse
 
+    from grasping_ai.config.yaml_loader import optional_cli_path
+
     parser = argparse.ArgumentParser(
         description="Run deterministic rollouts of the exported RL policy"
     )
@@ -195,7 +197,7 @@ if __name__ == "__main__":
     parser.add_argument("--max-steps", type=int, required=True)
     parser.add_argument("--device", type=str, required=True)
     parser.add_argument("--seed", type=int, required=True)
-    parser.add_argument("--table-xml", type=Path, default=None)
+    parser.add_argument("--table-xml", type=optional_cli_path, default=None)
     parser.add_argument(
         "--observation-dim-from-env",
         action="store_true",
