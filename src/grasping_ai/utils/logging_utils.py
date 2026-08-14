@@ -1,9 +1,10 @@
-import os
 import sys
+from datetime import datetime
 from pathlib import Path
+
+import mlflow
 from loguru import logger
 
-from datetime import datetime
 
 def setup_logging(module_name: str | None = None, level: str = "INFO"):
     """Configure loguru logging to stderr and optionally to a log file.
@@ -46,18 +47,16 @@ def init_mlflow(config: dict) -> bool:
     Returns:
         True if MLflow was successfully initialized, False otherwise.
     """
-    import mlflow
-    
     tracking_cfg = config.get("tracking", {})
     backend = tracking_cfg.get("backend", "none")
-    
+
     if backend != "mlflow":
         return False
-        
+
     mlflow_cfg = tracking_cfg.get("mlflow", {})
     tracking_uri = mlflow_cfg.get("tracking_uri", "./mlruns")
     experiment_name = mlflow_cfg.get("experiment_name", "default")
-    
+
     logger.info("Initializing MLflow with URI: {} and Experiment: {}", tracking_uri, experiment_name)
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(experiment_name)

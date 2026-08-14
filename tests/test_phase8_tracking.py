@@ -215,9 +215,10 @@ def test_supervised_reproducibility(tmp_path):
 
 def test_setup_logging():
     """Test setup_logging with console and file logs."""
-    from grasping_ai.utils.logging_utils import setup_logging
-    from pathlib import Path
     from datetime import datetime
+    from pathlib import Path
+
+    from grasping_ai.utils.logging_utils import setup_logging
 
     current_date = datetime.now().strftime("%Y-%m-%d")
     expected_file = Path("logs") / f"{current_date}-test_run.log"
@@ -268,8 +269,9 @@ def test_init_mlflow():
 
 def test_save_training_checkpoint_errors():
     """Verify that trainer functions check input types and raise errors."""
-    from grasping_ai.training.trainer import save_training_checkpoint, load_training_checkpoint
     import pytest
+
+    from grasping_ai.training.trainer import load_training_checkpoint, save_training_checkpoint
 
     model = DummyModel()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -283,7 +285,7 @@ def test_save_training_checkpoint_errors():
 
 def test_training_loop_dataloader_types(tmp_path):
     """Test trainer.py run_training_loop with different dataloader types."""
-    from grasping_ai.training.trainer import run_training_loop, build_training_step
+    from grasping_ai.training.trainer import build_training_step, run_training_loop
 
     model = DummyModel()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -294,7 +296,9 @@ def test_training_loop_dataloader_types(tmp_path):
     batch = (torch.randn(2, 128), torch.randn(2, 9))
 
     # 1. Callable dataloader
-    callable_dl = lambda: [batch]
+    def callable_dl():
+        return [batch]
+
     run_training_loop(step, callable_dl, num_epochs=1, checkpoint_path=checkpoint_path, log_every=1)
 
     # 2. Iterator dataloader

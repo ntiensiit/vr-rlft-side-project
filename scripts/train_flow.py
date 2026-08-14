@@ -100,7 +100,7 @@ if __name__ == "__main__":
         )
     if args.checkpoint is None:
         parser.error("--checkpoint is required (set in configs/model/default.yaml flow.checkpoint or pass explicitly)")
-    from grasping_ai.utils.logging_utils import setup_logging, init_mlflow
+    from grasping_ai.utils.logging_utils import init_mlflow, setup_logging
     setup_logging(module_name="train_flow")
     use_mlflow = init_mlflow(cfg)
 

@@ -138,7 +138,7 @@ if __name__ == "__main__":
             filter_collisions=args.filter_collisions,
         )
 
-    from grasping_ai.utils.logging_utils import setup_logging, init_mlflow
+    from grasping_ai.utils.logging_utils import init_mlflow, setup_logging
     setup_logging(module_name="evaluate")
     use_mlflow = init_mlflow(cfg)
 
@@ -146,7 +146,8 @@ if __name__ == "__main__":
         import mlflow
         with mlflow.start_run(run_name="evaluation"):
             per_object_aggregated = {
-                object_id: aggregate_evaluation_results({object_id: results}) for object_id, results in per_object.items()
+                object_id: aggregate_evaluation_results({object_id: results})
+                for object_id, results in per_object.items()
             }
             aggregated = aggregate_evaluation_results(per_object)
             write_evaluation_report(

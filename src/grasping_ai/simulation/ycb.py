@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from pathlib import Path
 
+from loguru import logger
 from theseus import Node, default_tokenizer  # type: ignore[import-untyped]
 
 YcbObjectMesh = Path
@@ -118,7 +119,6 @@ def resolve_ycb_object_directory(ycb_root: Path, object_name: str) -> Path:
     if not ycb_root.is_dir():
         raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
 
-    from loguru import logger
 
     # 1. Check exact match
     direct_path = ycb_root / object_name

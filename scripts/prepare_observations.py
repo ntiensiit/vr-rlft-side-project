@@ -1,4 +1,3 @@
-# ruff: noqa: I001
 import argparse
 from pathlib import Path
 

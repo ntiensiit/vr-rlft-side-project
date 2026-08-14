@@ -3,9 +3,9 @@ import socket
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from loguru import logger
 
 import numpy as np
+from loguru import logger
 
 
 def load_visualization_scene(

@@ -4,8 +4,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-import numpy as np
 import open3d as o3d  # type: ignore[import-untyped]
+import numpy as np
 import pytest
 
 from grasping_ai.data.pointcloud_dataset import (

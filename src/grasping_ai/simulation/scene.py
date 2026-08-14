@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
+from loguru import logger
 
 from grasping_ai.simulation.mujoco_env import (
     ContactReporter,
@@ -106,7 +107,6 @@ def build_scene_xml(
     if table_xml_path is not None and not table_xml_path.is_file():
         raise FileNotFoundError(f"Table XML path '{table_xml_path}' does not exist")
 
-    from loguru import logger
 
     logger.info(
         "Assembling scene XML with robot: {}, object: {} (name={}), table: {}",
