@@ -1,3 +1,5 @@
+"""Training loss functions for grasp models."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

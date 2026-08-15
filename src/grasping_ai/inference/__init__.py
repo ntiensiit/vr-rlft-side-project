@@ -1,3 +1,5 @@
+"""Runtime grasp inference and policy execution."""
+
 from __future__ import annotations
 
 from grasping_ai.inference.grasp_generator import (

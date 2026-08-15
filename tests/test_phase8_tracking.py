@@ -1,3 +1,5 @@
+"""Phase 8 experiment tracking tests."""
+
 from __future__ import annotations
 
 import copy
@@ -221,12 +223,12 @@ def test_supervised_reproducibility(tmp_path):
 
 def test_setup_logging():
     """Test setup_logging with console and file logs."""
-    from datetime import datetime
+    from datetime import UTC, datetime
     from pathlib import Path
 
     from grasping_ai.utils.logging_utils import setup_logging
 
-    current_date = datetime.now().strftime("%Y-%m-%d")
+    current_date = datetime.now(tz=UTC).date().isoformat()
     expected_file = Path("logs") / f"{current_date}-test_run.log"
 
     if expected_file.exists():
@@ -264,9 +266,9 @@ def test_init_mlflow():
                 "backend": "mlflow",
                 "mlflow": {
                     "tracking_uri": "http://localhost:5000",
-                    "experiment_name": "test_experiment"
-                }
-            }
+                    "experiment_name": "test_experiment",
+                },
+            },
         }
         assert init_mlflow(config_mlflow) is True
         mock_set_uri.assert_called_once_with("http://localhost:5000")

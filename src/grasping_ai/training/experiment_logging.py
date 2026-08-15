@@ -1,3 +1,5 @@
+"""Experiment tracking integrations."""
+
 from __future__ import annotations
 
 
@@ -9,7 +11,7 @@ def try_log_mlflow_param(key: str, value: str) -> None:
         value: Serialized parameter value.
     """
     try:
-        import mlflow  # noqa: PLC0415
+        import mlflow
 
         if mlflow.active_run():
             mlflow.log_param(key, value)
@@ -26,7 +28,7 @@ def try_log_mlflow_metric(key: str, value: float, step: int) -> None:
         step: Training step index.
     """
     try:
-        import mlflow  # noqa: PLC0415
+        import mlflow
 
         if mlflow.active_run():
             mlflow.log_metric(key, value, step=step)
@@ -41,7 +43,7 @@ def try_log_mlflow_artifact(path: str) -> None:
         path: Filesystem path to the artifact.
     """
     try:
-        import mlflow  # noqa: PLC0415
+        import mlflow
 
         if mlflow.active_run():
             mlflow.log_artifact(path)

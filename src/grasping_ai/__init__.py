@@ -1,3 +1,5 @@
+"""Grasping AI library for perception, learning, and simulation."""
+
 from __future__ import annotations
 
 from grasping_ai import (

@@ -1,3 +1,5 @@
+"""Grasp quality metrics and collision checking."""
+
 from __future__ import annotations
 
 from grasping_ai.evaluation.collision import (

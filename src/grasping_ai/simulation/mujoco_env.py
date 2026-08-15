@@ -1,9 +1,10 @@
+"""Gymnasium-compatible MuJoCo grasp environment."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import gymnasium as gym
 import mujoco  # type: ignore[import-untyped]
@@ -17,6 +18,9 @@ from grasping_ai.config.yaml_loader import (
 )
 from grasping_ai.perception.geometry import make_transform
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 SimulationStep = Callable[[float], None]
 ContactReporter = Callable[[], list[dict[str, np.ndarray]]]
@@ -156,7 +160,7 @@ def create_simulation(model: object) -> tuple[object, SimulationStep, ContactRep
                     "normal": np.array(c.frame[:3], copy=True),
                     "force": force,
                     "body_names": np.array([body1_name, body2_name], dtype=object),
-                }
+                },
             )
         return reports
 
@@ -172,7 +176,7 @@ def reset_simulation(state: object) -> None:
     if not isinstance(state, dict) or "model" not in state or "data" not in state:
         raise TypeError("state must be a simulation state dictionary")
 
-    state_dict = cast(dict[str, Any], state)
+    state_dict = cast("dict[str, Any]", state)
     mujoco.mj_resetData(state_dict["model"], state_dict["data"])
     mujoco.mj_forward(state_dict["model"], state_dict["data"])
 
@@ -201,7 +205,7 @@ def set_actuator_controls(state: object, ctrl: np.ndarray) -> None:
     if not np.isfinite(ctrl).all():
         raise ValueError("ctrl must contain only finite values")
 
-    state_dict = cast(dict[str, Any], state)
+    state_dict = cast("dict[str, Any]", state)
     model: Any = state_dict["model"]
     data: Any = state_dict["data"]
 
@@ -224,7 +228,7 @@ def read_joint_positions(state: object) -> np.ndarray:
     if not isinstance(state, dict) or "model" not in state or "data" not in state:
         raise TypeError("state must be a simulation state dictionary")
 
-    state_dict = cast(dict[str, Any], state)
+    state_dict = cast("dict[str, Any]", state)
     return np.array(state_dict["data"].qpos, copy=True)
 
 
@@ -242,7 +246,7 @@ def set_joint_positions(state: object, positions: np.ndarray) -> None:
     if not np.isfinite(positions).all():
         raise ValueError("positions must contain only finite values")
 
-    state_dict = cast(dict[str, Any], state)
+    state_dict = cast("dict[str, Any]", state)
     model: Any = state_dict["model"]
     data: Any = state_dict["data"]
 
@@ -268,7 +272,7 @@ def read_body_pose(state: object, body_name: str) -> np.ndarray:
     if not isinstance(body_name, str):
         raise TypeError("body_name must be a string")
 
-    state_dict = cast(dict[str, Any], state)
+    state_dict = cast("dict[str, Any]", state)
     model: Any = state_dict["model"]
     data: Any = state_dict["data"]
 
@@ -472,7 +476,7 @@ class MuJoCoGraspingEnv(gym.Env):
         Returns:
             The world-frame z-coordinate of the object body.
         """
-        pose = read_body_pose(self._state, cast(str, self._object_name))
+        pose = read_body_pose(self._state, cast("str", self._object_name))
         return float(pose[2, 3])
 
     def _has_object_contact(self) -> bool:

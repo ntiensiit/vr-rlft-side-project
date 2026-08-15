@@ -1,3 +1,5 @@
+"""Launch MuJoCo grasp simulation from the command line."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -72,12 +74,12 @@ if __name__ == "__main__":
     if args.robot_xml is None:
         parser.error(
             "--robot-xml is required (set in configs/gripper/franka_emika_panda.yaml "
-            "robot.description or pass explicitly)"
+            "robot.description or pass explicitly)",
         )
     if args.output is None:
         parser.error(
             "--output is required (set in configs/model/diffusion.yaml or flow.yaml "
-            "model.exports.simulation_report or pass explicitly)"
+            "model.exports.simulation_report or pass explicitly)",
         )
 
     from grasping_ai.utils.logging_utils import setup_logging
@@ -91,7 +93,7 @@ if __name__ == "__main__":
         grasp_poses = convert_grasps_to_world_frame(grasp_poses, identity_transform())
     elif args.grasp_pose_format != "world":
         raise ValueError(
-            f"Unsupported grasp pose format '{args.grasp_pose_format}'; supported values are 'world' and 'object'"
+            f"Unsupported grasp pose format '{args.grasp_pose_format}'; supported values are 'world' and 'object'",
         )
 
     outcomes = run_simulation_sweep(

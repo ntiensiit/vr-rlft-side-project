@@ -1,3 +1,5 @@
+"""Compose MuJoCo scenes from robot and object assets."""
+
 from __future__ import annotations
 
 import os
@@ -195,7 +197,7 @@ def attach_object_to_scene(
     if not isinstance(object_name, str):
         raise TypeError("object_name must be a string")
 
-    state_dict = cast(dict[str, Any], state)
+    state_dict = cast("dict[str, Any]", state)
 
     if not object_xml_path.is_file():
         raise FileNotFoundError(f"Object XML file '{object_xml_path}' does not exist")
@@ -389,12 +391,12 @@ class MuJoCoScene:
     @property
     def model(self) -> Any:
         """Return the underlying MuJoCo model."""
-        return cast(dict[str, Any], self._state)["model"]
+        return cast("dict[str, Any]", self._state)["model"]
 
     @property
     def data(self) -> Any:
         """Return the underlying MuJoCo data."""
-        return cast(dict[str, Any], self._state)["data"]
+        return cast("dict[str, Any]", self._state)["data"]
 
     def reset(self) -> None:
         """Restore the captured initial state without rebuilding the model."""

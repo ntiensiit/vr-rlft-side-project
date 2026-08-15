@@ -1,3 +1,5 @@
+"""Training loops, losses, and checkpoint I/O."""
+
 from __future__ import annotations
 
 from grasping_ai.training.losses import (

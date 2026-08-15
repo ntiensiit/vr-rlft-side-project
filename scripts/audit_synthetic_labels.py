@@ -1,3 +1,5 @@
+"""Audit synthetic grasp labels for consistency and coverage."""
+
 from __future__ import annotations
 
 import argparse
@@ -94,7 +96,7 @@ def audit_synthetic_labels(
                 "min_recomputed_score": float(np.min(recomputed_scores)) if recomputed_scores else 0.0,
                 "max_recomputed_score": float(np.max(recomputed_scores)) if recomputed_scores else 0.0,
                 "stored_mean_score": stored_mean,
-            }
+            },
         )
 
     if sample_count == 0:
@@ -136,7 +138,7 @@ if __name__ == "__main__":
                 "synthetic",
                 "friction_coefficient",
                 default=config_get(cfg, "metrics", "friction_coefficient", default=0.5),
-            )
+            ),
         ),
     )
     parser.add_argument(
@@ -148,13 +150,13 @@ if __name__ == "__main__":
                 "synthetic",
                 "collision_clearance",
                 default=config_get(cfg, "metrics", "collision_clearance", default=0.005),
-            )
+            ),
         ),
     )
     args = parser.parse_args()
     if args.dataset_root is None:
         parser.error(
-            "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root or pass explicitly)"
+            "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root or pass explicitly)",
         )
 
     report = audit_synthetic_labels(

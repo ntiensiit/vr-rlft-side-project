@@ -1,3 +1,5 @@
+"""Run grasp inference on saved point clouds."""
+
 from __future__ import annotations
 
 import argparse
@@ -68,7 +70,7 @@ if __name__ == "__main__":
     if args.checkpoint is None:
         parser.error(
             "--checkpoint is required (set in configs/model/diffusion.yaml or "
-            "configs/model/flow.yaml or pass explicitly)"
+            "configs/model/flow.yaml or pass explicitly)",
         )
     run_single_object_grasp_inference(
         checkpoint_path=args.checkpoint,

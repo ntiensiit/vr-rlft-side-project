@@ -1,6 +1,8 @@
+"""Tests for grasp I/O and inference runtime."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -14,6 +16,9 @@ from grasping_ai.pipelines.generate_grasps import (
     write_generated_grasps,
     write_generated_grasps_array,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _sample_grasps(count: int = 2) -> np.ndarray:
@@ -132,7 +137,7 @@ def test_run_single_object_grasp_inference_rejects_conflicting_inputs(
 
 
 def test_run_single_object_grasp_inference_rejects_unknown_method(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that grasp inference runtime raises ValueError on unknown inference methods."""
     obs_path = tmp_path / "obs.npy"

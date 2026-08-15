@@ -1,3 +1,5 @@
+"""Download YCB object assets used by simulation and data prep."""
+
 from __future__ import annotations
 
 import json
@@ -159,10 +161,10 @@ if __name__ == "__main__":
                     # Check if already downloaded/extracted
                     if extract:
                         is_google_extracted = file_type == "google_16k" and os.path.exists(
-                            os.path.join(object_dir, "google_16k")
+                            os.path.join(object_dir, "google_16k"),
                         )
                         is_berkeley_extracted = file_type == "berkeley_processed" and os.path.exists(
-                            os.path.join(object_dir, "clouds")
+                            os.path.join(object_dir, "clouds"),
                         )
                         if is_google_extracted or is_berkeley_extracted:
                             print(f"Skipping {object} {file_type}: already extracted.")

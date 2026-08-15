@@ -1,6 +1,8 @@
+"""Tests for robot visualization and teleoperation."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -13,6 +15,9 @@ from grasping_ai.pipelines.visualize_robot import (
     run_robot_control_loop,
     run_robot_viewer,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_load_visualization_scene_requires_robot_file(tmp_path: Path) -> None:

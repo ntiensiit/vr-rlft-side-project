@@ -1,3 +1,5 @@
+"""Print architecture and parameter counts for trained models."""
+
 from __future__ import annotations
 
 import argparse

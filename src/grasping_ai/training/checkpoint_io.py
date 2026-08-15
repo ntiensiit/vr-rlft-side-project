@@ -1,11 +1,15 @@
+"""Save and load model checkpoints."""
+
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def read_checkpoint_model_state_dict(checkpoint: dict[str, Any]) -> dict[str, torch.Tensor] | None:

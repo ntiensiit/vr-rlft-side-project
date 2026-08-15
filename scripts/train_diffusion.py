@@ -1,3 +1,5 @@
+"""Train diffusion grasp models from the command line."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -102,11 +104,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.dataset_root is None:
         parser.error(
-            "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root or pass explicitly)"
+            "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root or pass explicitly)",
         )
     if args.checkpoint is None:
         parser.error(
-            "--checkpoint is required (set in configs/model/diffusion.yaml diffusion.checkpoint or pass explicitly)"
+            "--checkpoint is required (set in configs/model/diffusion.yaml diffusion.checkpoint or pass explicitly)",
         )
     from grasping_ai.utils.logging_utils import init_mlflow, setup_logging
     setup_logging(module_name="train_diffusion")

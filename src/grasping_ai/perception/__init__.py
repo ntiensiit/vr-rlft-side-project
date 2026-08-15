@@ -1,3 +1,5 @@
+"""Point-cloud perception and geometric utilities."""
+
 from __future__ import annotations
 
 from grasping_ai.perception.geometry import (

@@ -1,3 +1,5 @@
+"""Phase 4 flow training tests."""
+
 from __future__ import annotations
 
 import os
@@ -109,7 +111,7 @@ def test_flow_training_optimizes_encoder_and_flow_field(tmp_path):
     from grasping_ai.pipelines.train_flow import build_flow_training_components
 
     model, optimizer = build_flow_training_components(
-        feature_dim=8, hidden_dim=8, num_layers=2, learning_rate=0.01, device="cpu"
+        feature_dim=8, hidden_dim=8, num_layers=2, learning_rate=0.01, device="cpu",
     )
 
     initial_encoder_norm = sum(p.norm().item() for p in model.encoder.parameters())

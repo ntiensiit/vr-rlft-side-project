@@ -1,3 +1,5 @@
+"""Prepare processed grasp datasets from raw YCB assets."""
+
 from __future__ import annotations
 
 import argparse
@@ -237,7 +239,7 @@ def generate_synthetic_dataset(
                         "kept": 0,
                         "sim_pass": 0,
                         "mean_score": 0.0,
-                    }
+                    },
                 )
                 continue
 
@@ -264,7 +266,7 @@ def generate_synthetic_dataset(
                 from grasping_ai.pipelines.simulate_grasp import simulate_grasp
 
                 sim_filtered: list[tuple[np.ndarray, float]] = []
-                close_command = cast(np.ndarray, gripper_close_command)
+                close_command = cast("np.ndarray", gripper_close_command)
                 table_xml_path = table_xml if table_xml is not None and table_xml.is_file() else None
                 for pose, score in analytical_scored:
                     world_pose = convert_grasps_to_world_frame(
@@ -344,14 +346,14 @@ def generate_synthetic_dataset(
                         "kept": 0,
                         "sim_pass": len(scored_grasps) if sim_validate else 0,
                         "mean_score": 0.0,
-                    }
+                    },
                 )
                 continue
 
             mean_score = float(np.mean(kept_scores))
             print(
                 f"{name}: source={label_source}, kept={len(kept_poses)}/{num_grasps}, "
-                f"mean_score={mean_score:.4f}, sim_pass={sim_pass_count}"
+                f"mean_score={mean_score:.4f}, sim_pass={sim_pass_count}",
             )
             quality_records.append(
                 {
@@ -363,7 +365,7 @@ def generate_synthetic_dataset(
                     "kept": len(kept_poses),
                     "sim_pass": sim_pass_count,
                     "mean_score": mean_score,
-                }
+                },
             )
 
             sample = {
@@ -480,7 +482,7 @@ if __name__ == "__main__":
     args = parser.parse_args(parse_clean_argv())
     if args.output_index is None:
         parser.error(
-            "--output-index is required (set in configs/data/default.yaml paths.output_index or pass explicitly)"
+            "--output-index is required (set in configs/data/default.yaml paths.output_index or pass explicitly)",
         )
 
     target_dir = args.output_dir if args.output_dir is not None else args.dataset_root
@@ -493,9 +495,9 @@ if __name__ == "__main__":
 
         gripper_close = config_get(cfg, "robot", "gripper", "close_command")
         close_command = np.asarray(gripper_close, dtype=np.float64) if isinstance(gripper_close, list) else None
-        synthetic_cfg = cast(dict[str, object], config_get(cfg, "synthetic", default={}) or {})
-        metrics_cfg = cast(dict[str, object], config_get(cfg, "metrics", default={}) or {})
-        limits_cfg = cast(dict[str, object], config_get(cfg, "limits", default={}) or {})
+        synthetic_cfg = cast("dict[str, object]", config_get(cfg, "synthetic", default={}) or {})
+        metrics_cfg = cast("dict[str, object]", config_get(cfg, "metrics", default={}) or {})
+        limits_cfg = cast("dict[str, object]", config_get(cfg, "limits", default={}) or {})
         sim_position = config_float_list(cfg, "synthetic", "sim_object_position")
         sim_object_position = (
             np.asarray(sim_position, dtype=np.float64) if sim_position else np.array([0.5, 0.0, 0.1], dtype=np.float64)

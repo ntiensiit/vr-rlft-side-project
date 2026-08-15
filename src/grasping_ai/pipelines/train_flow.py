@@ -1,8 +1,9 @@
+"""Flow-matching training pipeline."""
+
 from __future__ import annotations
 
-from collections.abc import Callable
 from functools import partial
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -17,6 +18,10 @@ from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 from grasping_ai.training.losses import build_flow_matching_loss
 from grasping_ai.training.trainer import BatchSource, SupervisedTrainingStep, build_adam_optimizer
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 
 def build_flow_training_components(

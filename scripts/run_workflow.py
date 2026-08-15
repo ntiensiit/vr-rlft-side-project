@@ -1,3 +1,5 @@
+"""Orchestrate multi-step grasping workflows."""
+
 from __future__ import annotations
 
 import argparse
@@ -183,7 +185,7 @@ def run_workflow_main(
     gripper_pc_path = Path("data/observations/gripper.npy")
     if not gripper_pc_path.is_file():
         raise FileNotFoundError(
-            f"Gripper point cloud not found at {gripper_pc_path}; run scripts/prepare_observations.py first"
+            f"Gripper point cloud not found at {gripper_pc_path}; run scripts/prepare_observations.py first",
         )
 
     eval_cmd: list[str] = [
@@ -225,7 +227,7 @@ def run_workflow_main(
             raise ValueError(
                 "RL rollout stage requires --robot-xml, --ycb-mjcf, "
                 "--object-id, --observation-dim, --action-dim, "
-                "--rl-episodes, --rl-max-steps"
+                "--rl-episodes, --rl-max-steps",
             )
         rl_cmd: list[str] = [
             sys.executable,
@@ -439,12 +441,12 @@ if __name__ == "__main__":
     if args.checkpoint is None:
         parser.error(
             "--checkpoint is required (set in configs/model/diffusion.yaml or "
-            "configs/model/flow.yaml or pass explicitly)"
+            "configs/model/flow.yaml or pass explicitly)",
         )
     if args.output_dir is None:
         parser.error(
             "--output-dir is required (set in configs/base.yaml paths.output_dir "
-            "or pass explicitly)"
+            "or pass explicitly)",
         )
     run_workflow_main(
         checkpoint_path=args.checkpoint,

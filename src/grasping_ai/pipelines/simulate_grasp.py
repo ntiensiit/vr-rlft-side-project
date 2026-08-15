@@ -1,9 +1,13 @@
+"""Simulate grasps in MuJoCo."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import numpy as np
 from loguru import logger
+
+from grasping_ai.utils.constants import DUAL_GRIPPER_COUNT, GRASP_POSES_NDIM, POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE
 
 
 def simulate_grasp(
@@ -49,7 +53,7 @@ def simulate_grasp(
         ValueError: If inputs or simulation state are invalid.
         FileNotFoundError: If required robot or YCB assets are missing.
     """
-    if grasp_pose.shape != (4, 4):
+    if grasp_pose.shape != SE3_MATRIX_SHAPE:
         raise ValueError(f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}")
     if not isinstance(robot_xml_path, Path) or not robot_xml_path.is_file():
         raise FileNotFoundError(f"robot_xml_path not found: {robot_xml_path}")
@@ -88,7 +92,7 @@ def simulate_grasp(
     from grasping_ai.robotics.transforms import transform_grasp_pose
     from grasping_ai.simulation.scene import MuJoCoScene, collect_contacts, step_scene
     from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
-    from grasping_ai.utils.numerics import IK_POSE_TOLERANCE
+    from grasping_ai.utils.constants import IK_POSE_TOLERANCE
 
     hand_to_contact = panda_hand_to_contact_transform()
     hand_pose = transform_grasp_pose(grasp_pose, invert_transform(hand_to_contact))
@@ -211,7 +215,7 @@ def simulate_grasp(
         for i, idx in enumerate(gripper_ids):
             open_cmd[idx] = open_vals[i]
             close_cmd[idx] = close_vals[i]
-        if grasp_width is not None and len(gripper_ids) == 2:
+        if grasp_width is not None and len(gripper_ids) == DUAL_GRIPPER_COUNT:
             open_q1, open_q2 = panda_width_to_finger_joints(grasp_width)
             close_q1, close_q2 = 0.0, -0.04
             finger_open = {"finger_joint1": open_q1, "finger_joint2": open_q2}
@@ -329,13 +333,13 @@ def run_simulation_sweep(
     Raises:
         ValueError: If ``grasp_poses`` shape is invalid.
     """
-    if grasp_poses.ndim == 2:
+    if grasp_poses.ndim == POINT_CLOUD_NDIM:
         if grasp_poses.shape == (4, 4):
             grasp_poses = grasp_poses.reshape(1, 4, 4)
         else:
             raise ValueError("grasp_poses must have shape (K, 4, 4) or (4, 4)")
 
-    if grasp_poses.ndim != 3 or grasp_poses.shape[1:] != (4, 4):
+    if grasp_poses.ndim != GRASP_POSES_NDIM or grasp_poses.shape[1:] != SE3_MATRIX_SHAPE:
         raise ValueError("grasp_poses must have shape (K, 4, 4)")
 
     outcomes = []

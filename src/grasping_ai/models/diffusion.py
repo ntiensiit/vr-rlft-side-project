@@ -1,3 +1,5 @@
+"""Diffusion score networks and samplers for grasps."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -18,6 +20,7 @@ class ScoreNetwork(torch.nn.Module):
     """Neural network predicting score (noise) conditioned on features."""
 
     def __init__(self, feature_dim: int, hidden_dim: int, num_layers: int) -> None:
+        """Build the score network MLP and time embedding."""
         super().__init__()
         self.time_emb = torch.nn.Sequential(
             torch.nn.Linear(1, hidden_dim),

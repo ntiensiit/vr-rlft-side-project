@@ -1,12 +1,16 @@
+"""Gripper actuator discovery and control helpers."""
+
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
 from loguru import logger
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def panda_hand_to_contact_transform() -> np.ndarray:

@@ -1,8 +1,9 @@
+"""Evaluate generated grasps against quality metrics."""
+
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
@@ -21,7 +22,12 @@ from grasping_ai.evaluation.force_closure import (
     load_contact_set,
 )
 from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
+from grasping_ai.utils.constants import GRASP_POSES_NDIM, POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 
 def evaluate_generated_grasps(
@@ -58,13 +64,13 @@ def evaluate_generated_grasps(
     Raises:
         ValueError: If ``grasp_poses`` shape or metric parameters are invalid.
     """
-    if grasp_poses.ndim == 2:
+    if grasp_poses.ndim == POINT_CLOUD_NDIM:
         if grasp_poses.shape == (4, 4):
             grasp_poses = grasp_poses.reshape(1, 4, 4)
         else:
             raise ValueError("grasp_poses must have shape (K, 4, 4) or (4, 4)")
 
-    if grasp_poses.ndim != 3 or grasp_poses.shape[1:] != (4, 4):
+    if grasp_poses.ndim != GRASP_POSES_NDIM or grasp_poses.shape[1:] != SE3_MATRIX_SHAPE:
         raise ValueError("grasp_poses must have shape (K, 4, 4)")
     if friction_coefficient < 0:
         raise ValueError("friction_coefficient must be non-negative")
@@ -114,7 +120,7 @@ def evaluate_generated_grasps(
                 "grasp_success": grasp_success,
                 "grasp_quality": float(grasp_quality),
                 "wrench_rank": wrench_rank,
-            }
+            },
         )
     return results
 
@@ -289,7 +295,7 @@ def write_evaluation_report(
                     "record_type": "object",
                     "object_id": object_id,
                     **metrics,
-                }
+                },
             )
     records.append({"record_type": "summary", **results})
     write_jsonl_records(report_path, records, mode="a")

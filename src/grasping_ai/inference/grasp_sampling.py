@@ -1,6 +1,9 @@
+"""Sample grasps from generative models."""
+
 from __future__ import annotations
 
-import numpy as np
+from typing import TYPE_CHECKING
+
 import torch
 
 from grasping_ai.data.grasp_vector import vec_to_se3
@@ -10,6 +13,10 @@ from grasping_ai.models.equivariant_encoder import (
     encode_point_cloud,
     pool_object_features,
 )
+from grasping_ai.utils.constants import POINT_CLOUD_NDIM, SPATIAL_DIM
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 def prepare_point_cloud_tensor(point_cloud: np.ndarray, device: str) -> torch.Tensor:
@@ -22,13 +29,13 @@ def prepare_point_cloud_tensor(point_cloud: np.ndarray, device: str) -> torch.Te
     Returns:
         Point cloud tensor with shape ``(1, N, 3)`` on ``device``.
     """
-    if point_cloud.ndim != 2 or point_cloud.shape[1] != 3:
+    if point_cloud.ndim != POINT_CLOUD_NDIM or point_cloud.shape[1] != SPATIAL_DIM:
         raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
     return torch.from_numpy(point_cloud).float().to(device).unsqueeze(0)
 
 
 def encode_grasp_conditioning(
-    encoder: torch.nn.Module, point_cloud: torch.Tensor
+    encoder: torch.nn.Module, point_cloud: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute SE(3) frame features and pooled conditioning for grasp sampling.
 

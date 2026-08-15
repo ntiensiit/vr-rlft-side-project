@@ -1,8 +1,9 @@
+"""Execute RL policies during inference."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -11,6 +12,9 @@ from grasping_ai.training.checkpoint_io import (
     load_torch_checkpoint,
     read_checkpoint_model_state_dict,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 PolicyActionSampler = Callable[[np.ndarray], np.ndarray]
 
@@ -79,11 +83,11 @@ def build_rl_policy_runner(
         if ckpt_obs_dim != observation_dim:
             raise ValueError(
                 f"checkpoint observation_dim ({ckpt_obs_dim}) does not match "
-                f"requested observation_dim ({observation_dim})"
+                f"requested observation_dim ({observation_dim})",
             )
         if ckpt_action_dim != action_dim:
             raise ValueError(
-                f"checkpoint action_dim ({ckpt_action_dim}) does not match requested action_dim ({action_dim})"
+                f"checkpoint action_dim ({ckpt_action_dim}) does not match requested action_dim ({action_dim})",
             )
     else:
         # Legacy checkpoints carry no metadata; infer from parameter names.

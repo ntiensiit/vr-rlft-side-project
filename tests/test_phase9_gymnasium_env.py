@@ -1,6 +1,8 @@
+"""Phase 9 Gymnasium environment tests."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import gymnasium as gym
 import numpy as np
@@ -14,6 +16,9 @@ from grasping_ai.inference.policy_runner import (
 from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
 from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
 from grasping_ai.simulation.scene import build_scene_xml
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 MINIMAL_UNACTUATED_ROBOT_XML = """\
 <mujoco model="minimal_unactuated_robot">

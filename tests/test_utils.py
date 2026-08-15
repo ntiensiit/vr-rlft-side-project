@@ -1,10 +1,12 @@
+"""Shared utility tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
-from grasping_ai.utils.numerics import GRASP_DISTANCE_EPS, NORM_EPS
+from grasping_ai.utils.constants import GRASP_DISTANCE_EPS, NORM_EPS
 from grasping_ai.utils.path_validation import require_optional_path, require_path
 
 

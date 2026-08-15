@@ -1,6 +1,8 @@
+"""Build supervised training pairs from grasp samples."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -18,6 +20,9 @@ from grasping_ai.models.equivariant_encoder import (
     world_transform_from_frame,
 )
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def validate_grasp_dataset(dataset_root: Path) -> int:
@@ -114,7 +119,7 @@ def build_supervised_training_pairs(
                 make_translation_jitter(augment_rng, scale=0.01),
             )
             pc, grasp_poses, transformed_scores = sample_transform(
-                pc, grasp_poses, scores if isinstance(scores, np.ndarray) else None
+                pc, grasp_poses, scores if isinstance(scores, np.ndarray) else None,
             )
             scores = transformed_scores
             if grasp_poses is None:

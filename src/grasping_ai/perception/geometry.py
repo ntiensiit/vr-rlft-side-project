@@ -1,8 +1,12 @@
+"""SE(3) frame construction and rotation utilities."""
+
 from __future__ import annotations
 
 import numpy as np
 import pytransform3d.rotations as pr
 import pytransform3d.transformations as pt
+
+from grasping_ai.utils.constants import POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE, SPATIAL_DIM
 
 RotationMatrix = np.ndarray
 Translation = np.ndarray
@@ -113,7 +117,7 @@ def invert_transform(transform: Transform4x4) -> Transform4x4:
     """
     if not isinstance(transform, np.ndarray):
         raise TypeError("Transform must be a numpy array")
-    if transform.shape != (4, 4):
+    if transform.shape != SE3_MATRIX_SHAPE:
         raise ValueError("Transform must have shape (4, 4)")
 
     return pt.invert_transform(transform)
@@ -137,9 +141,9 @@ def apply_transform(points: np.ndarray, transform: Transform4x4) -> np.ndarray:
         raise TypeError("Points must be a numpy array")
     if not isinstance(transform, np.ndarray):
         raise TypeError("Transform must be a numpy array")
-    if len(points.shape) != 2 or points.shape[1] != 3:
+    if len(points.shape) != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
         raise ValueError("Points must have shape (N, 3)")
-    if transform.shape != (4, 4):
+    if transform.shape != SE3_MATRIX_SHAPE:
         raise ValueError("Transform must have shape (4, 4)")
 
     # Convert vectors/points to homogeneous coordinates (N, 4) where last column is 1

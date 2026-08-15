@@ -1,8 +1,10 @@
+"""Dataset transforms for point clouds and grasp poses."""
+
 from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -13,7 +15,11 @@ from grasping_ai.perception.geometry import (
     rotation_matrix_to_axis_angle,
 )
 from grasping_ai.robotics.transforms import transform_grasp_pose
+from grasping_ai.utils.constants import GRASP_POSES_NDIM, POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE, SPATIAL_DIM
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 SampleTransform = Callable[
     [np.ndarray, np.ndarray | None, np.ndarray | None],
@@ -40,7 +46,7 @@ def make_random_rotation_jitter(rng: np.random.Generator) -> SampleTransform:
     ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
         if not isinstance(points, np.ndarray):
             raise TypeError("points must be a numpy array")
-        if points.ndim != 2 or points.shape[1] != 3:
+        if points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
             raise ValueError(f"points shape must be (N, 3), got {points.shape}")
         if not np.isfinite(points).all():
             raise ValueError("points must contain only finite values")
@@ -57,7 +63,7 @@ def make_random_rotation_jitter(rng: np.random.Generator) -> SampleTransform:
         if grasp_poses is not None:
             if not isinstance(grasp_poses, np.ndarray):
                 raise TypeError("grasp_poses must be a numpy array")
-            if grasp_poses.ndim != 3 or grasp_poses.shape[1:] != (4, 4):
+            if grasp_poses.ndim != GRASP_POSES_NDIM or grasp_poses.shape[1:] != SE3_MATRIX_SHAPE:
                 raise ValueError(f"grasp_poses must have shape (M, 4, 4), got {grasp_poses.shape}")
             if not np.isfinite(grasp_poses).all():
                 raise ValueError("grasp_poses must contain only finite values")
@@ -101,7 +107,7 @@ def make_translation_jitter(rng: np.random.Generator, scale: float) -> SampleTra
     ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
         if not isinstance(points, np.ndarray):
             raise TypeError("points must be a numpy array")
-        if points.ndim != 2 or points.shape[1] != 3:
+        if points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
             raise ValueError(f"points shape must be (N, 3), got {points.shape}")
         if not np.isfinite(points).all():
             raise ValueError("points must contain only finite values")
@@ -113,7 +119,7 @@ def make_translation_jitter(rng: np.random.Generator, scale: float) -> SampleTra
         if grasp_poses is not None:
             if not isinstance(grasp_poses, np.ndarray):
                 raise TypeError("grasp_poses must be a numpy array")
-            if grasp_poses.ndim != 3 or grasp_poses.shape[1:] != (4, 4):
+            if grasp_poses.ndim != GRASP_POSES_NDIM or grasp_poses.shape[1:] != SE3_MATRIX_SHAPE:
                 raise ValueError(f"grasp_poses must have shape (M, 4, 4), got {grasp_poses.shape}")
             if not np.isfinite(grasp_poses).all():
                 raise ValueError("grasp_poses must contain only finite values")
@@ -173,7 +179,7 @@ def save_grasp_dataset_index(dataset_root: Path, entries: list[dict[str, str]], 
     dataset_root.mkdir(parents=True, exist_ok=True)
     index_path = dataset_root / filename
     try:
-        with open(index_path, "w", encoding="utf-8") as f:
+        with index_path.open("w", encoding="utf-8") as f:
             json.dump(entries, f, indent=4)
     except Exception as e:
         raise ValueError(f"Failed to write dataset index: {e}") from e

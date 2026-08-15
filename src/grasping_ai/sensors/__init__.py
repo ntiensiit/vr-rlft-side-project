@@ -1,3 +1,5 @@
+"""Sensor interfaces for simulation and runtime."""
+
 from __future__ import annotations
 
 from grasping_ai.sensors.pointcloud_sensor import (

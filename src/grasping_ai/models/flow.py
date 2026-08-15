@@ -1,14 +1,18 @@
+"""Flow-matching models for conditional grasp generation."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
 
 from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
 from grasping_ai.models.mlp import build_mish_mlp
 from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 FlowField = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 FlowIntegrator = Callable[[FlowField, torch.Tensor, torch.Tensor], torch.Tensor]
@@ -18,6 +22,7 @@ class FlowFieldNet(torch.nn.Module):
     """Neural network predicting flow velocity conditioned on features."""
 
     def __init__(self, feature_dim: int, hidden_dim: int, num_layers: int) -> None:
+        """Build the flow-field MLP."""
         super().__init__()
         self.mlp = build_mish_mlp(9 + feature_dim, hidden_dim, 9, num_layers)
 
@@ -163,7 +168,7 @@ def load_flow_model_from_state(
     state_dict = checkpoint["model_state_dict"]
     if not isinstance(state_dict, dict):
         raise TypeError("checkpoint['model_state_dict'] must be a dictionary")
-    model.load_state_dict(cast(dict[str, Any], state_dict))
+    model.load_state_dict(cast("dict[str, Any]", state_dict))
     model.to(torch.device(device))
     model.eval()
     return model

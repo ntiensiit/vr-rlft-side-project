@@ -1,3 +1,5 @@
+"""Build observation tensors for training pipelines."""
+
 from __future__ import annotations
 
 import argparse

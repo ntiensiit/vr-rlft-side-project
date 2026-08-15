@@ -1,3 +1,5 @@
+"""CLI entry point for grasp evaluation metrics."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -88,7 +90,7 @@ if __name__ == "__main__":
     if args.report is None:
         parser.error(
             "--report is required (set in configs/evaluation/diffusion.yaml "
-            "evaluation.analytical_report or pass explicitly)"
+            "evaluation.analytical_report or pass explicitly)",
         )
 
     gripper_point_cloud = np.load(args.gripper_point_cloud)

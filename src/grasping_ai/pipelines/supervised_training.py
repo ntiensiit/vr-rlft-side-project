@@ -1,11 +1,16 @@
+"""Shared supervised training loop utilities."""
+
 from __future__ import annotations
 
 import random
-from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 import torch
 
 from grasping_ai.inference.grasp_sampling import encode_grasp_conditioning
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def iter_supervised_training_batches(

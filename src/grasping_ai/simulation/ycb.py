@@ -1,12 +1,17 @@
+"""YCB object discovery and MJCF path resolution."""
+
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from loguru import logger
 from theseus import Node, default_tokenizer  # type: ignore[import-untyped]
 
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 YcbObjectMesh = Path
 

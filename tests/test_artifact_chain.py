@@ -1,3 +1,5 @@
+"""Tests for artifact generation and chaining."""
+
 from __future__ import annotations
 
 import os

@@ -1,6 +1,8 @@
+"""Shared utilities for logging, paths, and constants."""
+
 from __future__ import annotations
 
-from grasping_ai.utils.numerics import (
+from grasping_ai.utils.constants import (
     DEGENERATE_COMPONENT_EPS,
     DEGENERATE_SPAN_EPS,
     GRASP_DISTANCE_EPS,

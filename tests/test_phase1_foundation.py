@@ -1,3 +1,5 @@
+"""Phase 1 foundation module tests."""
+
 from __future__ import annotations
 
 import os
@@ -180,7 +182,7 @@ def unit_vectors(draw):
             np.float64,
             (3,),
             elements=st.floats(min_value=-1.0, max_value=1.0, allow_nan=False, allow_infinity=False),
-        )
+        ),
     )
     norm = np.linalg.norm(vec)
     if norm < 1e-5:
@@ -217,7 +219,7 @@ def point_clouds(draw):
                 allow_nan=False,
                 allow_infinity=False,
             ),
-        )
+        ),
     )
 
 

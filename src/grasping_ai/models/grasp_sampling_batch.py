@@ -1,8 +1,15 @@
+"""Batch grasp sampling helpers for training."""
+
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import torch
+
+from grasping_ai.utils.constants import POINT_CLOUD_NDIM
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def batch_conditioned_grasp_samples(
@@ -25,7 +32,7 @@ def batch_conditioned_grasp_samples(
     Returns:
         Sampled grasp poses with shape ``(B, num_samples, grasp_dim)``.
     """
-    if conditioning.ndim != 2:
+    if conditioning.ndim != POINT_CLOUD_NDIM:
         raise ValueError(f"conditioning must have shape (B, F), got {conditioning.shape}")
     if num_samples <= 0:
         raise ValueError("num_samples must be a positive integer")

@@ -1,3 +1,5 @@
+"""Phase 7 synthetic data generation tests."""
+
 from __future__ import annotations
 
 import os

@@ -1,9 +1,9 @@
+"""High-level grasp generation from observations."""
+
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-import numpy as np
 import torch
 
 from grasping_ai.inference.grasp_sampling import (
@@ -16,6 +16,11 @@ from grasping_ai.training.checkpoint_io import (
     checkpoint_scalar_int,
     load_torch_checkpoint,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import numpy as np
 
 
 class GraspPoseGenerator(Protocol):
@@ -74,7 +79,7 @@ def build_diffusion_grasp_generator(
     from grasping_ai.models.diffusion import GraspGeneratorModel, build_diffusion_sampler
 
     model = GraspGeneratorModel(feature_dim, hidden_dim, num_layers)
-    model.load_state_dict(cast(dict[str, Any], checkpoint["model_state_dict"]))
+    model.load_state_dict(cast("dict[str, Any]", checkpoint["model_state_dict"]))
     model.to(device)
     model.eval()
 

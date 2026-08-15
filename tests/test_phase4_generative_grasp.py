@@ -1,3 +1,5 @@
+"""Phase 4 generative grasp model tests."""
+
 from __future__ import annotations
 
 import json
@@ -136,8 +138,8 @@ def test_training_creates_checkpoint():
                 {
                     "file_path": "sample_0.npz",
                     "object_id": "ycb_master_chef_can",
-                }
-            ]
+                },
+            ],
         }
         with open(dataset_root / "index.json", "w") as f:
             json.dump(index, f)
@@ -197,8 +199,8 @@ def test_training_reiterates_dataloader_per_epoch():
                 {
                     "file_path": "sample_0.npz",
                     "object_id": "ycb_master_chef_can",
-                }
-            ]
+                },
+            ],
         }
         with open(dataset_root / "index.json", "w") as f:
             json.dump(index, f)
@@ -695,7 +697,7 @@ def _random_rotation() -> torch.Tensor:
 
 
 def _make_encoder_and_cloud(
-    f_dim: int = 16, n_layers: int = 2, n_points: int = 200
+    f_dim: int = 16, n_layers: int = 2, n_points: int = 200,
 ) -> tuple[torch.nn.Module, torch.Tensor]:
     encoder = build_equivariant_encoder(f_dim, n_layers)
     encoder.eval()

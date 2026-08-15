@@ -1,7 +1,9 @@
+"""Structured logging helpers."""
+
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import mlflow
@@ -27,7 +29,7 @@ def setup_logging(module_name: str | None = None, level: str = "INFO"):
     logger.add(sys.stderr, format=log_format, level=level)
 
     if module_name:
-        current_date = datetime.now().strftime("%Y-%m-%d")
+        current_date = datetime.now(tz=UTC).date().isoformat()
         log_file_path = Path("logs") / f"{current_date}-{module_name}.log"
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
         logger.add(

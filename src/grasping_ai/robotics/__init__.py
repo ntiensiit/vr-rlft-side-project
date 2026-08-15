@@ -1,3 +1,5 @@
+"""Robot kinematics, grippers, and transforms."""
+
 from __future__ import annotations
 
 from grasping_ai.robotics.gripper import (

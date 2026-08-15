@@ -1,3 +1,5 @@
+"""Train flow-matching grasp models from the command line."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -106,7 +108,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.dataset_root is None:
         parser.error(
-            "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root or pass explicitly)"
+            "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root or pass explicitly)",
         )
     if args.checkpoint is None:
         parser.error("--checkpoint is required (set in configs/model/flow.yaml flow.checkpoint or pass explicitly)")

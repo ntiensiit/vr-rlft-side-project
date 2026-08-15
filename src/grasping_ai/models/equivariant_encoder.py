@@ -1,10 +1,15 @@
+"""SE(3)-equivariant point-cloud encoders."""
+
 from __future__ import annotations
 
 import torch
 
-from grasping_ai.utils.numerics import (
+from grasping_ai.utils.constants import (
     DEGENERATE_COMPONENT_EPS,
     DEGENERATE_SPAN_EPS,
+    GRASP_POSES_NDIM,
+    MIN_ANTIPODAL_CONTACTS,
+    SPATIAL_DIM,
     TORCH_DEGENERATE_CLAMP_MIN,
 )
 
@@ -88,9 +93,9 @@ def compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]
     """
     if not isinstance(points, torch.Tensor):
         raise TypeError("points must be a torch.Tensor")
-    if points.ndim != 3 or points.shape[2] != 3:
+    if points.ndim != GRASP_POSES_NDIM or points.shape[2] != SPATIAL_DIM:
         raise ValueError(f"points must have shape (B, N, 3), got {points.shape}")
-    if points.shape[1] < 2:
+    if points.shape[1] < MIN_ANTIPODAL_CONTACTS:
         raise ValueError("point cloud must contain at least two points")
     return _compute_se3_frame(points)
 

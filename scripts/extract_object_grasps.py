@@ -1,3 +1,5 @@
+"""Extract grasp poses from prepared object datasets."""
+
 from __future__ import annotations
 
 import argparse

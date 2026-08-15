@@ -1,6 +1,8 @@
+"""Tests for repository code-quality helpers."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -23,6 +25,9 @@ from grasping_ai.models.rl_policy import (
 from grasping_ai.pipelines.generate_grasps import load_generated_grasps
 from grasping_ai.robotics.kinematics import robot_model_mj_model, robot_model_nq
 from grasping_ai.training.checkpoint_io import read_checkpoint_model_state_dict
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_parse_contact_set_accepts_list_dict_and_array() -> None:
@@ -79,7 +84,7 @@ def test_read_checkpoint_model_state_dict_filters_payload() -> None:
 
     weight = torch.ones(2, 2)
     state = read_checkpoint_model_state_dict(
-        {"model_state_dict": {"0.weight": weight, 1: weight, "bad": "x"}}
+        {"model_state_dict": {"0.weight": weight, 1: weight, "bad": "x"}},
     )
     assert state == {"0.weight": weight}
 

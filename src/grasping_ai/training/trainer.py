@@ -1,7 +1,9 @@
+"""Generic supervised trainer implementation."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 from loguru import logger
@@ -12,6 +14,9 @@ from grasping_ai.training.experiment_logging import (
     try_log_mlflow_param,
 )
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 BatchSource = Iterable[tuple[torch.Tensor, torch.Tensor]] | Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]]
 OptimizerFactory = Callable[[Iterator[torch.nn.Parameter]], torch.optim.Optimizer]

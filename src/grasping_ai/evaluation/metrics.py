@@ -1,8 +1,12 @@
+"""Aggregate evaluation metrics for grasp pipelines."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
 
 import numpy as np
+
+from grasping_ai.utils.constants import WRENCH_DIM
 
 StabilityJudge = Callable[[np.ndarray], bool]
 LiftOutcomeJudge = Callable[[float, float], bool]
@@ -28,7 +32,7 @@ def build_stability_judge(max_linear_velocity: float, max_angular_velocity: floa
         if not isinstance(object_velocity, np.ndarray):
             raise TypeError("object_velocity must be a numpy array")
         flat_vel = object_velocity.ravel()
-        if flat_vel.shape[0] != 6:
+        if flat_vel.shape[0] != WRENCH_DIM:
             raise ValueError(f"object_velocity must represent 6D velocity, got shape {object_velocity.shape}")
 
         lin_vel = flat_vel[:3]

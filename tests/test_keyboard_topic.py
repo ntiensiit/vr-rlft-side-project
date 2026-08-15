@@ -1,3 +1,5 @@
+"""Tests for UDP keyboard topic teleoperation."""
+
 from __future__ import annotations
 
 import json

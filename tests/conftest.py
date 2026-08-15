@@ -1,3 +1,5 @@
+"""Pytest fixtures shared across grasping_ai tests."""
+
 from __future__ import annotations
 
 import contextlib

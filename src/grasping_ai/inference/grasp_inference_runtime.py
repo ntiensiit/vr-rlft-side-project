@@ -1,6 +1,8 @@
+"""Load models and run grasp inference."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -12,6 +14,10 @@ from grasping_ai.inference.grasp_generator import (
     load_grasp_model_checkpoint,
 )
 from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
+from grasping_ai.utils.constants import POINT_CLOUD_NDIM, SPATIAL_DIM
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def run_single_object_grasp_inference(
@@ -67,7 +73,7 @@ def run_single_object_grasp_inference(
         rng = np.random.default_rng(seed)
         point_cloud = sample_point_cloud_from_mesh(mesh_path, num_grasps * 8, rng)
 
-    if point_cloud.ndim != 2 or point_cloud.shape[1] != 3:
+    if point_cloud.ndim != POINT_CLOUD_NDIM or point_cloud.shape[1] != SPATIAL_DIM:
         raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
 
     checkpoint = load_grasp_model_checkpoint(checkpoint_path, device)

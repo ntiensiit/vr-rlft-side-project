@@ -1,3 +1,5 @@
+"""Neural network architectures for grasp generation."""
+
 from __future__ import annotations
 
 from grasping_ai.models.diffusion import (

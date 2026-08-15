@@ -1,12 +1,18 @@
+"""Point-cloud sensor abstraction for environments."""
+
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
 
+from grasping_ai.utils.constants import POINT_CLOUD_NDIM, SPATIAL_DIM
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 PointCloudBatch = np.ndarray
 
@@ -30,7 +36,7 @@ def acquire_point_cloud_from_observation(observation_path: Path) -> np.ndarray:
         pts = np.load(observation_path)
     except Exception as e:
         raise ValueError(f"Failed to load observation: {e}") from e
-    if not isinstance(pts, np.ndarray) or pts.ndim != 2 or pts.shape[1] != 3:
+    if not isinstance(pts, np.ndarray) or pts.ndim != POINT_CLOUD_NDIM or pts.shape[1] != SPATIAL_DIM:
         raise ValueError("Invalid observation shape: expected (N, 3)")
     if not np.isfinite(pts).all():
         raise ValueError("Observation point cloud contains non-finite values")
@@ -74,7 +80,7 @@ def merge_point_clouds(clouds: list[np.ndarray]) -> np.ndarray:
     if not isinstance(clouds, list) or not all(isinstance(cloud, np.ndarray) for cloud in clouds):
         raise TypeError("clouds must be a list of numpy arrays")
     for cloud in clouds:
-        if cloud.ndim != 2 or cloud.shape[1] != 3:
+        if cloud.ndim != POINT_CLOUD_NDIM or cloud.shape[1] != SPATIAL_DIM:
             raise ValueError("each cloud must have shape (N, 3)")
     if not clouds:
         return np.empty((0, 3), dtype=np.float32)

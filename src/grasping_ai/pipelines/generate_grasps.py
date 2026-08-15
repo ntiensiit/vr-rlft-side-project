@@ -1,11 +1,17 @@
+"""Generate grasps from object point clouds."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
 
+from grasping_ai.utils.constants import GRASP_OBJECT_BATCH_NDIM, GRASP_POSES_NDIM, SE3_MATRIX_SHAPE
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _parse_grasp_dict(data: dict[object, object]) -> dict[str, np.ndarray]:
@@ -102,7 +108,7 @@ def load_generated_grasps(
         raise ValueError("object_key is required when the grasp file contains multiple objects")
 
     grasps = _parse_grasp_array(data)
-    if grasps.ndim == 4 and grasps.shape[0] == 1:
+    if grasps.ndim == GRASP_OBJECT_BATCH_NDIM and grasps.shape[0] == 1:
         return grasps[0]
     return grasps
 
@@ -144,7 +150,7 @@ def write_generated_grasps_array(output_path: Path, grasp_poses: np.ndarray) -> 
         ValueError: If ``grasp_poses`` shape is invalid.
     """
     require_path(output_path, "output_path")
-    if grasp_poses.ndim != 3 or grasp_poses.shape[1:] != (4, 4):
+    if grasp_poses.ndim != GRASP_POSES_NDIM or grasp_poses.shape[1:] != SE3_MATRIX_SHAPE:
         raise ValueError(f"grasp_poses must have shape (K, 4, 4), got {grasp_poses.shape}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

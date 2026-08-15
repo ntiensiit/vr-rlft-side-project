@@ -1,15 +1,28 @@
+"""Force-closure and antipodal grasp evaluation."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
 from scipy.optimize import linprog  # type: ignore[import-untyped]
 from scipy.spatial import ConvexHull  # type: ignore[import-untyped]
 
-from grasping_ai.utils.numerics import HULL_HALFSPACE_EPS, LP_FEASIBILITY_EPS, NORM_EPS
+from grasping_ai.utils.constants import (
+    ALIGNMENT_DOT_THRESHOLD,
+    HULL_HALFSPACE_EPS,
+    LP_FEASIBILITY_EPS,
+    MIN_WRENCH_COLUMNS,
+    NORM_EPS,
+    WRENCH_DIM,
+    WRENCH_LP_EQUALITY_ROWS,
+)
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 ContactSet = list[dict[str, np.ndarray]]
 ForceClosureJudge = Callable[[ContactSet], bool]
@@ -121,11 +134,11 @@ def build_force_closure_judge(friction_coefficient: float, wrench_regularization
             reg_eye = np.eye(6) * wrench_regularization
             g_mat = np.hstack([g_mat, reg_eye, -reg_eye])
 
-        if g_mat.shape[1] < 6:
+        if g_mat.shape[1] < MIN_WRENCH_COLUMNS:
             return False
 
         # Check if rank is 6
-        if np.linalg.matrix_rank(g_mat) < 6:
+        if np.linalg.matrix_rank(g_mat) < WRENCH_DIM:
             return False
 
         # Solve LP: Maximize t subject to G @ alpha = 0, sum(alpha) = 1, alpha_i >= t
@@ -135,11 +148,11 @@ def build_force_closure_judge(friction_coefficient: float, wrench_regularization
         c[-1] = -1.0  # We want to maximize t (minimize -t)
 
         # Equality constraints: G @ alpha = 0, sum(alpha) = 1
-        a_eq = np.zeros((7, m + 1))
+        a_eq = np.zeros((WRENCH_LP_EQUALITY_ROWS, m + 1))
         a_eq[:6, :m] = g_mat
         a_eq[6, :m] = 1.0
-        b_eq = np.zeros(7)
-        b_eq[6] = 1.0
+        b_eq = np.zeros(WRENCH_LP_EQUALITY_ROWS)
+        b_eq[WRENCH_DIM] = 1.0
 
         # Inequality constraints: t - alpha_i <= 0 => -alpha_i + t <= 0
         a_ub = np.zeros((m, m + 1))
@@ -214,7 +227,7 @@ def compute_grasp_wrench_matrix(contact_set: ContactSet, friction_coefficient: f
         normal = normal / norm_val
 
         # Compute orthogonal tangents
-        if np.abs(normal[0]) < 0.9:
+        if np.abs(normal[0]) < ALIGNMENT_DOT_THRESHOLD:
             other = np.array([1.0, 0.0, 0.0], dtype=np.float64)
         else:
             other = np.array([0.0, 1.0, 0.0], dtype=np.float64)
@@ -240,7 +253,7 @@ def compute_grasp_wrench_matrix(contact_set: ContactSet, friction_coefficient: f
         ]
 
         for f in forces:
-            # Wrench = [force, torque]
+            # Build the 6D wrench from contact force and position.
             torque = np.cross(pos, f)
             wrench = np.concatenate([f, torque])
             wrenches.append(wrench)
@@ -272,7 +285,7 @@ def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) 
         return 0.0
 
     g_mat = compute_grasp_wrench_matrix(contact_set, friction_coefficient)
-    if g_mat.shape[1] < 6 or np.linalg.matrix_rank(g_mat) < 6:
+    if g_mat.shape[1] < MIN_WRENCH_COLUMNS or np.linalg.matrix_rank(g_mat) < WRENCH_DIM:
         return 0.0
 
     # Normalize column vectors of g_mat by maximum finite column norm
@@ -284,7 +297,7 @@ def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) 
         g_mat_normalized = g_mat
 
     # Try convex hull in 6D
-    if g_mat_normalized.shape[1] >= 7:
+    if g_mat_normalized.shape[1] >= WRENCH_LP_EQUALITY_ROWS:
         try:
             hull = ConvexHull(g_mat_normalized.T)
             # check if origin is inside the hull
@@ -299,11 +312,11 @@ def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) 
     c = np.zeros(m + 1)
     c[-1] = -1.0  # Maximize t (minimize -t)
 
-    a_eq = np.zeros((7, m + 1))
+    a_eq = np.zeros((WRENCH_LP_EQUALITY_ROWS, m + 1))
     a_eq[:6, :m] = g_mat_normalized
     a_eq[6, :m] = 1.0
-    b_eq = np.zeros(7)
-    b_eq[6] = 1.0
+    b_eq = np.zeros(WRENCH_LP_EQUALITY_ROWS)
+    b_eq[WRENCH_DIM] = 1.0
 
     a_ub = np.zeros((m, m + 1))
     a_ub[:, :m] = -np.eye(m)

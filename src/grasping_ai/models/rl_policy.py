@@ -1,12 +1,17 @@
+"""Reinforcement-learning policy networks."""
+
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 from grasping_ai.models.mlp import build_tanh_mlp
+from grasping_ai.utils.constants import POINT_CLOUD_NDIM
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 PolicyNetwork = torch.nn.Sequential
 ValueNetwork = torch.nn.Sequential
@@ -178,7 +183,7 @@ def copy_sb3_policy_weights(
     if len(legacy_linears) != len(sb3_hidden) + 1:
         raise ValueError(
             f"Legacy policy has {len(legacy_linears)} Linear layers but SB3 policy_net "
-            f"has {len(sb3_hidden)} hidden layers"
+            f"has {len(sb3_hidden)} hidden layers",
         )
 
     legacy_hidden = legacy_linears[:-1]
@@ -187,7 +192,7 @@ def copy_sb3_policy_weights(
         if sb3_layer.weight.shape != legacy_layer.weight.shape:
             raise ValueError(
                 f"Shape mismatch copying SB3 layer {sb3_layer.weight.shape} "
-                f"to legacy layer {legacy_layer.weight.shape}"
+                f"to legacy layer {legacy_layer.weight.shape}",
             )
         legacy_layer.weight.data.copy_(sb3_layer.weight.data)
         legacy_layer.bias.data.copy_(sb3_layer.bias.data)
@@ -195,7 +200,7 @@ def copy_sb3_policy_weights(
     if action_net.weight.shape != legacy_output.weight.shape:
         raise ValueError(
             f"Shape mismatch copying SB3 action_net {action_net.weight.shape} "
-            f"to legacy output {legacy_output.weight.shape}"
+            f"to legacy output {legacy_output.weight.shape}",
         )
     legacy_output.weight.data.copy_(action_net.weight.data)
     legacy_output.bias.data.copy_(action_net.bias.data)
@@ -266,7 +271,7 @@ def select_action(
     Returns:
         A sampled action tensor with shape ``(B, action_dim)``.
     """
-    if observation.ndim != 2:
+    if observation.ndim != POINT_CLOUD_NDIM:
         raise ValueError(f"observation must have shape (B, obs_dim), got {observation.shape}")
     if not isinstance(rng, torch.Generator):
         raise TypeError("rng must be a torch.Generator instance")

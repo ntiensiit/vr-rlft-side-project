@@ -1,3 +1,5 @@
+"""Phase 10 evaluation pipeline tests."""
+
 from __future__ import annotations
 
 import tempfile
@@ -94,8 +96,7 @@ def test_analytical_contacts_valid():
 
     assert len(contacts) == 1
     assert np.allclose(contacts[0]["position"], np.array([0.0, 0.0, 0.0]))
-    # Normal points from gripper point (0,0,0.002) to object point (0,0,0)
-    # i.e. vector is (0,0,-0.002), normalized is (0,0,-1.0)
+    # The contact normal points from the gripper sample toward the object origin.
     assert np.allclose(contacts[0]["normal"], np.array([0.0, 0.0, -1.0]))
 
 
@@ -698,7 +699,7 @@ def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:
             super().__init__("Convex hull failed")
 
     def raise_hull(*args, **kwargs):
-        raise ConvexHullError()
+        raise ConvexHullError
     monkeypatch.setattr(scipy.spatial, "ConvexHull", raise_hull)
 
     c_valid = [
@@ -715,7 +716,7 @@ def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:
             super().__init__("linprog failed")
 
     def raise_linprog(*args, **kwargs):
-        raise LinprogError()
+        raise LinprogError
     monkeypatch.setattr(scipy.optimize, "linprog", raise_linprog)
     q_err = compute_grasp_quality(c_valid, friction_coefficient=0.5)
     assert q_err == 0.0

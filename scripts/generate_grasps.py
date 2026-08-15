@@ -1,3 +1,5 @@
+"""CLI entry point for analytical grasp generation."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -58,12 +60,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.checkpoint is None:
         parser.error(
-            "--checkpoint is required (set in configs/model/diffusion.yaml diffusion.checkpoint or pass explicitly)"
+            "--checkpoint is required (set in configs/model/diffusion.yaml diffusion.checkpoint or pass explicitly)",
         )
     if args.output is None:
         parser.error(
             "--output is required (set in configs/model/diffusion.yaml "
-            "diffusion.exports.grasp_candidates or pass explicitly)"
+            "diffusion.exports.grasp_candidates or pass explicitly)",
         )
 
     checkpoint = load_grasp_model_checkpoint(args.checkpoint, args.device)

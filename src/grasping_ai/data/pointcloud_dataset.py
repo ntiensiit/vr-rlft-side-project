@@ -1,16 +1,26 @@
+"""Point-cloud grasp dataset loading and NPZ I/O."""
+
 from __future__ import annotations
 
-from collections.abc import Iterator
-from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import numpy as np
 from loguru import logger
 
 from grasping_ai.perception.geometry import make_transform
 from grasping_ai.perception.pointcloud import build_kdtree
-from grasping_ai.utils.numerics import GRASP_DISTANCE_EPS, ROTATION_DET_EPS
+from grasping_ai.utils.constants import (
+    ALIGNMENT_DOT_THRESHOLD,
+    GRASP_DISTANCE_EPS,
+    POINT_CLOUD_NDIM,
+    ROTATION_DET_EPS,
+    SPATIAL_DIM,
+)
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
 
 
 class GraspSample(TypedDict):
@@ -37,7 +47,7 @@ def _validate_point_cloud(point_cloud: object) -> np.ndarray:
     """
     if not isinstance(point_cloud, np.ndarray):
         raise TypeError("'point_cloud' must be a numpy array")
-    if point_cloud.ndim != 2 or point_cloud.shape[1] != 3:
+    if point_cloud.ndim != POINT_CLOUD_NDIM or point_cloud.shape[1] != SPATIAL_DIM:
         raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
     if not np.isfinite(point_cloud).all():
         raise ValueError("point_cloud must contain only finite values")
@@ -99,7 +109,7 @@ def save_grasp_sample(record_path: Path, sample: GraspSample) -> None:
         archive_fields["object_id"] = np.asarray(object_id, dtype=np.str_)
 
     record_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(record_path, **cast(Any, archive_fields))
+    np.savez(record_path, **cast("Any", archive_fields))
 
 
 def discover_dataset_files(dataset_root: Path) -> list[Path]:
@@ -262,7 +272,7 @@ def _antipodal_grasp_from_contacts(
     x_norm = np.linalg.norm(x_axis)
     if x_norm < GRASP_DISTANCE_EPS:
         ref = np.array([1.0, 0.0, 0.0])
-        if np.abs(np.dot(ref, z_axis)) > 0.9:
+        if np.abs(np.dot(ref, z_axis)) > ALIGNMENT_DOT_THRESHOLD:
             ref = np.array([0.0, 1.0, 0.0])
         x_axis = np.cross(z_axis, ref)
         x_norm = np.linalg.norm(x_axis)
@@ -390,9 +400,9 @@ def generate_analytical_grasps(
     Returns:
         Array of grasp poses of shape ``(K, 4, 4)`` where K <= num_grasps.
     """
-    if not isinstance(points, np.ndarray) or points.ndim != 2 or points.shape[1] != 3:
+    if not isinstance(points, np.ndarray) or points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
         raise ValueError("points must be of shape (N, 3)")
-    if not isinstance(normals, np.ndarray) or normals.ndim != 2 or normals.shape[1] != 3:
+    if not isinstance(normals, np.ndarray) or normals.ndim != POINT_CLOUD_NDIM or normals.shape[1] != SPATIAL_DIM:
         raise ValueError("normals must be of shape (N, 3)")
     if points.shape[0] != normals.shape[0]:
         raise ValueError("points and normals must have the same length")

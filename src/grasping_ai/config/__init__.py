@@ -1,3 +1,5 @@
+"""Configuration loaders and typed training settings."""
+
 from __future__ import annotations
 
 from grasping_ai.config.diffusion import (

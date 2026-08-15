@@ -5,27 +5,60 @@ extend-exclude = [".venv", "build", "dist", "notebooks"]
 
 [lint]
 select = [
-    "E", "F", "W",
-    "I",
-    "N",
-    "UP",
-    "B",
-    "C4",
-    "SIM",
-    "RUF",
-    "PIE",
-    "PT",
-    "RET",
+    "A",
+    "ANN",
     "ARG",
-    "PL",
-    "TRY",
-    "PERF",
-    "FURB",
-    "LOG",
-    "G",
+    "ASYNC",
+    "B",
+    "BLE",
+    "C4",
+    "C90",
+    "COM",
     "D",
+    "DTZ",
+    "E",
+    "EM",
+    "ERA",
+    "EXE",
+    "F",
+    "FA",
+    "FBT",
+    "FIX",
+    "FLY",
+    "FURB",
+    "G",
+    "I",
+    "ICN",
+    "INP",
+    "INT",
+    "ISC",
+    "LOG",
+    "N",
+    "NPY",
+    "PERF",
+    "PGH",
+    "PIE",
+    "PL",
+    "PT",
+    "PTH",
+    "Q",
+    "RET",
+    "RSE",
+    "RUF",
+    "S",
+    "SIM",
+    "SLF",
+    "SLOT",
+    "T10",
+    "T20",
+    "TC",
+    "TD",
+    "TID",
+    "TRY",
+    "UP",
+    "W",
+    "YTT",
 ]
-ignore = ["PLR2004", "D100", "D104", "D107"]
 
 [lint.pydocstyle]
 convention = "google"
@@ -34,37 +67,78 @@ convention = "google"
 force-to-top = ["open3d"]
 
 [lint.per-file-ignores]
-"tests/**/*.py" = ["PLR2004", "S101", "ARG", "FBT", "PLC0415", "PLR0915", "PT011", "PT012", "E501"]
-"scripts/**/*.py" = ["PLR0912", "PLR0913", "PLR0917", "PLC0415", "TRY003", "PLR0915"]
-"src/grasping_ai/config/**/*.py" = ["TRY003", "PLC0415", "PLR0913", "PLR0917"]
-"src/grasping_ai/training/trainer.py" = ["PLR0913", "PLR0917", "TRY003", "PLC0415", "PLR0912"]
-"src/grasping_ai/training/checkpoint_io.py" = ["TRY003", "TRY004", "PLC0415"]
-"src/grasping_ai/training/losses.py" = ["TRY003", "PLC0415"]
-"src/grasping_ai/training/rl_trainer.py" = ["PLR0913", "PLR0917", "PLC0415", "TRY003", "ARG", "PLR0912"]
-"src/grasping_ai/pipelines/train_diffusion.py" = ["PLR0913", "PLR0917", "TRY003", "PLC0415", "PLR0915"]
-"src/grasping_ai/pipelines/train_flow.py" = ["PLR0913", "PLR0917", "TRY003", "PLC0415", "PLR0915"]
-"src/grasping_ai/pipelines/train_rl.py" = ["PLR0913", "PLR0917", "PLC0415", "TRY003", "PLR0912", "ARG", "PLR0915"]
-"src/grasping_ai/pipelines/evaluate.py" = ["PLR0913", "PLR0917", "TRY003", "PLC0415", "PLR0912"]
-"src/grasping_ai/pipelines/simulate_grasp.py" = ["PLR0913", "PLR0917", "TRY003", "PLC0415", "PLR0912", "PLR0915"]
-"src/grasping_ai/pipelines/visualize_robot.py" = ["PLR0913", "PLR0917", "TRY003", "PLC0415", "PLR0912", "PLR0915", "E501", "PLR0911"]
-"src/grasping_ai/pipelines/generate_grasps.py" = ["PLR0913", "PLR0917", "TRY003", "PLC0415"]
-"src/grasping_ai/inference/grasp_generator.py" = ["PLR0913", "PLR0917", "TRY003", "PLC0415"]
-"src/grasping_ai/inference/grasp_sampling.py" = ["TRY003", "PLC0415"]
-"src/grasping_ai/inference/policy_runner.py" = ["PLR0913", "PLR0917", "PLC0415", "TRY003"]
-"src/grasping_ai/models/diffusion.py" = ["PLR0913", "PLR0917", "TRY003", "PLC0415"]
-"src/grasping_ai/models/flow.py" = ["PLR0913", "PLR0917", "TRY003", "TRY004", "PLC0415"]
-"src/grasping_ai/models/grasp_sampling_batch.py" = ["TRY003"]
-"src/grasping_ai/pipelines/supervised_training.py" = ["TRY003", "PLC0415"]
-"src/grasping_ai/models/rl_policy.py" = ["PLR0913", "PLR0917", "PLC0415", "TRY003"]
-"src/grasping_ai/models/equivariant_encoder.py" = ["TRY003"]
-"src/grasping_ai/sensors/pointcloud_sensor.py" = ["TRY003", "PLC0415"]
-"src/grasping_ai/robotics/**/*.py" = ["PLR0913", "PLR0917", "TRY003", "PERF401", "TRY300", "PLR0915", "PLC0415"]
-"src/grasping_ai/simulation/**/*.py" = ["TRY003", "PERF401", "TRY300", "PLR0915"]
-"src/grasping_ai/inference/grasp_inference_runtime.py" = ["PLR0913", "PLR0917", "TRY003", "PLC0415"]
-"src/grasping_ai/data/training_pairs.py" = ["TRY003", "PERF401", "TRY300", "PLR0912", "PLR0915", "PLC0415", "PLR0913", "PLR0917"]
-"src/grasping_ai/data/**/*.py" = ["TRY003", "PERF401", "TRY300", "PLR0912", "PLR0915", "PLC0415", "PLR0913", "PLR0917"]
-"src/grasping_ai/perception/**/*.py" = ["TRY003", "PERF401", "TRY300"]
-"src/grasping_ai/evaluation/**/*.py" = ["TRY003", "PERF401", "TRY300", "SIM108"]
+"tests/**/*.py" = [
+    "PLR2004",
+    "S101",
+    "S102",
+    "S603",
+    "ARG",
+    "FBT",
+    "PLC0415",
+    "PLR0915",
+    "PT011",
+    "PT012",
+    "E501",
+    "ANN",
+    "EM",
+    "SLF001",
+    "INP001",
+    "T201",
+    "BLE001",
+    "NPY002",
+    "PTH",
+]
+"scripts/**/*.py" = [
+    "PLR2004",
+    "PLR0912",
+    "PLR0913",
+    "PLR0917",
+    "PLC0415",
+    "TRY003",
+    "PLR0915",
+    "INP001",
+    "T201",
+    "ANN",
+    "EM",
+    "S603",
+    "S310",
+    "S202",
+    "PTH",
+    "FBT",
+    "C901",
+    "A001",
+    "A002",
+    "BLE001",
+]
+"src/grasping_ai/**/*.py" = [
+    "TRY003",
+    "TRY300",
+    "PLC0415",
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "PLR0917",
+    "EM101",
+    "EM102",
+    "ANN001",
+    "ANN201",
+    "ANN202",
+    "ANN003",
+    "ANN401",
+    "FBT001",
+    "FBT002",
+    "FBT003",
+    "SIM108",
+    "C901",
+    "BLE001",
+    "PERF401",
+    "S311",
+    "S314",
+]
+"src/grasping_ai/training/checkpoint_io.py" = ["TRY004"]
+"src/grasping_ai/models/flow.py" = ["TRY004"]
+"src/grasping_ai/pipelines/visualize_robot.py" = ["E501", "S101", "T201"]
 
 [format]
 quote-style = "double"

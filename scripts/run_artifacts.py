@@ -1,3 +1,5 @@
+"""Run artifact generation steps for CI and local workflows."""
+
 from __future__ import annotations
 
 import os
@@ -233,7 +235,7 @@ def main() -> None:
                 "and RL (SB3 PPO -> legacy checkpoint -> policy_runner inference)"
             ),
             "config_dir": config_dir_arg,
-        }
+        },
     ]
     manifest_records.extend({"record_type": "command", **entry} for entry in log)
     manifest_records.extend({"record_type": "retained_artifact", "path": rel} for rel in retained_artifacts)
@@ -284,7 +286,7 @@ def main() -> None:
                     "run_id": wandb_run.id,
                     "artifact_version": artifact_version,
                     "project": wandb_project,
-                }
+                },
             )
             write_jsonl_records(manifest_path, manifest_records)
             print(

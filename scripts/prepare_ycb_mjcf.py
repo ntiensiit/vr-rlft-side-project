@@ -1,3 +1,5 @@
+"""Convert YCB assets into MuJoCo MJCF scenes."""
+
 from __future__ import annotations
 
 import argparse

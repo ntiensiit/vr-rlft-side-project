@@ -1,3 +1,5 @@
+"""End-to-end training and evaluation pipelines."""
+
 from __future__ import annotations
 
 from grasping_ai.pipelines.evaluate import (

@@ -1,7 +1,9 @@
+"""Diffusion training pipeline."""
+
 from __future__ import annotations
 
 from functools import partial
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -21,6 +23,9 @@ from grasping_ai.training.trainer import (
     load_training_checkpoint,
 )
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def run_diffusion_training_pipeline(
@@ -116,7 +121,7 @@ def run_diffusion_training_pipeline(
 
     loss_fn = build_diffusion_score_loss()
     training_step = build_training_step(
-        model, loss_fn, optimizer, device, seed=seed
+        model, loss_fn, optimizer, device, seed=seed,
     )
 
     dataloader: BatchSource = partial(

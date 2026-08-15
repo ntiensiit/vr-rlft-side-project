@@ -1,3 +1,5 @@
+"""Point-cloud filtering, normals, and downsampling."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -6,7 +8,7 @@ from typing import Any
 import numpy as np
 import scipy.spatial  # type: ignore[import-untyped]
 
-from grasping_ai.utils.numerics import NORM_EPS
+from grasping_ai.utils.constants import MIN_NORMAL_NEIGHBORHOOD, NORM_EPS, POINT_CLOUD_NDIM, SPATIAL_DIM
 
 PointCloud = np.ndarray
 FeatureExtractor = Callable[[np.ndarray], np.ndarray]
@@ -25,7 +27,7 @@ def sample_point_cloud(points: np.ndarray, num_samples: int, rng: np.random.Gene
     """
     if not isinstance(points, np.ndarray):
         raise TypeError("points must be a numpy array")
-    if points.ndim != 2 or points.shape[1] != 3:
+    if points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
         raise ValueError(f"points shape must be (N, 3), got {points.shape}")
     if points.shape[0] == 0:
         raise ValueError("points must not be empty")
@@ -53,7 +55,7 @@ def normalize_point_cloud(points: np.ndarray) -> np.ndarray:
     """
     if not isinstance(points, np.ndarray):
         raise TypeError("points must be a numpy array")
-    if points.ndim != 2 or points.shape[1] != 3:
+    if points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
         raise ValueError(f"points shape must be (N, 3), got {points.shape}")
     if points.shape[0] == 0:
         raise ValueError("points must not be empty")
@@ -81,7 +83,7 @@ def farthest_point_sampling(points: np.ndarray, num_samples: int, rng: np.random
     """
     if not isinstance(points, np.ndarray):
         raise TypeError("points must be a numpy array")
-    if points.ndim != 2 or points.shape[1] != 3:
+    if points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
         raise ValueError(f"points shape must be (N, 3), got {points.shape}")
     if points.shape[0] == 0:
         raise ValueError("points must not be empty")
@@ -128,7 +130,7 @@ def estimate_point_cloud_normals(points: np.ndarray, neighborhood_size: int) -> 
     """
     if not isinstance(points, np.ndarray):
         raise TypeError("points must be a numpy array")
-    if points.ndim != 2 or points.shape[1] != 3:
+    if points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
         raise ValueError(f"points shape must be (N, 3), got {points.shape}")
     if points.shape[0] == 0:
         raise ValueError("points must not be empty")
@@ -139,7 +141,7 @@ def estimate_point_cloud_normals(points: np.ndarray, neighborhood_size: int) -> 
 
     n = points.shape[0]
     k = min(neighborhood_size, n)
-    if k < 3:
+    if k < MIN_NORMAL_NEIGHBORHOOD:
         return np.tile(np.array([0.0, 0.0, 1.0]), (n, 1))
 
     kdtree = scipy.spatial.KDTree(points)
@@ -176,7 +178,7 @@ def voxel_downsample(points: np.ndarray, voxel_size: float) -> np.ndarray:
     """
     if not isinstance(points, np.ndarray):
         raise TypeError("points must be a numpy array")
-    if points.ndim != 2 or points.shape[1] != 3:
+    if points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
         raise ValueError(f"points shape must be (N, 3), got {points.shape}")
     if not isinstance(voxel_size, (int, float)) or voxel_size <= 0:
         raise ValueError("voxel_size must be a positive float")
@@ -207,7 +209,7 @@ def build_kdtree(points: np.ndarray) -> Any:
     """
     if not isinstance(points, np.ndarray):
         raise TypeError("points must be a numpy array")
-    if points.ndim != 2 or points.shape[1] != 3:
+    if points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
         raise ValueError(f"points shape must be (N, 3), got {points.shape}")
     if not np.isfinite(points).all():
         raise ValueError("points must contain only finite values")

@@ -1,3 +1,5 @@
+"""YAML configuration loading utilities."""
+
 from __future__ import annotations
 
 import argparse
@@ -115,7 +117,7 @@ def load_project_yaml_config(
             raise TypeError("Hydra config root must be a mapping")
         from typing import cast
 
-        return cast(dict[str, object], container)
+        return cast("dict[str, object]", container)
 
     if config_name != "config":
         raise FileNotFoundError(f"Hydra config entrypoint not found: {config_yaml}")

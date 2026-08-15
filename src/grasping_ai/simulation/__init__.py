@@ -1,3 +1,5 @@
+"""MuJoCo simulation environments and YCB assets."""
+
 from __future__ import annotations
 
 from grasping_ai.simulation.mujoco_env import (

@@ -1,3 +1,5 @@
+"""Phase 3 data and perception tests."""
+
 from __future__ import annotations
 
 import json
@@ -364,7 +366,7 @@ def test_estimate_point_cloud_normals():
             [0.0, 1.0, 0.0],
             [1.0, 1.0, 0.0],
             [0.5, 0.5, 0.0],
-        ]
+        ],
     )
     normals = estimate_point_cloud_normals(points, neighborhood_size=4)
     # Normals should be perpendicular to XY plane (i.e. parallel to Z axis)
@@ -381,7 +383,7 @@ def test_voxel_downsample():
             [0.01, 0.01, 0.01],
             [0.02, 0.02, 0.02],
             [0.9, 0.9, 0.9],
-        ]
+        ],
     )
     downsampled = voxel_downsample(points, voxel_size=0.1)
     # The first two points should fall in the same voxel and be averaged
@@ -600,7 +602,7 @@ def test_data_perception_error_handling(tmp_path):
     # generate_analytical_grasps validation check (strict_alignment_dot bounds)
     with pytest.raises(ValueError, match="strict_alignment_dot must be in"):
         generate_analytical_grasps(
-            np.zeros((2, 3)), np.zeros((2, 3)), num_grasps=1, gripper_width=0.05, strict_alignment_dot=2.0, rng=rng
+            np.zeros((2, 3)), np.zeros((2, 3)), num_grasps=1, gripper_width=0.05, strict_alignment_dot=2.0, rng=rng,
         )
 
     # validate_grasp_dataset and build_supervised_training_pairs validations (empty dataset)
@@ -689,7 +691,7 @@ def test_perception_edge_cases():
             [1.0, 1.0, 1.0],
             [1.0, 1.0, 1.0],
             [1.0, 1.0, 1.0],
-        ]
+        ],
     )
     normals = estimate_point_cloud_normals(identical_pts, neighborhood_size=4)
     assert np.allclose(normals, [0, 0, 1])
@@ -793,7 +795,7 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
         },
     )
     filtered_pairs = build_supervised_training_pairs(
-        scored_dir, min_grasp_score=0.5, score_repeat_factor=2, score_repeat_power=1.0
+        scored_dir, min_grasp_score=0.5, score_repeat_factor=2, score_repeat_power=1.0,
     )
     assert len(filtered_pairs) == 2
 

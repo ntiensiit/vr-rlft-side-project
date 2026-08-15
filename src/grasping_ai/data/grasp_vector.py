@@ -1,9 +1,11 @@
+"""Encode and decode fixed-size grasp pose vectors."""
+
 from __future__ import annotations
 
 import numpy as np
 import torch
 
-from grasping_ai.utils.numerics import TORCH_NORM_CLAMP_MIN
+from grasping_ai.utils.constants import GRASP_VECTOR_DIM, POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE, TORCH_NORM_CLAMP_MIN
 
 
 def se3_to_vec(t_matrix: np.ndarray) -> np.ndarray:
@@ -16,7 +18,7 @@ def se3_to_vec(t_matrix: np.ndarray) -> np.ndarray:
         A vector ``[t, r1, r2]`` with shape ``(9,)`` where ``t`` is translation
         and ``r1``/``r2`` are the first two rotation columns.
     """
-    if not isinstance(t_matrix, np.ndarray) or t_matrix.shape != (4, 4):
+    if not isinstance(t_matrix, np.ndarray) or t_matrix.shape != SE3_MATRIX_SHAPE:
         raise ValueError("t_matrix must be a (4, 4) numpy array")
     t = t_matrix[:3, 3]
     r1 = t_matrix[:3, 0]
@@ -37,7 +39,7 @@ def vec_to_se3(x: torch.Tensor) -> torch.Tensor:
     Returns:
         Batch of homogeneous transforms with shape ``(M, 4, 4)``.
     """
-    if x.ndim != 2 or x.shape[1] != 9:
+    if x.ndim != POINT_CLOUD_NDIM or x.shape[1] != GRASP_VECTOR_DIM:
         raise ValueError(f"x must have shape (M, 9), got {x.shape}")
 
     m = x.shape[0]

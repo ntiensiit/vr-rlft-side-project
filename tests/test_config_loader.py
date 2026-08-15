@@ -1,3 +1,5 @@
+"""Tests for YAML configuration loading."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -87,7 +89,7 @@ def test_merge_yaml_mappings_deep_merges_nested_objects() -> None:
             "checkpoint": "a.pt",
             "observation_dim": 31,
             "learning_rate": 0.001,
-        }
+        },
     }
 
 

@@ -1,3 +1,5 @@
+"""Phase 2 simulation and robotics tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -1293,7 +1295,7 @@ def test_scene_and_simulate_grasp_additional_coverage(monkeypatch, panda_robot_x
 
 
 def test_simulate_grasp_ik_failure_without_freejoint_returns_early(
-    monkeypatch, panda_robot_xml, tmp_path: Path
+    monkeypatch, panda_robot_xml, tmp_path: Path,
 ) -> None:
     """Return an unsuccessful outcome when IK fails on a fixed-base object.
 

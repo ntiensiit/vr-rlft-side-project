@@ -1,3 +1,5 @@
+"""Inverse kinematics helpers for simulated robots."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -11,6 +13,7 @@ import pytransform3d.transformations as pt
 from loguru import logger
 
 from grasping_ai.perception.geometry import make_transform
+from grasping_ai.utils.constants import SE3_MATRIX_SHAPE
 
 JointConfiguration = np.ndarray
 RigidTransform = np.ndarray
@@ -165,7 +168,7 @@ def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematic
 
 
 def build_inverse_kinematics(
-    robot_model: dict[str, object], max_iterations: int, tolerance: float
+    robot_model: dict[str, object], max_iterations: int, tolerance: float,
 ) -> Callable[..., np.ndarray]:
     """Build a numerical inverse-kinematics solver for a robot.
 
@@ -195,7 +198,7 @@ def build_inverse_kinematics(
     local_data = mujoco.MjData(model)
 
     def ik(target_pose: RigidTransform, initial_joints: JointConfiguration) -> JointConfiguration:
-        if not isinstance(target_pose, np.ndarray) or target_pose.shape != (4, 4):
+        if not isinstance(target_pose, np.ndarray) or target_pose.shape != SE3_MATRIX_SHAPE:
             raise ValueError("target_pose must be a (4, 4) numpy array")
         if not isinstance(initial_joints, np.ndarray) or initial_joints.shape != (model.nq,):
             raise ValueError(f"initial_joints shape {initial_joints.shape} does not match model.nq ({model.nq})")

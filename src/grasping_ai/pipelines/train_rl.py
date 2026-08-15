@@ -1,10 +1,15 @@
+"""RL training pipeline for grasp policies."""
+
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 
 from grasping_ai.utils.path_validation import require_path
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def run_rl_training_pipeline(
@@ -78,7 +83,8 @@ def run_rl_training_pipeline(
         raise ValueError("policy_num_layers must be positive")
     if len(object_ids) > 1:
         raise ValueError(
-            "object_ids must contain at most one object; the environment tracks a single object body during RL training"
+            "object_ids must contain at most one object; "
+            "the environment tracks a single object body during RL training",
         )
 
     env_xml_path = robot_xml_path
@@ -120,7 +126,7 @@ def run_rl_training_pipeline(
 
     if observation_dim != obs_shape[0]:
         raise ValueError(
-            f"observation_dim ({observation_dim}) does not match environment observation dimension ({obs_shape[0]})"
+            f"observation_dim ({observation_dim}) does not match environment observation dimension ({obs_shape[0]})",
         )
     if action_dim != act_shape[0]:
         raise ValueError(f"action_dim ({action_dim}) does not match environment action dimension ({act_shape[0]})")

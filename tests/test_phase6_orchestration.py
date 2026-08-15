@@ -1,3 +1,5 @@
+"""Phase 6 orchestration pipeline tests."""
+
 from __future__ import annotations
 
 import os

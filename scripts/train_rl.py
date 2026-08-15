@@ -1,3 +1,5 @@
+"""Train RL grasp policies from the command line."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -104,7 +106,7 @@ if __name__ == "__main__":
     if args.robot_xml is None:
         parser.error(
             "--robot-xml is required (set in configs/gripper/franka_emika_panda.yaml "
-            "robot.description or pass explicitly)"
+            "robot.description or pass explicitly)",
         )
     if args.ycb_root is None:
         parser.error("--ycb-root is required (set in configs/base.yaml paths.ycb_mjcf or pass explicitly)")
@@ -112,7 +114,7 @@ if __name__ == "__main__":
         parser.error("--object-ids is required (set in configs/object/default.yaml objects.ids or pass explicitly)")
     if args.policy_checkpoint is None:
         parser.error(
-            "--policy-checkpoint is required (set in configs/rl/default.yaml rl.checkpoint or pass explicitly)"
+            "--policy-checkpoint is required (set in configs/rl/default.yaml rl.checkpoint or pass explicitly)",
         )
     run_rl_training_pipeline(
         robot_xml_path=args.robot_xml,

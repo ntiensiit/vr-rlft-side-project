@@ -1,3 +1,5 @@
+"""Point-cloud collision checks for grasp candidates."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -6,7 +8,7 @@ import numpy as np
 
 from grasping_ai.perception.pointcloud import build_kdtree
 from grasping_ai.robotics.transforms import transform_between_frames
-from grasping_ai.utils.numerics import NORM_EPS
+from grasping_ai.utils.constants import GRASP_POSES_NDIM, NORM_EPS, POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE, SPATIAL_DIM
 
 CollisionChecker = Callable[[np.ndarray], bool]
 
@@ -27,9 +29,9 @@ def build_collision_checker(
         A callable that maps a grasp pose to ``True`` when the grasp is
         collision-free and ``False`` otherwise.
     """
-    if object_point_cloud.ndim != 2 or object_point_cloud.shape[1] != 3:
+    if object_point_cloud.ndim != POINT_CLOUD_NDIM or object_point_cloud.shape[1] != SPATIAL_DIM:
         raise ValueError("object_point_cloud must have shape (N, 3)")
-    if gripper_point_cloud.ndim != 2 or gripper_point_cloud.shape[1] != 3:
+    if gripper_point_cloud.ndim != POINT_CLOUD_NDIM or gripper_point_cloud.shape[1] != SPATIAL_DIM:
         raise ValueError("gripper_point_cloud must have shape (M, 3)")
     if clearance < 0:
         raise ValueError("clearance must be non-negative")
@@ -37,7 +39,7 @@ def build_collision_checker(
     tree = build_kdtree(object_point_cloud)
 
     def checker(grasp_pose: np.ndarray) -> bool:
-        if grasp_pose.shape != (4, 4):
+        if grasp_pose.shape != SE3_MATRIX_SHAPE:
             raise ValueError(f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}")
         transformed_gripper = transform_between_frames(grasp_pose, gripper_point_cloud)
 
@@ -70,7 +72,7 @@ def filter_collision_free_grasps(checker: CollisionChecker, grasp_poses: np.ndar
     Returns:
         The subset of collision-free grasp poses.
     """
-    if grasp_poses.ndim == 2:
+    if grasp_poses.ndim == POINT_CLOUD_NDIM:
         # Single grasp pose shape (4, 4) or flat
         if grasp_poses.shape == (4, 4):
             if checker(grasp_poses):
@@ -78,7 +80,7 @@ def filter_collision_free_grasps(checker: CollisionChecker, grasp_poses: np.ndar
             return np.empty((0, 4, 4))
         raise ValueError("grasp_poses must have shape (K, 4, 4) or (4, 4)")
 
-    if grasp_poses.ndim != 3 or grasp_poses.shape[1:] != (4, 4):
+    if grasp_poses.ndim != GRASP_POSES_NDIM or grasp_poses.shape[1:] != SE3_MATRIX_SHAPE:
         raise ValueError("grasp_poses must have shape (K, 4, 4)")
 
     free_grasps = []
@@ -116,17 +118,17 @@ def generate_analytical_contacts(
     """
     if (
         not isinstance(object_point_cloud, np.ndarray)
-        or object_point_cloud.ndim != 2
-        or object_point_cloud.shape[1] != 3
+        or object_point_cloud.ndim != POINT_CLOUD_NDIM
+        or object_point_cloud.shape[1] != SPATIAL_DIM
     ):
         raise ValueError("object_point_cloud must have shape (N, 3)")
     if (
         not isinstance(gripper_point_cloud, np.ndarray)
-        or gripper_point_cloud.ndim != 2
-        or gripper_point_cloud.shape[1] != 3
+        or gripper_point_cloud.ndim != POINT_CLOUD_NDIM
+        or gripper_point_cloud.shape[1] != SPATIAL_DIM
     ):
         raise ValueError("gripper_point_cloud must have shape (M, 3)")
-    if not isinstance(grasp_pose, np.ndarray) or grasp_pose.shape != (4, 4):
+    if not isinstance(grasp_pose, np.ndarray) or grasp_pose.shape != SE3_MATRIX_SHAPE:
         raise ValueError("grasp_pose must have shape (4, 4)")
     if not np.isfinite(object_point_cloud).all():
         raise ValueError("object_point_cloud must contain only finite values")
@@ -163,7 +165,7 @@ def generate_analytical_contacts(
                 {
                     "position": obj_pt,
                     "normal": normal,
-                }
+                },
             )
 
     return contacts

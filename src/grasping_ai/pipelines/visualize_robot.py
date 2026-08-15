@@ -1,15 +1,31 @@
+"""MuJoCo robot viewer and keyboard teleoperation."""
+
 from __future__ import annotations
 
 import json
 import socket
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from loguru import logger
 
+from grasping_ai.utils.constants import (
+    ACTUATOR_SPAN_LARGE_THRESHOLD,
+    ACTUATOR_STEP_LARGE,
+    ACTUATOR_STEP_SMALL,
+    KEY_DIGIT_1,
+    KEY_DIGIT_9,
+    KEY_GRIPPER_TOGGLE,
+    KEY_HOME,
+    KEY_SPACE,
+    UDP_PORT_MAX,
+    UDP_PORT_MIN,
+)
 from grasping_ai.utils.path_validation import require_optional_path, require_path
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def load_visualization_scene(
@@ -230,7 +246,7 @@ def run_keyboard_tui(
     print(
         "Robot keyboard TUI (no MuJoCo window). Publishes to topic robot/keyboard.\n"
         "Start scripts/visualize_robot.py in another terminal first, then use keys:\n"
-        "  1-9 select actuator; left/right nudge; g gripper; h home; space pause; q quit"
+        "  1-9 select actuator; left/right nudge; g gripper; h home; space pause; q quit",
     )
     logger.info("Publishing {} -> udp://{}:{}", topic, host, port)
     try:
@@ -284,7 +300,7 @@ def run_robot_viewer(
         port = 5511 if topic_port is None else topic_port
         if not isinstance(host, str) or not host:
             raise TypeError("host must be a non-empty string")
-        if not isinstance(port, int) or not (0 <= port <= 65535):
+        if not isinstance(port, int) or not (UDP_PORT_MIN <= port <= UDP_PORT_MAX):
             raise ValueError("port must be an integer in 0..65535")
         topic_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         topic_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -384,8 +400,8 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
     mj_data = control_state["data"]
     ctrl = control_state["ctrl"]
     selected = control_state["selected"]
-    if 49 <= code <= 57:
-        index = code - 49
+    if KEY_DIGIT_1 <= code <= KEY_DIGIT_9:
+        index = code - KEY_DIGIT_1
         if index < int(mj_model.nu):
             control_state["selected"] = index
             name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, index) or f"actuator_{index}"
@@ -398,7 +414,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         else:
             lo, hi = -3.14, 3.14
         span = hi - lo
-        step = 15.0 if span > 10.0 else 0.05
+        step = ACTUATOR_STEP_LARGE if span > ACTUATOR_SPAN_LARGE_THRESHOLD else ACTUATOR_STEP_SMALL
         value = float(np.clip(ctrl[selected] - step, lo, hi))
         ctrl[selected] = value
         mj_data.ctrl[selected] = value
@@ -412,14 +428,14 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         else:
             lo, hi = -3.14, 3.14
         span = hi - lo
-        step = 15.0 if span > 10.0 else 0.05
+        step = ACTUATOR_STEP_LARGE if span > ACTUATOR_SPAN_LARGE_THRESHOLD else ACTUATOR_STEP_SMALL
         value = float(np.clip(ctrl[selected] + step, lo, hi))
         ctrl[selected] = value
         mj_data.ctrl[selected] = value
         name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, selected) or f"actuator_{selected}"
         logger.info("actuator {} ({}) = {:.4f}", selected, name, value)
         return
-    if code == 71:
+    if code == KEY_GRIPPER_TOGGLE:
         gripper_ids = control_state["gripper_ids"]
         if not gripper_ids:
             logger.warning("No gripper actuator found")
@@ -435,7 +451,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
             mj_data.ctrl[idx] = ctrl[idx]
         logger.info("Gripper open" if control_state["gripper_open"] else "Gripper closed")
         return
-    if code == 72:
+    if code == KEY_HOME:
         apply_home_keyframe(mj_model, mj_data)
         if int(mj_model.nkey) > 0 and mj_model.key_ctrl.shape[1] == mj_model.nu:
             control_state["ctrl"] = np.array(mj_model.key_ctrl[0], dtype=np.float64, copy=True)
@@ -444,7 +460,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         mj_data.ctrl[:] = control_state["ctrl"]
         logger.info("Reset to home keyframe")
         return
-    if code == 32:
+    if code == KEY_SPACE:
         control_state["paused"] = not control_state["paused"]
         logger.info("Paused" if control_state["paused"] else "Running")
 
@@ -509,7 +525,7 @@ def run_robot_control_loop(
         "  g            toggle gripper open/close\n"
         "  h            reset to home keyframe\n"
         "  space        pause/resume physics\n"
-        "  close window to exit"
+        "  close window to exit",
     )
     logger.info("Launching MuJoCo control viewer...")
     viewer = launch_passive(
