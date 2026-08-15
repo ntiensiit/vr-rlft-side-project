@@ -5,10 +5,11 @@ from pathlib import Path
 
 from grasping_ai.config.yaml_loader import (
     config_get,
+    config_int,
     config_path,
     load_project_yaml_config,
-    parse_config_dir_from_argv,
     parse_clean_argv,
+    parse_config_dir_from_argv,
 )
 from grasping_ai.inference.grasp_inference_runtime import run_single_object_grasp_inference
 

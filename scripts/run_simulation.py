@@ -8,8 +8,8 @@ from grasping_ai.config.yaml_loader import (
     config_path,
     load_project_yaml_config,
     optional_cli_path,
-    parse_config_dir_from_argv,
     parse_clean_argv,
+    parse_config_dir_from_argv,
 )
 from grasping_ai.pipelines.evaluate import write_jsonl_records
 from grasping_ai.pipelines.simulate_grasp import run_simulation_sweep
