@@ -194,12 +194,14 @@ def aggregate_evaluation_results(
 def write_jsonl_records(
     output_path: Path,
     records: list[dict[str, object]],
+    mode: str = "w",
 ) -> None:
     """Write JSON Lines records to disk.
 
     Args:
         output_path: Destination ``.jsonl`` file path.
         records: Ordered mapping objects, one per output line.
+        mode: Open mode ('w' to write/overwrite, 'a' to append).
 
     Raises:
         TypeError: If ``output_path`` is not a ``pathlib.Path`` instance.
@@ -209,7 +211,7 @@ def write_jsonl_records(
         raise TypeError("output_path must be a pathlib.Path instance")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with output_path.open("w", encoding="utf-8") as fp:
+        with output_path.open(mode, encoding="utf-8") as fp:
             for record in records:
                 fp.write(json.dumps(record, allow_nan=True))
                 fp.write("\n")
@@ -233,22 +235,21 @@ def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
     """
     if not isinstance(input_path, Path):
         raise TypeError("input_path must be a pathlib.Path instance")
+    if not input_path.is_file():
+        raise FileNotFoundError(f"JSONL file not found: {input_path}")
     records: list[dict[str, object]] = []
     try:
-        lines = input_path.read_text(encoding="utf-8").splitlines()
-    except OSError as e:
-        raise ValueError(f"Failed to read JSONL records from {input_path}: {e}") from e
-    for line_number, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            loaded = json.loads(stripped)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to read JSONL records from {input_path}: {e}") from e
-        if not isinstance(loaded, dict):
-            raise TypeError(f"JSONL line {line_number} in {input_path} must be a mapping")
-        records.append(loaded)
+        with input_path.open(encoding="utf-8") as fp:
+            for line in fp:
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                if not isinstance(record, dict):
+                    raise TypeError("each line in JSONL must be a mapping")
+                records.append(record)
+    except Exception as e:
+        raise ValueError(f"Failed to read JSONL records: {e}") from e
     return records
 
 
@@ -289,7 +290,7 @@ def write_evaluation_report(
                 }
             )
     records.append({"record_type": "summary", **results})
-    write_jsonl_records(report_path, records)
+    write_jsonl_records(report_path, records, mode="a")
 
     if experiment_log_dir is not None:
         from torch.utils.tensorboard import SummaryWriter

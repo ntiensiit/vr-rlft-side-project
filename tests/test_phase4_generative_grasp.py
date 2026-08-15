@@ -1069,3 +1069,26 @@ def test_trainer_checkpoint_saving_branch(tmp_path: Path) -> None:
     dataloader = [(torch.randn(2, 8), torch.randn(2, 2))]
     run_training_loop(dummy_step, dataloader, num_epochs=1, log_every=10, checkpoint_path=ckpt_path)
     assert ckpt_path.is_file()
+
+    # Verify trainer fallback when mlflow is not installed (ImportError blocks)
+    import sys
+    orig_mlflow = sys.modules.get("mlflow")
+    sys.modules["mlflow"] = None  # type: ignore[assignment]
+    try:
+        ckpt_path_ml = tmp_path / "ml_ckpt.pt"
+        tb_dir = tmp_path / "tb_logs"
+        run_training_loop(
+            dummy_step,
+            dataloader,
+            num_epochs=1,
+            log_every=1,
+            checkpoint_path=ckpt_path_ml,
+            experiment_log_dir=tb_dir,
+            metadata={"experiment": "test_run"},
+        )
+        assert ckpt_path_ml.is_file()
+    finally:
+        if orig_mlflow is not None:
+            sys.modules["mlflow"] = orig_mlflow
+        else:
+            sys.modules.pop("mlflow", None)

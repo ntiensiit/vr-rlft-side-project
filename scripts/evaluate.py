@@ -157,7 +157,7 @@ if __name__ == "__main__":
                 args.report,
                 aggregated,
                 args.experiment_log_dir,
-                per_object_results=per_object_aggregated if len(per_object) > 1 else None,
+                per_object_results=per_object_aggregated,
             )
             for key, val in aggregated.items():
                 if isinstance(val, (int, float)):
@@ -171,5 +171,5 @@ if __name__ == "__main__":
             args.report,
             aggregated,
             args.experiment_log_dir,
-            per_object_results=per_object_aggregated if len(per_object) > 1 else None,
+            per_object_results=per_object_aggregated,
         )

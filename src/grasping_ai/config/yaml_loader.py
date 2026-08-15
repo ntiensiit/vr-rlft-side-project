@@ -166,6 +166,22 @@ def parse_config_overrides_from_argv(argv: list[str] | None = None) -> list[str]
     return overrides
 
 
+def parse_clean_argv(argv: list[str] | None = None) -> list[str]:
+    """Return argv with Hydra-style overrides removed.
+
+    Args:
+        argv: Optional argument vector. When omitted, ``sys.argv[1:]`` is used.
+
+    Returns:
+        The filtered argument list, suitable for argparse.
+    """
+    import sys
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    return [arg for arg in args if not ("=" in arg and not arg.startswith("-"))]
+
+
+
 def parse_config_dir_from_argv(argv: list[str] | None = None) -> Path:
     """Parse ``--config-dir`` from command-line arguments.
 

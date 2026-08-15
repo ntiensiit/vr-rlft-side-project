@@ -89,10 +89,13 @@ def run_workflow_main(
         "PYTHONPYCACHEPREFIX": str(root / ".pycache"),
     }
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    grasps_path = output_dir / f"{method}_grasp_candidates.npy"
-    sim_path = output_dir / f"{method}_simulation_outcomes.jsonl"
-    eval_path = output_dir / f"{method}_analytical_evaluation_report.jsonl"
+    exports_dir = output_dir / "exports"
+    reports_dir = output_dir / "reports"
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    grasps_path = exports_dir / f"{method}_grasp_candidates.npy"
+    sim_path = reports_dir / f"{method}_simulation_outcomes.jsonl"
+    eval_path = reports_dir / f"{method}_analytical_evaluation_report.jsonl"
 
     # Stage 1: generate grasps.
     grasp_inference_cmd: list[str] = [
@@ -205,7 +208,7 @@ def run_workflow_main(
     print(">>>", " ".join(eval_cmd))
     subprocess.run(eval_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
 
-    rl_path = output_dir / "rl_grasp_rollout_report.jsonl"
+    rl_path = reports_dir / "rl_grasp_rollout_report.jsonl"
     if rl_policy_checkpoint_path is not None:
         if (
             robot_xml_path is None
@@ -303,6 +306,7 @@ if __name__ == "__main__":
         optional_cli_path,
         parse_config_dir_from_argv,
         parse_config_overrides_from_argv,
+        parse_clean_argv,
     )
 
     config_dir = parse_config_dir_from_argv()
@@ -332,21 +336,20 @@ if __name__ == "__main__":
         description="Run the end-to-end runtime workflow on a single object",
         parents=[pre_parser],
     )
+    parser.set_defaults(
+        method=str(config_get(cfg, "evaluation", "method") or config_get(cfg, "default_method")),
+    )
     parser.add_argument(
         "--checkpoint",
         type=Path,
-        default=config_path(cfg, "diffusion", "checkpoint"),
+        default=config_path(cfg, "model", "checkpoint")
+        or config_path(cfg, "diffusion", "checkpoint")
+        or config_path(cfg, "flow", "checkpoint"),
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=config_path(cfg, "paths", "output_dir"),
-    )
-    parser.add_argument(
-        "--method",
-        type=str,
-        choices=["diffusion", "flow"],
-        default=str(config_get(cfg, "evaluation", "method") or config_get(cfg, "default_method")),
     )
     parser.add_argument(
         "--feature-dim",
@@ -356,7 +359,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num-steps",
         type=int,
-        default=int(config_get(cfg, "diffusion", "inference_steps")),
+        default=config_int(cfg, "model", "inference_steps", default=0)
+        or config_int(cfg, "diffusion", "inference_steps", default=0)
+        or config_int(cfg, "flow", "inference_steps", default=0)
+        or 5,
     )
     parser.add_argument(
         "--num-grasps",
@@ -419,23 +425,17 @@ if __name__ == "__main__":
         type=float,
         default=float(config_get(cfg, "metrics", "wrench_regularization")),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(parse_clean_argv())
     if args.checkpoint is None:
-        if args.method == "flow":
-            args.checkpoint = config_path(cfg, "flow", "checkpoint")
-        if args.checkpoint is None:
-            parser.error(
-                "--checkpoint is required (set in configs/model/diffusion.yaml or "
-                "configs/model/flow.yaml or pass explicitly)"
-            )
+        parser.error(
+            "--checkpoint is required (set in configs/model/diffusion.yaml or "
+            "configs/model/flow.yaml or pass explicitly)"
+        )
     if args.output_dir is None:
         parser.error(
             "--output-dir is required (set in configs/base.yaml paths.output_dir "
             "or pass explicitly)"
         )
-    diffusion_steps = int(config_get(cfg, "diffusion", "inference_steps"))
-    if args.method == "flow" and args.num_steps == diffusion_steps:
-        args.num_steps = int(config_get(cfg, "flow", "inference_steps"))
     run_workflow_main(
         checkpoint_path=args.checkpoint,
         output_dir=args.output_dir,

@@ -549,6 +549,21 @@ def test_data_perception_error_handling(tmp_path):
     with pytest.raises(ValueError, match="finite"):
         build_kdtree(np.array([[np.nan, 2.0, 3.0]]))
 
+    # generate_analytical_grasps validation check (strict_alignment_dot bounds)
+    with pytest.raises(ValueError, match="strict_alignment_dot must be in"):
+        generate_analytical_grasps(
+            np.zeros((2, 3)), np.zeros((2, 3)), num_grasps=1, gripper_width=0.05, strict_alignment_dot=2.0, rng=rng
+        )
+
+    # count_supervised_training_pairs and build_supervised_training_pairs validations (empty dataset)
+    from grasping_ai.data.training_pairs import build_supervised_training_pairs, count_supervised_training_pairs
+    empty_dir = tmp_path / "empty_dataset_handling"
+    empty_dir.mkdir()
+    with pytest.raises(ValueError, match="Dataset is empty"):
+        build_supervised_training_pairs(empty_dir)
+    with pytest.raises(ValueError, match="contains no valid grasp samples"):
+        count_supervised_training_pairs(empty_dir)
+
 
 def test_resolve_ycb_object_id_exact_and_fallbacks(tmp_path):
     """Test resolve_ycb_object_id for exact directory matches and different mesh formats."""
@@ -931,3 +946,18 @@ def test_generate_analytical_grasps_relaxed_fallback_and_parallel_normals() -> N
         rng=rng,
     )
     assert len(grasps_empty) == 0
+
+    # Trigger relaxed search fallback for colinear z_axis and average normal (lines 294-298)
+    pts_colinear = np.array([[0.0, 0.0, 0.0], [0.02, 0.0, 0.0]])
+    normals_colinear = np.array([[0.95, 0.312, 0.0], [-0.95, -0.312, 0.0]])
+    grasps_col = generate_analytical_grasps(
+        pts_colinear,
+        normals_colinear,
+        num_grasps=1,
+        gripper_width=0.05,
+        allow_relaxed=True,
+        strict_alignment_dot=0.99,
+        relaxed_antipodal_dot=0.5,
+        rng=rng,
+    )
+    assert len(grasps_col) >= 1

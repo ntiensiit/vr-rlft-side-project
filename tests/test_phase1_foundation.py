@@ -289,17 +289,50 @@ def test_property_apply_transform(points, rotation, translation):
 
 def test_geometry_additional_validation_branches() -> None:
     """Verify validation checks on invalid rotations, translations, axes, angles, and transform shapes."""
+    # identity_transform
+    assert np.allclose(identity_transform(), np.eye(4))
+
+    # rotation_matrix_from_axis_angle
+    with pytest.raises(TypeError, match="Axis must be a numpy array"):
+        rotation_matrix_from_axis_angle("not_array", 0.0)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Axis must have shape"):
+        rotation_matrix_from_axis_angle(np.array([1.0, 0.0]), 0.0)
     with pytest.raises(TypeError, match="Angle must be a float or integer"):
         rotation_matrix_from_axis_angle(np.array([1.0, 0.0, 0.0]), "invalid_angle")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Axis must be a unit vector"):
+        rotation_matrix_from_axis_angle(np.array([2.0, 0.0, 0.0]), 0.0)
 
+    # rotation_matrix_to_axis_angle
+    with pytest.raises(TypeError, match="Rotation must be a numpy array"):
+        rotation_matrix_to_axis_angle("not_array")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Rotation must be a"):
+        rotation_matrix_to_axis_angle(np.eye(4))
+
+    # make_transform
+    with pytest.raises(TypeError, match="Rotation must be a numpy array"):
+        make_transform("not_array", np.zeros(3))  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="Translation must be a numpy array"):
         make_transform(np.eye(3), "invalid_translation")  # type: ignore[arg-type]
-
     with pytest.raises(ValueError, match="Rotation must have shape"):
         make_transform(np.eye(4), np.zeros(3))
+    with pytest.raises(ValueError, match="Translation must have shape"):
+        make_transform(np.eye(3), np.zeros(4))
 
+    # invert_transform
+    with pytest.raises(TypeError, match="Transform must be a numpy array"):
+        invert_transform("not_array")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Transform must have shape"):
+        invert_transform(np.eye(3))
+
+    # apply_transform
     with pytest.raises(TypeError, match="Points must be a numpy array"):
         apply_transform("invalid_points", np.eye(4))  # type: ignore[arg-type]
-
+    with pytest.raises(TypeError, match="Transform must be a numpy array"):
+        apply_transform(np.zeros((5, 3)), "not_array")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Points must have shape"):
+        apply_transform(np.zeros((5, 4)), np.eye(4))
     with pytest.raises(ValueError, match="Transform must have shape"):
         apply_transform(np.zeros((5, 3)), np.eye(3))
+
+    # grasp_pose_to_transform
+    assert np.allclose(grasp_pose_to_transform(np.eye(3), np.zeros(3)), np.eye(4))

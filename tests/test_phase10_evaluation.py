@@ -675,6 +675,42 @@ def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:
     loaded = load_contact_set(path)
     assert len(loaded) == 2
 
+    # 1. Test line 32: load list directly (not data.item)
+    payload_list = np.array(c_list, dtype=object)
+    path_list = tmp_path / "list_contact.npy"
+    np.save(path_list, payload_list, allow_pickle=True)
+    loaded_list = load_contact_set(path_list)
+    assert len(loaded_list) == 2
+
+    # 2. Test line 225: max_norm <= 1e-8
+    orig_max = np.max
+    def fake_max(a, *args, **kwargs):
+        if isinstance(a, np.ndarray) and a.ndim == 1 and len(a) >= 8:
+            return 0.0
+        return orig_max(a, *args, **kwargs)
+    monkeypatch.setattr(np, "max", fake_max)
+
+    # 3. Test LP success on ConvexHull exception (lines 235-236, 267-268)
+    import scipy.spatial
+    def raise_hull(*args, **kwargs):
+        raise RuntimeError("Convex hull failed")
+    monkeypatch.setattr(scipy.spatial, "ConvexHull", raise_hull)
+
+    c_valid = [
+        {"position": np.array([0.0, 0.0, 0.0]), "normal": np.array([1.0, 0.0, 0.0])},
+        {"position": np.array([0.05, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])},
+    ]
+    q_lp = compute_grasp_quality(c_valid, friction_coefficient=0.5)
+    assert q_lp >= 0.0
+
+    # 4. Test LP exception (lines 269-270)
+    import scipy.optimize
+    def raise_linprog(*args, **kwargs):
+        raise RuntimeError("linprog failed")
+    monkeypatch.setattr(scipy.optimize, "linprog", raise_linprog)
+    q_err = compute_grasp_quality(c_valid, friction_coefficient=0.5)
+    assert q_err == 0.0
+
 
 def test_force_closure_full_branch_coverage(monkeypatch) -> None:
     """Verify optimizer branch failures and exceptions inside the force closure linear programming solver."""

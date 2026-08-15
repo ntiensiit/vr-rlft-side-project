@@ -9,6 +9,7 @@ from grasping_ai.config.yaml_loader import (
     load_project_yaml_config,
     optional_cli_path,
     parse_config_dir_from_argv,
+    parse_clean_argv,
 )
 from grasping_ai.pipelines.evaluate import write_jsonl_records
 from grasping_ai.pipelines.simulate_grasp import run_simulation_sweep
@@ -40,7 +41,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type=Path,
-        default=config_path(cfg, "diffusion", "exports", "simulation_report"),
+        default=config_path(cfg, "model", "exports", "simulation_report")
+        or config_path(cfg, "diffusion", "exports", "simulation_report")
+        or config_path(cfg, "flow", "exports", "simulation_report"),
     )
     parser.add_argument(
         "--num-simulation-steps",
@@ -61,7 +64,7 @@ if __name__ == "__main__":
         default="world",
         help="Coordinate frame of the input grasps ('world' or 'object')",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(parse_clean_argv())
     if args.ycb_root is None:
         parser.error("--ycb-root is required (set in configs/base.yaml paths.ycb_mjcf or pass explicitly)")
     if args.robot_xml is None:
@@ -71,8 +74,8 @@ if __name__ == "__main__":
         )
     if args.output is None:
         parser.error(
-            "--output is required (set in configs/model/diffusion.yaml "
-            "diffusion.exports.simulation_report or pass explicitly)"
+            "--output is required (set in configs/model/diffusion.yaml or flow.yaml "
+            "model.exports.simulation_report or pass explicitly)"
         )
 
     from grasping_ai.utils.logging_utils import setup_logging

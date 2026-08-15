@@ -149,7 +149,7 @@ def generate_synthetic_dataset(
     from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
 
     object_position = (
-        sim_object_position if sim_object_position is not None else np.array([0.5, 0.0, 0.1], dtype=np.float64)
+        sim_object_position if sim_object_position is not None else np.array([0.5, 0.0, 0.3], dtype=np.float64)
     )
     if object_position.shape != (3,):
         raise ValueError("sim_object_position must have shape (3,)")

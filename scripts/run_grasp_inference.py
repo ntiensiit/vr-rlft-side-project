@@ -8,6 +8,7 @@ from grasping_ai.config.yaml_loader import (
     config_path,
     load_project_yaml_config,
     parse_config_dir_from_argv,
+    parse_clean_argv,
 )
 from grasping_ai.inference.grasp_inference_runtime import run_single_object_grasp_inference
 
@@ -20,7 +21,13 @@ if __name__ == "__main__":
         description="Generate grasp candidates from a trained checkpoint",
         parents=[pre_parser],
     )
-    parser.add_argument("--checkpoint", type=Path, default=None)
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=config_path(cfg, "model", "checkpoint")
+        or config_path(cfg, "diffusion", "checkpoint")
+        or config_path(cfg, "flow", "checkpoint"),
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--method",
@@ -36,7 +43,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num-steps",
         type=int,
-        default=None,
+        default=config_int(cfg, "model", "inference_steps", default=0)
+        or config_int(cfg, "diffusion", "inference_steps", default=0)
+        or config_int(cfg, "flow", "inference_steps", default=0)
+        or 5,
         help="Diffusion denoising steps or flow integration steps",
     )
     parser.add_argument(
@@ -53,22 +63,12 @@ if __name__ == "__main__":
         default=config_path(cfg, "paths", "ycb_root"),
     )
     parser.add_argument("--object-id", type=str, default=None)
-    args = parser.parse_args()
-    if args.checkpoint is None:
-        if args.method == "flow":
-            args.checkpoint = config_path(cfg, "flow", "checkpoint")
-        else:
-            args.checkpoint = config_path(cfg, "diffusion", "checkpoint")
+    args = parser.parse_args(parse_clean_argv())
     if args.checkpoint is None:
         parser.error(
             "--checkpoint is required (set in configs/model/diffusion.yaml or "
             "configs/model/flow.yaml or pass explicitly)"
         )
-    if args.num_steps is None:
-        if args.method == "flow":
-            args.num_steps = int(config_get(cfg, "flow", "inference_steps"))
-        else:
-            args.num_steps = int(config_get(cfg, "diffusion", "inference_steps"))
     run_single_object_grasp_inference(
         checkpoint_path=args.checkpoint,
         output_path=args.output,
@@ -79,6 +79,6 @@ if __name__ == "__main__":
         device=args.device,
         seed=args.seed,
         observation_path=args.observation,
-        ycb_root=args.ycb_root,
+        ycb_root=args.ycb_root if args.observation is None else None,
         object_id=args.object_id,
     )

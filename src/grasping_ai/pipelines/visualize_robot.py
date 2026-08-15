@@ -55,7 +55,53 @@ def load_visualization_scene(
         object_name=object_id,
     )
     apply_home_keyframe(scene.model, scene.data)
+    if object_id is not None and table_xml_path is not None:
+        _place_object_on_table(scene.model, scene.data, object_id)
     return scene.model, scene.data
+
+
+def _place_object_on_table(mj_model: Any, mj_data: Any, object_name: str) -> None:
+    """Set the object freejoint so it rests on the table top surface.
+
+    Finds the ``table`` body position and the ``table_top`` geom offset to
+    compute the table surface height, then moves the object freejoint so
+    its body origin sits on that surface.
+
+    Args:
+        mj_model: MuJoCo model containing the table and object bodies.
+        mj_data: MuJoCo data whose ``qpos`` will be updated.
+        object_name: Logical name of the object body to reposition.
+    """
+    import mujoco  # type: ignore[import-untyped]
+
+    table_body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "table")
+    if table_body_id == -1:
+        return
+
+    table_z = float(mj_model.body_pos[table_body_id][2])
+
+    table_top_geom_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_GEOM, "table_top")
+    if table_top_geom_id != -1:
+        geom_pos = mj_model.geom_pos[table_top_geom_id]
+        geom_size = mj_model.geom_size[table_top_geom_id]
+        table_z += float(geom_pos[2]) + float(geom_size[2])
+
+    object_body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, object_name)
+    if object_body_id == -1:
+        return
+
+    for jnt_id in range(int(mj_model.njnt)):
+        if mj_model.jnt_type[jnt_id] != mujoco.mjtJoint.mjJNT_FREE:
+            continue
+        if int(mj_model.jnt_bodyid[jnt_id]) != object_body_id:
+            continue
+        qadr = int(mj_model.jnt_qposadr[jnt_id])
+        mj_data.qpos[qadr + 2] = table_z
+        mj_data.qpos[qadr + 3 : qadr + 7] = [1.0, 0.0, 0.0, 0.0]
+        logger.info("Placed object '{}' on table surface at z={:.4f}", object_name, table_z)
+        break
+
+    mujoco.mj_forward(mj_model, mj_data)
 
 
 def apply_home_keyframe(mj_model: Any, mj_data: Any) -> None:

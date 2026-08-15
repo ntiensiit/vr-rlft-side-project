@@ -12,6 +12,7 @@ from grasping_ai.config.yaml_loader import (
     load_yaml_mapping,
     merge_yaml_mappings,
     parse_config_dir_from_argv,
+    parse_clean_argv,
     require_config_value,
 )
 
@@ -27,5 +28,6 @@ __all__ = [
     "load_yaml_mapping",
     "merge_yaml_mappings",
     "parse_config_dir_from_argv",
+    "parse_clean_argv",
     "require_config_value",
 ]

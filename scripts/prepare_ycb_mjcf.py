@@ -56,7 +56,7 @@ def convert_ycb_to_mjcf(ycb_root: Path, output_root: Path) -> list[Path]:
             '    <compiler angle="radian"/>\n'
             f'    <asset><mesh name="{object_id}_mesh" file="{mesh_dir}/{mesh.name}"/></asset>\n'
             "    <worldbody>\n"
-            f'        <body name="{object_id}" pos="0.5 0 0.1">\n'
+            f'        <body name="{object_id}" pos="0.5 0 0.3">\n'
             "            <freejoint/>\n"
             f'            <geom name="{object_id}_geom" type="mesh" mesh="{object_id}_mesh"/>\n'
             "        </body>\n"

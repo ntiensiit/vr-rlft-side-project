@@ -20,3 +20,10 @@ diffusion:
   beta_start: 1.0e-4
   beta_end: 0.02
   num_steps: 100
+
+model:
+  checkpoint: ${diffusion.checkpoint}
+  inference_steps: ${diffusion.inference_steps}
+  exports:
+    simulation_report: ${diffusion.exports.simulation_report}
+

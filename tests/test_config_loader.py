@@ -218,12 +218,19 @@ def test_parse_config_overrides_from_argv() -> None:
         "--config-name",
         "training/diffusion",
         "--config-dir=other",
+        "--config-name=other",
         "--epochs",
         "10",
         "seed=42",
         "training.batch_size=8",
     ]
     assert parse_config_overrides_from_argv(argv) == ["seed=42", "training.batch_size=8"]
+
+
+def test_load_project_yaml_config_invalid_name_raises() -> None:
+    """Verify that an invalid config entrypoint name raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError, match="Hydra config entrypoint not found"):
+        load_project_yaml_config(Path("configs"), config_name="nonexistent_config")
 
 
 def test_config_get_returns_default_for_missing_path() -> None:
