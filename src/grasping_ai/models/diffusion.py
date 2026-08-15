@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 
 import torch
 
 from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
+from grasping_ai.models.mlp import build_mish_mlp
 
 DiffusionScoreModel = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
 DiffusionSampler = Callable[
@@ -22,15 +25,8 @@ class ScoreNetwork(torch.nn.Module):
             torch.nn.Linear(hidden_dim, hidden_dim),
         )
 
-        layers: list[torch.nn.Module] = []
-        in_dim = 9 + hidden_dim + feature_dim
-        for _ in range(num_layers - 1):
-            layers.append(torch.nn.Linear(in_dim, hidden_dim))
-            layers.append(torch.nn.Mish())
-            in_dim = hidden_dim
-
-        layers.append(torch.nn.Linear(in_dim, 9))
-        self.mlp = torch.nn.Sequential(*layers)
+        mlp_in_dim = 9 + hidden_dim + feature_dim
+        self.mlp = build_mish_mlp(mlp_in_dim, hidden_dim, 9, num_layers)
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, conditioning: torch.Tensor) -> torch.Tensor:
         """Forward pass of the score network."""
@@ -46,6 +42,7 @@ class GraspGeneratorModel(torch.nn.Module):
     """Complete generative model holding encoder and score network."""
 
     def __init__(self, feature_dim: int, hidden_dim: int, num_layers: int) -> None:
+        """Initialize the diffusion grasp generator."""
         super().__init__()
         self.feature_dim = feature_dim
         self.hidden_dim = hidden_dim
@@ -58,6 +55,26 @@ class GraspGeneratorModel(torch.nn.Module):
     def forward(self, x: torch.Tensor, t: torch.Tensor, conditioning: torch.Tensor) -> torch.Tensor:
         """Forward pass forwarding to the score network."""
         return self.score_net(x, t, conditioning)
+
+    def condition(self, point_clouds: torch.Tensor) -> torch.Tensor:
+        """Encode a batch of point clouds into pooled conditioning features.
+
+        Runs the equivariant encoder and mean-pools per-point features into an
+        SE(3)-invariant object descriptor for the diffusion score network.
+
+        Args:
+            point_clouds: Batched point cloud with shape ``(B, N, 3)``.
+
+        Returns:
+            Pooled conditioning features with shape ``(B, feature_dim)``.
+        """
+        from grasping_ai.models.equivariant_encoder import (
+            encode_point_cloud,
+            pool_object_features,
+        )
+
+        features = encode_point_cloud(self.encoder, point_clouds)
+        return pool_object_features(features)
 
 
 def build_score_network(feature_dim: int, hidden_dim: int, num_layers: int) -> DiffusionScoreModel:

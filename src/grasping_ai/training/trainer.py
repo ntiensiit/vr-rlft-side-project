@@ -1,12 +1,47 @@
+from __future__ import annotations
+
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
 import torch
+from loguru import logger
+
+from grasping_ai.training.experiment_logging import (
+    try_log_mlflow_artifact,
+    try_log_mlflow_metric,
+    try_log_mlflow_param,
+)
+from grasping_ai.utils.path_validation import require_path
 
 BatchSource = Iterable[tuple[torch.Tensor, torch.Tensor]] | Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]]
 OptimizerFactory = Callable[[Iterator[torch.nn.Parameter]], torch.optim.Optimizer]
-TrainingStep = Callable[[torch.Tensor, torch.Tensor], dict[str, float]]
 LossForward = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+
+
+class SupervisedTrainingStep:
+    """Callable supervised training step that retains model and optimizer references."""
+
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+        device: str,
+        forward_fn: LossForward,
+    ) -> None:
+        """Initialize a supervised step from model, optimizer, and forward logic."""
+        self.model = model
+        self.optimizer = optimizer
+        self._device = torch.device(device)
+        self._forward_fn = forward_fn
+
+    def __call__(self, inputs: torch.Tensor, targets: torch.Tensor) -> dict[str, float]:
+        """Run one supervised optimization step and return scalar metrics."""
+        self.model.train()
+        self.optimizer.zero_grad()
+        loss = self._forward_fn(inputs.to(self._device), targets.to(self._device))
+        loss.backward()
+        self.optimizer.step()
+        return {"loss": float(loss.item())}
 
 
 def build_supervised_training_step(
@@ -14,21 +49,9 @@ def build_supervised_training_step(
     optimizer: torch.optim.Optimizer,
     device: str,
     forward_fn: LossForward,
-) -> TrainingStep:
+) -> SupervisedTrainingStep:
     """Build a generic supervised step closure with pluggable forward/loss logic."""
-    device_obj = torch.device(device)
-
-    def step(inputs: torch.Tensor, targets: torch.Tensor) -> dict[str, float]:
-        model.train()
-        optimizer.zero_grad()
-        loss = forward_fn(inputs.to(device_obj), targets.to(device_obj))
-        loss.backward()
-        optimizer.step()
-        return {"loss": float(loss.item())}
-
-    step.model = model  # type: ignore[attr-defined]
-    step.optimizer = optimizer  # type: ignore[attr-defined]
-    return step
+    return SupervisedTrainingStep(model, optimizer, device, forward_fn)
 
 
 def build_adam_optimizer(parameters: Iterator[torch.nn.Parameter], learning_rate: float) -> torch.optim.Optimizer:
@@ -52,7 +75,7 @@ def build_training_step(
     optimizer: torch.optim.Optimizer,
     device: str,
     seed: int | None = None,
-) -> TrainingStep:
+) -> SupervisedTrainingStep:
     """Build a callable training step closure over a model and optimizer.
 
     Args:
@@ -93,7 +116,7 @@ def build_training_step(
 
 
 def run_training_loop(
-    training_step: TrainingStep,
+    training_step: SupervisedTrainingStep,
     dataloader: BatchSource,
     num_epochs: int,
     checkpoint_path: Path,
@@ -115,8 +138,6 @@ def run_training_loop(
         metadata: Optional dictionary of experiment hyperparameters/run metadata.
         seed: Optional training seed to record in the checkpoint.
     """
-    from loguru import logger
-
     writer = None
     if experiment_log_dir is not None:
         from torch.utils.tensorboard import SummaryWriter
@@ -125,15 +146,8 @@ def run_training_loop(
         if metadata:
             for k, v in metadata.items():
                 writer.add_text(f"metadata/{k}", str(v), global_step=0)
-
-    try:
-        import mlflow
-        if mlflow.active_run() and metadata:
-            # Flatten or format metadata values for MLflow parameters
             for k, v in metadata.items():
-                mlflow.log_param(k, str(v))
-    except ImportError:
-        pass
+                try_log_mlflow_param(k, str(v))
 
     try:
         step_count = 0
@@ -155,26 +169,19 @@ def run_training_loop(
                     logger.info("Epoch {}, Step {}: Loss = {:.4f}", epoch, step_count, loss_val)
                     if writer is not None:
                         writer.add_scalar("loss", float(loss_val), global_step=step_count)
-                    try:
-                        import mlflow
-                        if mlflow.active_run():
-                            mlflow.log_metric("loss", float(loss_val), step=step_count)
-                    except ImportError:
-                        pass
+                    try_log_mlflow_metric("loss", float(loss_val), step_count)
     finally:
         if writer is not None:
             writer.close()
 
-    model = getattr(training_step, "model", None)
-    optimizer = getattr(training_step, "optimizer", None)
-    if model is not None and optimizer is not None:
-        save_training_checkpoint(model, optimizer, num_epochs, checkpoint_path, seed)
-        try:
-            import mlflow
-            if mlflow.active_run():
-                mlflow.log_artifact(str(checkpoint_path))
-        except ImportError:
-            pass
+    save_training_checkpoint(
+        training_step.model,
+        training_step.optimizer,
+        num_epochs,
+        checkpoint_path,
+        seed,
+    )
+    try_log_mlflow_artifact(str(checkpoint_path))
 
 
 def save_training_checkpoint(
@@ -193,8 +200,7 @@ def save_training_checkpoint(
         checkpoint_path: Destination file path for the checkpoint.
         seed: Optional training seed to record in the checkpoint.
     """
-    if not isinstance(checkpoint_path, Path):
-        raise TypeError("checkpoint_path must be a pathlib.Path instance")
+    require_path(checkpoint_path, "checkpoint_path")
 
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -236,8 +242,7 @@ def load_training_checkpoint(
     Returns:
         The epoch index recorded in the checkpoint.
     """
-    if not isinstance(checkpoint_path, Path):
-        raise TypeError("checkpoint_path must be a pathlib.Path instance")
+    require_path(checkpoint_path, "checkpoint_path")
 
     from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 

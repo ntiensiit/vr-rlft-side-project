@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import torch
@@ -18,7 +20,7 @@ class DiffusionSchedule:
     num_steps: int = 100
 
     @classmethod
-    def load_from_config(cls, cfg: dict[str, object]) -> "DiffusionSchedule":
+    def load_from_config(cls, cfg: dict[str, object]) -> DiffusionSchedule:
         """Load DiffusionSchedule parameters from a configuration dictionary.
 
         Args:

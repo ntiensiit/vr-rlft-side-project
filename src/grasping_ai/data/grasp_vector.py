@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import numpy as np
 import torch
+
+from grasping_ai.utils.numerics import TORCH_NORM_CLAMP_MIN
 
 
 def se3_to_vec(t_matrix: np.ndarray) -> np.ndarray:
@@ -43,10 +47,10 @@ def vec_to_se3(x: torch.Tensor) -> torch.Tensor:
     a1 = v[:, :3]
     a2 = v[:, 3:]
 
-    b1 = a1 / torch.norm(a1, dim=-1, keepdim=True).clamp(min=1e-8)
+    b1 = a1 / torch.norm(a1, dim=-1, keepdim=True).clamp(min=TORCH_NORM_CLAMP_MIN)
     dot = torch.sum(b1 * a2, dim=-1, keepdim=True)
     u2 = a2 - dot * b1
-    b2 = u2 / torch.norm(u2, dim=-1, keepdim=True).clamp(min=1e-8)
+    b2 = u2 / torch.norm(u2, dim=-1, keepdim=True).clamp(min=TORCH_NORM_CLAMP_MIN)
     b3 = torch.cross(b1, b2, dim=-1)
 
     rot = torch.stack([b1, b2, b3], dim=-1)

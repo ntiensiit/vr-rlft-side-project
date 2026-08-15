@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
@@ -16,7 +17,9 @@ from grasping_ai.models.rl_policy import (
     RL_CHECKPOINT_FORMAT_VERSION,
     RL_POLICY_ARCHITECTURE,
     build_policy_network,
+    build_sb3_net_arch,
     build_value_network,
+    copy_sb3_policy_weights,
     read_rl_policy_metadata,
     save_rl_policy_checkpoint,
     select_action,
@@ -398,6 +401,45 @@ def test_read_rl_policy_metadata():
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         metadata = read_rl_policy_metadata(checkpoint)
         assert metadata == (3, 1, 8, 2)
+
+
+class _FakeSB3Policy(torch.nn.Module):
+    """Minimal SB3 MlpPolicy stand-in for weight-copy tests."""
+
+    def __init__(self, observation_dim: int, action_dim: int, hidden_dim: int, num_layers: int) -> None:
+        super().__init__()
+        policy_layers: list[torch.nn.Module] = []
+        in_dim = observation_dim
+        for _ in range(num_layers):
+            policy_layers.append(torch.nn.Linear(in_dim, hidden_dim))
+            policy_layers.append(torch.nn.Tanh())
+            in_dim = hidden_dim
+        self.mlp_extractor = torch.nn.Module()
+        self.mlp_extractor.policy_net = torch.nn.Sequential(*policy_layers)
+        self.action_net = torch.nn.Linear(hidden_dim, action_dim)
+
+
+def test_copy_sb3_policy_weights_copies_all_hidden_layers() -> None:
+    """Verify dynamic SB3-to-legacy weight copy for variable hidden depth."""
+    for num_layers in (1, 2, 3):
+        sb3_policy = _FakeSB3Policy(4, 2, 16, num_layers)
+        legacy_policy = build_policy_network(4, 2, 16, num_layers)
+        copy_sb3_policy_weights(sb3_policy, legacy_policy)
+
+        sb3_hidden = [m for m in sb3_policy.mlp_extractor.policy_net if isinstance(m, torch.nn.Linear)]
+        legacy_hidden = [m for m in legacy_policy if isinstance(m, torch.nn.Linear)][:-1]
+        for sb3_layer, legacy_layer in zip(sb3_hidden, legacy_hidden, strict=True):
+            assert torch.allclose(sb3_layer.weight, legacy_layer.weight)
+            assert torch.allclose(sb3_layer.bias, legacy_layer.bias)
+
+        legacy_output = [m for m in legacy_policy if isinstance(m, torch.nn.Linear)][-1]
+        assert torch.allclose(sb3_policy.action_net.weight, legacy_output.weight)
+        assert torch.allclose(sb3_policy.action_net.bias, legacy_output.bias)
+
+
+def test_build_sb3_net_arch_matches_policy_depth() -> None:
+    """Verify SB3 net_arch depth tracks policy_num_layers."""
+    assert build_sb3_net_arch(64, 3) == {"pi": [64, 64, 64], "vf": [64, 64, 64]}
 
 
 def test_read_rl_policy_metadata_legacy_checkpoint_returns_none():

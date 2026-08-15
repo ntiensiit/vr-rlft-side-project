@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import cast
 
 import numpy as np
 import torch
+from loguru import logger
 
 from grasping_ai.data.grasp_vector import se3_to_vec
 from grasping_ai.data.pointcloud_dataset import (
@@ -10,8 +12,12 @@ from grasping_ai.data.pointcloud_dataset import (
     iterate_grasp_dataset,
     load_grasp_sample,
 )
-from grasping_ai.models.equivariant_encoder import compute_se3_frame, world_transform_from_frame
-from grasping_ai.robotics.transforms import invert_rigid_transform
+from grasping_ai.models.equivariant_encoder import (
+    compute_se3_frame,
+    invert_rigid_transform_batch,
+    world_transform_from_frame,
+)
+from grasping_ai.utils.path_validation import require_path
 
 
 def validate_grasp_dataset(dataset_root: Path) -> int:
@@ -27,20 +33,11 @@ def validate_grasp_dataset(dataset_root: Path) -> int:
         TypeError: If ``dataset_root`` is not a ``pathlib.Path`` instance.
         ValueError: If no valid grasp samples are found.
     """
-    if not isinstance(dataset_root, Path):
-        raise TypeError("dataset_root must be a pathlib.Path instance")
-    try:
-        count = sum(1 for _ in iterate_grasp_dataset(dataset_root))
-    except ValueError as e:
-        if "empty_dataset_handling" in str(dataset_root):
-            raise ValueError(f"Dataset at {dataset_root} contains no valid grasp samples") from e
-        raise
+    require_path(dataset_root, "dataset_root")
+    count = sum(1 for _ in iterate_grasp_dataset(dataset_root))
     if count == 0:
         raise ValueError(f"Dataset at {dataset_root} contains no valid grasp samples")
     return count
-
-
-count_supervised_training_pairs = validate_grasp_dataset
 
 
 def build_supervised_training_pairs(
@@ -77,15 +74,9 @@ def build_supervised_training_pairs(
         ValueError: If the dataset is empty, a record has no grasp poses, or
             augmentation removes all grasp poses for a record.
     """
-    if not isinstance(dataset_root, Path):
-        raise TypeError("dataset_root must be a pathlib.Path instance")
+    require_path(dataset_root, "dataset_root")
 
-    try:
-        records = discover_dataset_files(dataset_root)
-    except ValueError as e:
-        if "empty_dataset_handling" in str(dataset_root):
-            raise ValueError("Dataset is empty") from e
-        raise
+    records = discover_dataset_files(dataset_root)
 
     if not records:
         raise ValueError("Dataset is empty")
@@ -137,7 +128,7 @@ def build_supervised_training_pairs(
         pc_t = torch.from_numpy(pc).float()
         frame, centroid = compute_se3_frame(pc_t.unsqueeze(0))
         world = world_transform_from_frame(frame, centroid)[0]
-        world_inv = torch.from_numpy(invert_rigid_transform(world.detach().cpu().numpy())).float()
+        world_inv = invert_rigid_transform_batch(world.unsqueeze(0))[0]
 
         score_values: np.ndarray | None = None
         if isinstance(scores, np.ndarray) and scores.shape[0] == len(grasp_poses):
@@ -148,8 +139,8 @@ def build_supervised_training_pairs(
             max_score = float(np.max(score_values[grasp_indices]))
 
         for grasp_index in grasp_indices:
-            t_matrix = grasp_poses[grasp_index]
-            t_tensor = torch.from_numpy(cast(np.ndarray, t_matrix)).float()
+            t_matrix = np.asarray(grasp_poses[grasp_index], dtype=np.float32)
+            t_tensor = torch.from_numpy(t_matrix).float()
             canonical = world_inv @ t_tensor @ world
             t_vec = se3_to_vec(canonical.numpy())
             pair = (pc_t, torch.from_numpy(t_vec).float())
@@ -162,8 +153,6 @@ def build_supervised_training_pairs(
                 )
             for _ in range(repeats):
                 pairs.append(pair)
-
-    from loguru import logger
 
     logger.info(
         "Built {} supervised training pairs from {} records (augment={}, min_grasp_score={})",

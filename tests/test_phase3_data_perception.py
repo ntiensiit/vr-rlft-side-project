@@ -1,3 +1,4 @@
+from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
@@ -555,14 +556,15 @@ def test_data_perception_error_handling(tmp_path):
             np.zeros((2, 3)), np.zeros((2, 3)), num_grasps=1, gripper_width=0.05, strict_alignment_dot=2.0, rng=rng
         )
 
-    # count_supervised_training_pairs and build_supervised_training_pairs validations (empty dataset)
-    from grasping_ai.data.training_pairs import build_supervised_training_pairs, count_supervised_training_pairs
-    empty_dir = tmp_path / "empty_dataset_handling"
+    # validate_grasp_dataset and build_supervised_training_pairs validations (empty dataset)
+    from grasping_ai.data.training_pairs import build_supervised_training_pairs, validate_grasp_dataset
+
+    empty_dir = tmp_path / "empty_dataset"
     empty_dir.mkdir()
-    with pytest.raises(ValueError, match="Dataset is empty"):
+    with pytest.raises(ValueError, match="No dataset record files"):
         build_supervised_training_pairs(empty_dir)
-    with pytest.raises(ValueError, match="contains no valid grasp samples"):
-        count_supervised_training_pairs(empty_dir)
+    with pytest.raises(ValueError, match="No dataset record files"):
+        validate_grasp_dataset(empty_dir)
 
 
 def test_resolve_ycb_object_id_exact_and_fallbacks(tmp_path):

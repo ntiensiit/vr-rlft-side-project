@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 
 from grasping_ai.perception.geometry import apply_transform, invert_transform

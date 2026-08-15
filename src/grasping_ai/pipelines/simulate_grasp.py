@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, cast
 
 import numpy as np
+from loguru import logger
 
 
 def simulate_grasp(
@@ -79,11 +81,14 @@ def simulate_grasp(
         build_forward_kinematics,
         build_inverse_kinematics,
         load_robot_model,
+        robot_model_mj_model,
+        robot_model_nq,
         solve_inverse_kinematics,
     )
     from grasping_ai.robotics.transforms import transform_grasp_pose
     from grasping_ai.simulation.scene import MuJoCoScene, collect_contacts, step_scene
     from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
+    from grasping_ai.utils.numerics import IK_POSE_TOLERANCE
 
     hand_to_contact = panda_hand_to_contact_transform()
     hand_pose = transform_grasp_pose(grasp_pose, invert_transform(hand_to_contact))
@@ -101,16 +106,14 @@ def simulate_grasp(
     mj_data = scene.data
 
     robot_model = load_robot_model(str(robot_xml_path))
-    nq_robot = cast(int, robot_model["nq"])
-    ik_solver = build_inverse_kinematics(robot_model, max_iterations=400, tolerance=1e-3)
+    nq_robot = robot_model_nq(robot_model)
+    ik_solver = build_inverse_kinematics(robot_model, max_iterations=400, tolerance=IK_POSE_TOLERANCE)
     fk_solver = build_forward_kinematics(robot_model)
-    robot_mj = cast(Any, robot_model["model"])
+    robot_mj = robot_model_mj_model(robot_model)
     if int(robot_mj.nkey) > 0:
         initial_joints = np.array(robot_mj.key_qpos[0, :nq_robot], dtype=np.float64)
     else:
         initial_joints = np.zeros(nq_robot)
-
-    from loguru import logger
 
     ik_failed = False
     try:
@@ -178,7 +181,7 @@ def simulate_grasp(
     gripper_model = load_gripper_model(str(robot_xml_path))
     gripper_model["model"] = mj_model
     gripper_model["data"] = mj_data
-    nu_robot = cast(int, mj_model.nu)
+    nu_robot = int(mj_model.nu)
 
     gripper_ids = gripper_actuator_indices(mj_model)
     if gripper_ids:

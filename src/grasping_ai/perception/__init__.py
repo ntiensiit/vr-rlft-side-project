@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from grasping_ai.perception.geometry import (
     apply_transform,
     grasp_pose_to_transform,

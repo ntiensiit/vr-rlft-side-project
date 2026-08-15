@@ -1,3 +1,4 @@
+from __future__ import annotations
 import tempfile
 from pathlib import Path
 
@@ -529,8 +530,8 @@ def test_load_contact_set_1d_array(tmp_path: Path) -> None:
     path = tmp_path / "1d_contacts.npy"
     np.save(path, payload, allow_pickle=True)
     loaded = load_contact_set(path)
-    assert isinstance(loaded, dict)
-    assert "position" in loaded
+    assert len(loaded) == 1
+    assert "position" in loaded[0]
 
 
 def test_evaluate_generated_grasps_validations_and_contact_path(tmp_path: Path) -> None:

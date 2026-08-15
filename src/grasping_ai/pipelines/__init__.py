@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from grasping_ai.pipelines.evaluate import (
     aggregate_evaluation_results,
     evaluate_generated_grasps,

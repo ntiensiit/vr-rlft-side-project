@@ -1,7 +1,12 @@
+from __future__ import annotations
+
 from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
+from loguru import logger
+
+from grasping_ai.utils.path_validation import require_path
 
 PointCloudBatch = np.ndarray
 
@@ -18,8 +23,7 @@ def acquire_point_cloud_from_observation(observation_path: Path) -> np.ndarray:
     Raises:
         FileNotFoundError: If ``observation_path`` does not exist.
     """
-    if not isinstance(observation_path, Path):
-        raise TypeError("observation_path must be a pathlib.Path instance")
+    require_path(observation_path, "observation_path")
     if not observation_path.exists():
         raise FileNotFoundError(f"Observation path '{observation_path}' does not exist")
     try:
@@ -30,7 +34,6 @@ def acquire_point_cloud_from_observation(observation_path: Path) -> np.ndarray:
         raise ValueError("Invalid observation shape: expected (N, 3)")
     if not np.isfinite(pts).all():
         raise ValueError("Observation point cloud contains non-finite values")
-    from loguru import logger
 
     logger.info("Acquired point cloud observation from: {} (shape={})", observation_path, pts.shape)
     return pts
@@ -89,8 +92,7 @@ def sample_point_cloud_from_mesh(mesh_path: Path, num_samples: int, rng: np.rand
     Returns:
         A point cloud with shape ``(num_samples, 3)``.
     """
-    if not isinstance(mesh_path, Path):
-        raise TypeError("mesh_path must be a pathlib.Path instance")
+    require_path(mesh_path, "mesh_path")
     if not mesh_path.exists():
         raise FileNotFoundError(f"Mesh file '{mesh_path}' does not exist")
     if not isinstance(num_samples, int) or num_samples <= 0:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import re
 import tempfile
@@ -18,6 +20,7 @@ from grasping_ai.simulation.mujoco_env import (
     read_body_pose,
     set_actuator_controls,
 )
+from grasping_ai.utils.path_validation import require_optional_path, require_path
 
 SceneCommand = Callable[[], None]
 
@@ -33,10 +36,9 @@ def _resolve_scene_output_dir(output_dir: Path | None) -> Path:
         Path to an existing writable output directory.
     """
     if output_dir is not None:
-        if not isinstance(output_dir, Path):
-            raise TypeError("output_dir must be a pathlib.Path instance or None")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        return output_dir
+        validated = require_path(output_dir, "output_dir")
+        validated.mkdir(parents=True, exist_ok=True)
+        return validated
 
     temp_root = Path(tempfile.gettempdir()) / "grasping_ai_scenes"
     temp_root.mkdir(parents=True, exist_ok=True)
@@ -91,12 +93,9 @@ def build_scene_xml(
     Returns:
         Path to the assembled scene XML file written to disk.
     """
-    if not isinstance(robot_xml_path, Path):
-        raise TypeError("robot_xml_path must be a pathlib.Path instance")
-    if not isinstance(object_xml_path, Path):
-        raise TypeError("object_xml_path must be a pathlib.Path instance")
-    if table_xml_path is not None and not isinstance(table_xml_path, Path):
-        raise TypeError("table_xml_path must be a pathlib.Path instance or None")
+    require_path(robot_xml_path, "robot_xml_path")
+    require_path(object_xml_path, "object_xml_path")
+    require_optional_path(table_xml_path, "table_xml_path")
     if object_name is not None and not isinstance(object_name, str):
         raise TypeError("object_name must be a string or None")
 
@@ -192,8 +191,7 @@ def attach_object_to_scene(
     """
     if not isinstance(state, dict) or "model" not in state or "data" not in state:
         raise TypeError("state must be a simulation state dictionary")
-    if not isinstance(object_xml_path, Path):
-        raise TypeError("object_xml_path must be a pathlib.Path instance")
+    require_path(object_xml_path, "object_xml_path")
     if not isinstance(object_name, str):
         raise TypeError("object_name must be a string")
 
@@ -343,16 +341,12 @@ class MuJoCoScene:
         scene_output_dir: Path | None = None,
     ) -> None:
         """Initialize the scene by composing the supplied MJCF files."""
-        if not isinstance(robot_xml_path, Path):
-            raise TypeError("robot_xml_path must be a pathlib.Path instance")
-        if object_xml_path is not None and not isinstance(object_xml_path, Path):
-            raise TypeError("object_xml_path must be a pathlib.Path instance or None")
-        if table_xml_path is not None and not isinstance(table_xml_path, Path):
-            raise TypeError("table_xml_path must be a pathlib.Path instance or None")
+        require_path(robot_xml_path, "robot_xml_path")
+        require_optional_path(object_xml_path, "object_xml_path")
+        require_optional_path(table_xml_path, "table_xml_path")
         if object_name is not None and not isinstance(object_name, str):
             raise TypeError("object_name must be a string or None")
-        if scene_output_dir is not None and not isinstance(scene_output_dir, Path):
-            raise TypeError("scene_output_dir must be a pathlib.Path instance or None")
+        require_optional_path(scene_output_dir, "scene_output_dir")
 
         self.robot_xml_path = robot_xml_path
         self.object_xml_path = object_xml_path

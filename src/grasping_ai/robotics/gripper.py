@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
+from loguru import logger
 
 
 def panda_hand_to_contact_transform() -> np.ndarray:
@@ -58,8 +61,6 @@ def gripper_actuator_indices(mj_model: Any) -> list[int]:
             jname = (mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_id) or "").lower()
             if "finger" in jname or "gripper" in jname:
                 indices.append(i)
-    from loguru import logger
-
     logger.info("Found gripper actuator indices: {}", indices)
     return indices
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from grasping_ai.inference.grasp_generator import (
     build_diffusion_grasp_generator,
     build_flow_grasp_generator,

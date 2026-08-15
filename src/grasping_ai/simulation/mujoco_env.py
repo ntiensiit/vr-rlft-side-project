@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +16,7 @@ from grasping_ai.config.yaml_loader import (
     parse_config_dir_from_argv,
 )
 from grasping_ai.perception.geometry import make_transform
+from grasping_ai.utils.path_validation import require_path
 
 SimulationStep = Callable[[float], None]
 ContactReporter = Callable[[], list[dict[str, np.ndarray]]]
@@ -47,7 +50,7 @@ class RewardConfig:
     terminate_on_non_finite: bool = True
 
     @classmethod
-    def load_from_config(cls, cfg: dict[str, object]) -> "RewardConfig":
+    def load_from_config(cls, cfg: dict[str, object]) -> RewardConfig:
         """Load RewardConfig parameters from a configuration dictionary.
 
         Args:
@@ -77,8 +80,7 @@ def load_mujoco_model(model_xml_path: Path) -> object:
     Returns:
         An opaque simulation model object usable by other simulation helpers.
     """
-    if not isinstance(model_xml_path, Path):
-        raise TypeError("model_xml_path must be a pathlib.Path instance")
+    require_path(model_xml_path, "model_xml_path")
     if not model_xml_path.is_file():
         raise FileNotFoundError(f"Model XML file not found at: {model_xml_path}")
 
@@ -319,8 +321,7 @@ class MuJoCoGraspingEnv(gym.Env):
         """
         super().__init__()
 
-        if not isinstance(robot_xml_path, Path):
-            raise TypeError("robot_xml_path must be a pathlib.Path instance")
+        require_path(robot_xml_path, "robot_xml_path")
         if object_name is not None and not isinstance(object_name, str):
             raise TypeError("object_name must be a string or None")
         if reward_config is not None and not isinstance(reward_config, RewardConfig):

@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 
 import numpy as np
 
 from grasping_ai.perception.pointcloud import build_kdtree
 from grasping_ai.robotics.transforms import transform_between_frames
+from grasping_ai.utils.numerics import NORM_EPS
 
 CollisionChecker = Callable[[np.ndarray], bool]
 
@@ -145,13 +148,13 @@ def generate_analytical_contacts(
     contacts = []
     # Using absolute tolerance to avoid edge issues with floating point
     for i, dist in enumerate(dists):
-        if dist <= contact_clearance + 1e-8:
+        if dist <= contact_clearance + NORM_EPS:
             obj_pt = object_point_cloud[idxs[i]]
             grip_pt = transformed_gripper[i]
 
             diff = obj_pt - grip_pt
             diff_norm = np.linalg.norm(diff)
-            if diff_norm > 1e-8:
+            if diff_norm > NORM_EPS:
                 normal = diff / diff_norm
             else:
                 normal = np.array([0.0, 0.0, 1.0])

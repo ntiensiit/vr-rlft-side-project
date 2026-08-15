@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import json
 from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
+from loguru import logger
 
 from grasping_ai.evaluation.collision import (
     build_collision_checker,
@@ -18,6 +21,7 @@ from grasping_ai.evaluation.force_closure import (
     load_contact_set,
 )
 from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
+from grasping_ai.utils.path_validation import require_path
 
 
 def evaluate_generated_grasps(
@@ -70,8 +74,6 @@ def evaluate_generated_grasps(
         raise ValueError("clearance must be non-negative")
     if wrench_regularization < 0:
         raise ValueError("wrench_regularization must be non-negative")
-
-    from loguru import logger
 
     collision_checker = build_collision_checker(object_point_cloud, gripper_point_cloud, clearance=clearance)
     logger.info("Evaluating {} grasp poses", grasp_poses.shape[0])
@@ -207,8 +209,7 @@ def write_jsonl_records(
         TypeError: If ``output_path`` is not a ``pathlib.Path`` instance.
         ValueError: If writing the file fails.
     """
-    if not isinstance(output_path, Path):
-        raise TypeError("output_path must be a pathlib.Path instance")
+    require_path(output_path, "output_path")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with output_path.open(mode, encoding="utf-8") as fp:
@@ -233,8 +234,7 @@ def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
             line does not decode to a mapping.
         ValueError: If the file cannot be read or parsed.
     """
-    if not isinstance(input_path, Path):
-        raise TypeError("input_path must be a pathlib.Path instance")
+    require_path(input_path, "input_path")
 
     try:
         with input_path.open(encoding="utf-8") as fp:
@@ -279,8 +279,7 @@ def write_evaluation_report(
         TypeError: If ``report_path`` is not a ``pathlib.Path`` instance.
         ValueError: If writing the report fails.
     """
-    if not isinstance(report_path, Path):
-        raise TypeError("report_path must be a pathlib.Path instance")
+    require_path(report_path, "report_path")
 
     records: list[dict[str, object]] = []
     if per_object_results is not None:

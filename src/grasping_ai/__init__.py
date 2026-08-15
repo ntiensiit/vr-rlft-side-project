@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from grasping_ai import (
     data as data,
 )

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from grasping_ai.evaluation.collision import (
     build_collision_checker,
     check_collision,

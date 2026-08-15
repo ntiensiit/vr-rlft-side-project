@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from grasping_ai.config.diffusion import (
     DEFAULT_DIFFUSION_SCHEDULE,
     DiffusionSchedule,

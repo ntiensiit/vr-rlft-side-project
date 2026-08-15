@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Training dataloader re-instantiation; RL env object propagation; simulation judges; artifact-chain object identity; flow encoder checkpoint contract — [ADR-0003](docs/adr/003-flow-checkpoint-joint-encoder.md).
 - GitHub CI pytest on Linux: Mesa/EGL/xvfb, hatch package path, Open3D-before-NumPy in data-prep scripts; pin `torch`/`torchvision` to CPU wheels (no `triton`) so `Adam` → `_disable_dynamo` does not segfault on headless runners.
+- Code-quality pass: batched torch SE(3) inversion; fragile-pattern fixes; TypedDict export; generative-model `condition()` parity; shared MLP builders; `SupervisedTrainingStep`; MLflow logging helpers; antipodal grasp dedup; dynamic SB3 policy weight export; configurable RL PPO hyperparameters; `GraspPoseGenerator` protocol; package-wide `from __future__ import annotations`; RL `PolicyNetwork` typing cleanup; float32 grasp transforms in supervised training pairs; encoder typed as `SE3EquivariantPointNet`; I/O boundary validators replacing boundary `cast()` calls; shared numerics constants and path validation helpers.
 
 ## [0.1.0] - Earlier implementation phases
 

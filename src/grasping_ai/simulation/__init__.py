@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from grasping_ai.simulation.mujoco_env import (
     MuJoCoGraspingEnv as MuJoCoGraspingEnv,
 )

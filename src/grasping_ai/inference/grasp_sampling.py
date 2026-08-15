@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from __future__ import annotations
 
 import numpy as np
 import torch
@@ -28,7 +28,7 @@ def prepare_point_cloud_tensor(point_cloud: np.ndarray, device: str) -> torch.Te
 
 
 def encode_grasp_conditioning(
-    encoder: Callable[[torch.Tensor], torch.Tensor], point_cloud: torch.Tensor
+    encoder: torch.nn.Module, point_cloud: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute SE(3) frame features and pooled conditioning for grasp sampling.
 

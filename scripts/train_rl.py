@@ -71,6 +71,26 @@ if __name__ == "__main__":
         type=float,
         default=float(config_get(cfg, "rl", "gamma")),
     )
+    parser.add_argument(
+        "--n-steps",
+        type=int,
+        default=int(config_get(cfg, "rl", "n_steps")),
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=int(config_get(cfg, "rl", "batch_size")),
+    )
+    parser.add_argument(
+        "--n-epochs",
+        type=int,
+        default=int(config_get(cfg, "rl", "n_epochs")),
+    )
+    parser.add_argument(
+        "--policy-num-layers",
+        type=int,
+        default=int(config_get(cfg, "rl", "policy_num_layers")),
+    )
     parser.add_argument("--device", type=str, default=str(config_get(cfg, "device")))
     parser.add_argument("--seed", type=int, default=int(config_get(cfg, "seed")))
     parser.add_argument(
@@ -106,4 +126,8 @@ if __name__ == "__main__":
         device=args.device,
         seed=args.seed,
         experiment_log_dir=args.experiment_log_dir,
+        n_steps=args.n_steps,
+        batch_size=args.batch_size,
+        n_epochs=args.n_epochs,
+        policy_num_layers=args.policy_num_layers,
     )

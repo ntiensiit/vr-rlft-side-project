@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from grasping_ai.models.diffusion import (
     build_diffusion_sampler as build_diffusion_sampler,
 )

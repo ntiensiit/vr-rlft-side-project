@@ -1,7 +1,65 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, cast
 
 import numpy as np
+from loguru import logger
+
+from grasping_ai.utils.path_validation import require_path
+
+
+def _parse_grasp_dict(data: dict[object, object]) -> dict[str, np.ndarray]:
+    """Validate a pickled object-id to grasp-array mapping.
+
+    Args:
+        data: Raw dictionary loaded from a multi-object grasp file.
+
+    Returns:
+        Mapping from object identifier strings to grasp arrays.
+
+    Raises:
+        TypeError: If any key is not a string or any value is not a
+            ``numpy.ndarray``.
+    """
+    parsed: dict[str, np.ndarray] = {}
+    for key, value in data.items():
+        if not isinstance(key, str):
+            raise TypeError("Grasp dictionary keys must be strings")
+        if not isinstance(value, np.ndarray):
+            raise TypeError(f"Grasp dictionary value for '{key}' must be a numpy array")
+        parsed[key] = value
+    return parsed
+
+
+def _parse_grasp_array(data: object) -> np.ndarray:
+    """Validate a plain grasp pose array payload.
+
+    Args:
+        data: Deserialized grasp file contents.
+
+    Returns:
+        Grasp pose array, typically with shape ``(K, 4, 4)``.
+
+    Raises:
+        TypeError: If ``data`` is not a ``numpy.ndarray``.
+    """
+    if not isinstance(data, np.ndarray):
+        raise TypeError("Grasp file must contain a numpy array or object dictionary")
+    return data
+
+
+def _numpy_pickle_payload(obj: object) -> np.ndarray:
+    """Wrap an arbitrary Python object for ``np.save(..., allow_pickle=True)``.
+
+    Args:
+        obj: Python object to persist, such as a grasp dictionary.
+
+    Returns:
+        Zero-dimensional ``object`` dtype array containing ``obj``.
+    """
+    payload = np.empty((), dtype=object)
+    payload[()] = obj
+    return payload
 
 
 def load_generated_grasps(
@@ -24,10 +82,7 @@ def load_generated_grasps(
         TypeError: If ``grasps_path`` is not a ``pathlib.Path`` instance.
         ValueError: If the file format or ``object_key`` selection is invalid.
     """
-    from loguru import logger
-
-    if not isinstance(grasps_path, Path):
-        raise TypeError("grasps_path must be a pathlib.Path instance")
+    require_path(grasps_path, "grasps_path")
 
     loaded = np.load(grasps_path, allow_pickle=True)
     logger.info("Loaded grasps from: {}", grasps_path)
@@ -37,7 +92,7 @@ def load_generated_grasps(
         data = loaded
 
     if isinstance(data, dict):
-        keyed = cast(dict[str, np.ndarray], data)
+        keyed = _parse_grasp_dict(data)
         if object_key is not None:
             if object_key not in keyed:
                 raise ValueError(f"Object key '{object_key}' not found in grasp dictionary: {list(keyed.keys())}")
@@ -46,7 +101,7 @@ def load_generated_grasps(
             return next(iter(keyed.values()))
         raise ValueError("object_key is required when the grasp file contains multiple objects")
 
-    grasps = cast(np.ndarray, data)
+    grasps = _parse_grasp_array(data)
     if grasps.ndim == 4 and grasps.shape[0] == 1:
         return grasps[0]
     return grasps
@@ -66,14 +121,12 @@ def write_generated_grasps(
         TypeError: If ``output_path`` is not a ``pathlib.Path`` instance.
         ValueError: If writing the file fails.
     """
-    if not isinstance(output_path, Path):
-        raise TypeError("output_path must be a pathlib.Path instance")
+    require_path(output_path, "output_path")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    from loguru import logger
 
     try:
-        np.save(output_path, cast(Any, grasps_by_object), allow_pickle=True)
+        np.save(output_path, _numpy_pickle_payload(grasps_by_object), allow_pickle=True)
         logger.info("Saved generated grasps to: {}", output_path)
     except Exception as e:
         raise ValueError(f"Failed to write generated grasps: {e}") from e
@@ -90,8 +143,7 @@ def write_generated_grasps_array(output_path: Path, grasp_poses: np.ndarray) -> 
         TypeError: If ``output_path`` is not a ``pathlib.Path`` instance.
         ValueError: If ``grasp_poses`` shape is invalid.
     """
-    if not isinstance(output_path, Path):
-        raise TypeError("output_path must be a pathlib.Path instance")
+    require_path(output_path, "output_path")
     if grasp_poses.ndim != 3 or grasp_poses.shape[1:] != (4, 4):
         raise ValueError(f"grasp_poses must have shape (K, 4, 4), got {grasp_poses.shape}")
 

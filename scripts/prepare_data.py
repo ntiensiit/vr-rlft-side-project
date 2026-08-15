@@ -395,6 +395,7 @@ if __name__ == "__main__":
         config_path,
         config_str_list,
         load_project_yaml_config,
+        parse_clean_argv,
         parse_config_dir_from_argv,
         parse_config_name_from_argv,
         parse_config_overrides_from_argv,
@@ -473,7 +474,7 @@ if __name__ == "__main__":
         help="Keep only MuJoCo lift-success grasps (slow; requires MJCF assets).",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(parse_clean_argv())
     if args.output_index is None:
         parser.error(
             "--output-index is required (set in configs/data/default.yaml paths.output_index or pass explicitly)"

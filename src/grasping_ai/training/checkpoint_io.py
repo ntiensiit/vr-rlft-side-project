@@ -1,7 +1,32 @@
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 
 import torch
+
+from grasping_ai.utils.path_validation import require_path
+
+
+def read_checkpoint_model_state_dict(checkpoint: dict[str, Any]) -> dict[str, torch.Tensor] | None:
+    """Extract ``model_state_dict`` tensor entries from a loaded checkpoint.
+
+    Args:
+        checkpoint: Deserialized checkpoint dictionary from ``torch.load``.
+
+    Returns:
+        Mapping from parameter names to tensors when ``model_state_dict`` is
+        present and non-empty; otherwise ``None``.
+    """
+    raw = checkpoint.get("model_state_dict")
+    if not isinstance(raw, dict):
+        return None
+    state = {
+        key: value
+        for key, value in raw.items()
+        if isinstance(key, str) and isinstance(value, torch.Tensor)
+    }
+    return state or None
 
 
 def load_torch_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
@@ -19,8 +44,7 @@ def load_torch_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
         FileNotFoundError: If the checkpoint file does not exist.
         ValueError: If ``torch.load`` fails or the payload is not a dictionary.
     """
-    if not isinstance(checkpoint_path, Path):
-        raise TypeError("checkpoint_path must be a pathlib.Path instance")
+    require_path(checkpoint_path, "checkpoint_path")
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
 

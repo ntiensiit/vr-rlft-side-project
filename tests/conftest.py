@@ -1,3 +1,4 @@
+from __future__ import annotations
 import contextlib
 import sys
 from pathlib import Path

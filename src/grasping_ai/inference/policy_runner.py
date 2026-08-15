@@ -1,16 +1,21 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import torch
 
-from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+from grasping_ai.training.checkpoint_io import (
+    load_torch_checkpoint,
+    read_checkpoint_model_state_dict,
+)
 
 PolicyActionSampler = Callable[[np.ndarray], np.ndarray]
 
 
-def load_rl_policy_checkpoint(checkpoint_path: Path, device: str) -> dict[str, torch.Tensor]:
+def load_rl_policy_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
     """Load an RL policy checkpoint from disk.
 
     Args:
@@ -18,14 +23,18 @@ def load_rl_policy_checkpoint(checkpoint_path: Path, device: str) -> dict[str, t
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
 
     Returns:
-        A mapping from parameter names to tensors representing the policy.
+        Deserialized checkpoint dictionary including ``model_state_dict``.
+
+    Raises:
+        TypeError: If ``checkpoint_path`` is not a ``pathlib.Path`` instance.
+        FileNotFoundError: If the checkpoint file does not exist.
+        ValueError: If ``torch.load`` fails or the payload is not a dictionary.
     """
-    checkpoint = load_torch_checkpoint(checkpoint_path, device)
-    return cast(dict[str, torch.Tensor], checkpoint)
+    return load_torch_checkpoint(checkpoint_path, device)
 
 
 def build_rl_policy_runner(
-    checkpoint: dict[str, torch.Tensor],
+    checkpoint: dict[str, Any],
     observation_dim: int,
     action_dim: int,
     device: str,
@@ -38,7 +47,7 @@ def build_rl_policy_runner(
     """Build a callable that maps observations to robot actions via an RL policy.
 
     Args:
-        checkpoint: Loaded policy parameters.
+        checkpoint: Loaded policy checkpoint dictionary.
         observation_dim: Dimensionality of the observation vector.
         action_dim: Dimensionality of the action vector.
         device: Device identifier on which inference runs.
@@ -63,8 +72,8 @@ def build_rl_policy_runner(
         select_action,
     )
 
-    model_state = cast(dict[str, torch.Tensor], checkpoint.get("model_state_dict"))
-    metadata = read_rl_policy_metadata(cast(dict[str, object], checkpoint))
+    model_state = read_checkpoint_model_state_dict(checkpoint)
+    metadata = read_rl_policy_metadata(checkpoint)
     if metadata is not None:
         ckpt_obs_dim, ckpt_action_dim, hidden_dim, num_layers = metadata
         if ckpt_obs_dim != observation_dim:
@@ -87,11 +96,10 @@ def build_rl_policy_runner(
             num_layers = max(1, len(weight_keys) - 1)
 
     policy = build_policy_network(observation_dim, action_dim, hidden_dim, num_layers)
-    if isinstance(policy, torch.nn.Module):
-        if model_state is not None:
-            policy.load_state_dict(cast(dict[str, Any], model_state))
-        policy.to(torch.device(device))
-        policy.eval()
+    if model_state is not None:
+        policy.load_state_dict(model_state)
+    policy.to(torch.device(device))
+    policy.eval()
 
     clip_low = None if action_low is None else np.asarray(action_low, dtype=np.float64)
     clip_high = None if action_high is None else np.asarray(action_high, dtype=np.float64)

@@ -1,6 +1,7 @@
-from collections.abc import Callable
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import numpy as np
 import torch
@@ -16,7 +17,21 @@ from grasping_ai.training.checkpoint_io import (
     load_torch_checkpoint,
 )
 
-GraspPoseGenerator = Callable[[np.ndarray, int], np.ndarray]
+
+class GraspPoseGenerator(Protocol):
+    """Callable protocol for point-cloud grasp generation."""
+
+    def __call__(self, point_cloud: np.ndarray, num_grasps: int = 10) -> np.ndarray:
+        """Generate grasp poses from an object point cloud.
+
+        Args:
+            point_cloud: Object point cloud with shape ``(N, 3)``.
+            num_grasps: Number of candidate grasps to sample.
+
+        Returns:
+            Grasp transforms with shape ``(K, 4, 4)`` where ``K <= num_grasps``.
+        """
+        ...
 
 
 def load_grasp_model_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:

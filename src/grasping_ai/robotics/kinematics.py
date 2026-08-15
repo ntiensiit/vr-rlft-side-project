@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -6,6 +8,7 @@ import mujoco  # type: ignore[import-untyped]
 import numpy as np
 import pytransform3d.rotations as pr
 import pytransform3d.transformations as pt
+from loguru import logger
 
 from grasping_ai.perception.geometry import make_transform
 
@@ -33,8 +36,6 @@ def _resolve_end_effector_body_name(model: Any, robot_model: dict[str, object]) 
                 break
         if ee_body_name is None:
             ee_body_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.nbody - 1)
-    from loguru import logger
-
     logger.info("Resolved end-effector body name: {}", ee_body_name)
     return str(ee_body_name)
 
@@ -85,6 +86,42 @@ def load_robot_model(robot_description_path: str) -> dict[str, object]:
         "nq": model.nq,
         "nv": model.nv,
     }
+
+
+def robot_model_nq(robot_model: dict[str, object]) -> int:
+    """Return joint count from a ``load_robot_model`` dictionary.
+
+    Args:
+        robot_model: Robot model dictionary returned by ``load_robot_model``.
+
+    Returns:
+        Number of generalized coordinates ``nq`` for the robot.
+
+    Raises:
+        TypeError: If ``robot_model['nq']`` is not an ``int``.
+    """
+    nq = robot_model.get("nq")
+    if not isinstance(nq, int):
+        raise TypeError("robot_model['nq'] must be int")
+    return nq
+
+
+def robot_model_mj_model(robot_model: dict[str, object]) -> Any:
+    """Return the MuJoCo model object from a ``load_robot_model`` dictionary.
+
+    Args:
+        robot_model: Robot model dictionary returned by ``load_robot_model``.
+
+    Returns:
+        MuJoCo ``MjModel`` instance stored under the ``"model"`` key.
+
+    Raises:
+        TypeError: If ``robot_model`` does not contain a ``"model"`` entry.
+    """
+    model = robot_model.get("model")
+    if model is None:
+        raise TypeError("robot_model must contain 'model'")
+    return model
 
 
 def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematics:

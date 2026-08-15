@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from pathlib import Path
 
 from loguru import logger
 from theseus import Node, default_tokenizer  # type: ignore[import-untyped]
+
+from grasping_ai.utils.path_validation import require_path
 
 YcbObjectMesh = Path
 
@@ -43,8 +47,7 @@ def build_ycb_object_name_classifier(
         Callable that maps a query string to a directory name, or ``None`` when
         no object profile matches.
     """
-    if not isinstance(ycb_root, Path):
-        raise TypeError("ycb_root must be a pathlib.Path instance")
+    require_path(ycb_root, "ycb_root")
     if not ycb_root.is_dir():
         raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
 
@@ -90,8 +93,7 @@ def list_ycb_objects(ycb_root: Path) -> list[str]:
     Returns:
         Sorted list of YCB object identifiers.
     """
-    if not isinstance(ycb_root, Path):
-        raise TypeError("ycb_root must be a pathlib.Path instance")
+    require_path(ycb_root, "ycb_root")
     if not ycb_root.is_dir():
         raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
 
@@ -112,8 +114,7 @@ def resolve_ycb_object_directory(ycb_root: Path, object_name: str) -> Path:
     Returns:
         Path to the directory containing the YCB object assets.
     """
-    if not isinstance(ycb_root, Path):
-        raise TypeError("ycb_root must be a pathlib.Path instance")
+    require_path(ycb_root, "ycb_root")
     if not isinstance(object_name, str):
         raise TypeError("object_name must be a string")
     if not ycb_root.is_dir():
@@ -164,8 +165,7 @@ def find_ycb_mesh_file(object_dir: Path) -> YcbObjectMesh:
     Returns:
         Path to the mesh file (for example an OBJ) inside ``object_dir``.
     """
-    if not isinstance(object_dir, Path):
-        raise TypeError("object_dir must be a pathlib.Path instance")
+    require_path(object_dir, "object_dir")
     if not object_dir.is_dir():
         raise FileNotFoundError(f"YCB object directory '{object_dir}' does not exist")
 
@@ -200,8 +200,7 @@ def find_ycb_mjcf(object_dir: Path) -> Path:
         TypeError: If ``object_dir`` is not a ``pathlib.Path``.
         FileNotFoundError: If no XML file exists under ``object_dir``.
     """
-    if not isinstance(object_dir, Path):
-        raise TypeError("object_dir must be a pathlib.Path instance")
+    require_path(object_dir, "object_dir")
     if not object_dir.is_dir():
         raise FileNotFoundError(f"YCB object directory '{object_dir}' does not exist")
 

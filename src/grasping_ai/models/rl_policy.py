@@ -1,11 +1,15 @@
-from collections.abc import Callable
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 
 import torch
 
-PolicyNetwork = Callable[[torch.Tensor], torch.Tensor]
-ValueNetwork = Callable[[torch.Tensor], torch.Tensor]
+from grasping_ai.models.mlp import build_tanh_mlp
+from grasping_ai.utils.path_validation import require_path
+
+PolicyNetwork = torch.nn.Sequential
+ValueNetwork = torch.nn.Sequential
 
 RL_CHECKPOINT_FORMAT_VERSION = 1
 RL_POLICY_ARCHITECTURE = "mlp"
@@ -40,6 +44,8 @@ def save_rl_policy_checkpoint(
 
     Raises:
         ValueError: If any dimension is non-positive.
+        TypeError: If ``policy_checkpoint_path`` is not a ``pathlib.Path``
+            instance.
     """
     if observation_dim <= 0:
         raise ValueError("observation_dim must be positive")
@@ -49,8 +55,7 @@ def save_rl_policy_checkpoint(
         raise ValueError("hidden_dim must be positive")
     if num_layers <= 0:
         raise ValueError("num_layers must be positive")
-    if not isinstance(policy_checkpoint_path, Path):
-        raise TypeError("policy_checkpoint_path must be a pathlib.Path instance")
+    require_path(policy_checkpoint_path, "policy_checkpoint_path")
 
     checkpoint: dict[str, Any] = {
         "format_version": RL_CHECKPOINT_FORMAT_VERSION,
@@ -98,6 +103,104 @@ def read_rl_policy_metadata(
         return None
 
 
+def _sequential_linear_layers(module: torch.nn.Module) -> list[torch.nn.Linear]:
+    """Return ``Linear`` submodules in ``Sequential`` child order.
+
+    Args:
+        module: Sequential module whose direct children are inspected.
+
+    Returns:
+        ``Linear`` layers in module child order.
+
+    Raises:
+        TypeError: If ``module`` is not a ``torch.nn.Sequential`` instance.
+    """
+    if not isinstance(module, torch.nn.Sequential):
+        raise TypeError("module must be a torch.nn.Sequential instance")
+    return [child for child in module if isinstance(child, torch.nn.Linear)]
+
+
+def build_sb3_net_arch(hidden_dim: int, num_layers: int) -> dict[str, list[int]]:
+    """Build SB3 ``net_arch`` matching ``build_policy_network`` depth.
+
+    Args:
+        hidden_dim: Width of each hidden layer in the policy and value nets.
+        num_layers: Number of hidden layers to allocate in each network.
+
+    Returns:
+        SB3 ``policy_kwargs['net_arch']`` dictionary with matching ``pi`` and
+        ``vf`` hidden-layer lists.
+
+    Raises:
+        ValueError: If ``hidden_dim`` or ``num_layers`` is non-positive.
+    """
+    if hidden_dim <= 0:
+        raise ValueError("hidden_dim must be positive")
+    if num_layers <= 0:
+        raise ValueError("num_layers must be positive")
+    hidden_layers = [hidden_dim] * num_layers
+    return {"pi": hidden_layers, "vf": hidden_layers}
+
+
+def copy_sb3_policy_weights(
+    sb3_policy: torch.nn.Module,
+    legacy_policy: torch.nn.Module,
+) -> None:
+    """Copy Stable-Baselines3 MlpPolicy weights into a legacy ``Sequential`` policy.
+
+    SB3 stores hidden layers in ``mlp_extractor.policy_net`` and the action
+    head in ``action_net``. The legacy policy from ``build_policy_network``
+    interleaves ``Linear`` and ``Tanh`` layers; this helper maps all hidden
+    ``Linear`` layers dynamically instead of relying on fixed indices.
+
+    Args:
+        sb3_policy: Trained SB3 policy module (``model.policy``).
+        legacy_policy: Target policy returned by ``build_policy_network``.
+
+    Raises:
+        TypeError: If either argument is not a ``torch.nn.Module``.
+        ValueError: If expected SB3 submodules are missing or layer counts differ.
+    """
+    if not isinstance(sb3_policy, torch.nn.Module):
+        raise TypeError("sb3_policy must be a torch.nn.Module instance")
+    if not isinstance(legacy_policy, torch.nn.Module):
+        raise TypeError("legacy_policy must be a torch.nn.Module instance")
+
+    policy_net = getattr(getattr(sb3_policy, "mlp_extractor", None), "policy_net", None)
+    action_net = getattr(sb3_policy, "action_net", None)
+    if policy_net is None or action_net is None:
+        raise ValueError("sb3_policy must expose mlp_extractor.policy_net and action_net")
+    if not isinstance(action_net, torch.nn.Linear):
+        raise TypeError("SB3 action_net must be a Linear layer")
+
+    sb3_hidden = _sequential_linear_layers(policy_net)
+    legacy_linears = _sequential_linear_layers(legacy_policy)
+    if len(legacy_linears) != len(sb3_hidden) + 1:
+        raise ValueError(
+            f"Legacy policy has {len(legacy_linears)} Linear layers but SB3 policy_net "
+            f"has {len(sb3_hidden)} hidden layers"
+        )
+
+    legacy_hidden = legacy_linears[:-1]
+    legacy_output = legacy_linears[-1]
+    for sb3_layer, legacy_layer in zip(sb3_hidden, legacy_hidden, strict=True):
+        if sb3_layer.weight.shape != legacy_layer.weight.shape:
+            raise ValueError(
+                f"Shape mismatch copying SB3 layer {sb3_layer.weight.shape} "
+                f"to legacy layer {legacy_layer.weight.shape}"
+            )
+        legacy_layer.weight.data.copy_(sb3_layer.weight.data)
+        legacy_layer.bias.data.copy_(sb3_layer.bias.data)
+
+    if action_net.weight.shape != legacy_output.weight.shape:
+        raise ValueError(
+            f"Shape mismatch copying SB3 action_net {action_net.weight.shape} "
+            f"to legacy output {legacy_output.weight.shape}"
+        )
+    legacy_output.weight.data.copy_(action_net.weight.data)
+    legacy_output.bias.data.copy_(action_net.bias.data)
+
+
 def build_policy_network(observation_dim: int, action_dim: int, hidden_dim: int, num_layers: int) -> PolicyNetwork:
     """Construct a policy network mapping observations to action distributions.
 
@@ -121,15 +224,7 @@ def build_policy_network(observation_dim: int, action_dim: int, hidden_dim: int,
     if num_layers <= 0:
         raise ValueError("num_layers must be positive")
 
-    layers: list[torch.nn.Module] = []
-    in_dim = observation_dim
-    for _ in range(num_layers):
-        layers.append(torch.nn.Linear(in_dim, hidden_dim))
-        layers.append(torch.nn.Tanh())
-        in_dim = hidden_dim
-    layers.append(torch.nn.Linear(in_dim, action_dim))
-
-    return torch.nn.Sequential(*layers)
+    return build_tanh_mlp(observation_dim, hidden_dim, action_dim, num_layers)
 
 
 def build_value_network(observation_dim: int, hidden_dim: int, num_layers: int) -> ValueNetwork:
@@ -150,15 +245,7 @@ def build_value_network(observation_dim: int, hidden_dim: int, num_layers: int) 
     if num_layers <= 0:
         raise ValueError("num_layers must be positive")
 
-    layers: list[torch.nn.Module] = []
-    in_dim = observation_dim
-    for _ in range(num_layers):
-        layers.append(torch.nn.Linear(in_dim, hidden_dim))
-        layers.append(torch.nn.Tanh())
-        in_dim = hidden_dim
-    layers.append(torch.nn.Linear(in_dim, 1))
-
-    return torch.nn.Sequential(*layers)
+    return build_tanh_mlp(observation_dim, hidden_dim, 1, num_layers)
 
 
 def select_action(

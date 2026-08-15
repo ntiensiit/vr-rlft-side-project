@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import scipy.spatial  # type: ignore[import-untyped]
+
+from grasping_ai.utils.numerics import NORM_EPS
 
 PointCloud = np.ndarray
 FeatureExtractor = Callable[[np.ndarray], np.ndarray]
@@ -149,7 +153,7 @@ def estimate_point_cloud_normals(points: np.ndarray, neighborhood_size: int) -> 
         centered = neighbors - mean
         cov = centered.T @ centered
         eigenvalues, eigenvectors = np.linalg.eigh(cov)
-        if np.sum(np.abs(eigenvalues)) < 1e-8:
+        if np.sum(np.abs(eigenvalues)) < NORM_EPS:
             normal = np.array([0.0, 0.0, 1.0])
         else:
             normal = eigenvectors[:, 0]

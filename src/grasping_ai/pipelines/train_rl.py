@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from pathlib import Path
-from typing import cast
 
 import torch
+
+from grasping_ai.utils.path_validation import require_path
 
 
 def run_rl_training_pipeline(
@@ -18,6 +21,10 @@ def run_rl_training_pipeline(
     device: str,
     seed: int | None = None,
     experiment_log_dir: Path | None = None,
+    n_steps: int = 64,
+    batch_size: int = 64,
+    n_epochs: int = 1,
+    policy_num_layers: int = 2,
 ) -> None:
     """Run an end-to-end RL training pipeline using MuJoCo as the environment.
 
@@ -37,13 +44,16 @@ def run_rl_training_pipeline(
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
         seed: Optional random seed for reproducible policy initialization.
         experiment_log_dir: Optional path to write TensorBoard experiment events.
+        n_steps: PPO rollout length per environment per update.
+        batch_size: PPO minibatch size.
+        n_epochs: Number of PPO optimization epochs per update.
+        policy_num_layers: Hidden-layer count for the exported legacy policy MLP.
     """
-    if not isinstance(robot_xml_path, Path):
-        raise TypeError("robot_xml_path must be a pathlib.Path instance")
+    require_path(robot_xml_path, "robot_xml_path")
     if not robot_xml_path.is_file():
         raise FileNotFoundError(f"Robot XML file not found: {robot_xml_path}")
-    if object_ids and not isinstance(ycb_root, Path):
-        raise TypeError("ycb_root must be a pathlib.Path instance")
+    if object_ids:
+        require_path(ycb_root, "ycb_root")
     if object_ids and not ycb_root.is_dir():
         raise FileNotFoundError(f"YCB root directory not found: {ycb_root}")
     if observation_dim <= 0:
@@ -58,6 +68,14 @@ def run_rl_training_pipeline(
         raise ValueError("num_updates must be positive")
     if not 0.0 <= gamma <= 1.0:
         raise ValueError("gamma must be in [0, 1]")
+    if n_steps <= 0:
+        raise ValueError("n_steps must be positive")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    if n_epochs <= 0:
+        raise ValueError("n_epochs must be positive")
+    if policy_num_layers <= 0:
+        raise ValueError("policy_num_layers must be positive")
     if len(object_ids) > 1:
         raise ValueError(
             "object_ids must contain at most one object; the environment tracks a single object body during RL training"
@@ -107,8 +125,10 @@ def run_rl_training_pipeline(
     if action_dim != act_shape[0]:
         raise ValueError(f"action_dim ({action_dim}) does not match environment action dimension ({act_shape[0]})")
 
+    from grasping_ai.models.rl_policy import build_sb3_net_arch
+
     policy_kwargs = {
-        "net_arch": {"pi": [hidden_dim, hidden_dim], "vf": [hidden_dim, hidden_dim]},
+        "net_arch": build_sb3_net_arch(hidden_dim, policy_num_layers),
         "activation_fn": torch.nn.Tanh,
     }
 
@@ -116,9 +136,9 @@ def run_rl_training_pipeline(
         "MlpPolicy",
         env,
         learning_rate=learning_rate,
-        n_steps=64,
-        batch_size=64,
-        n_epochs=1,
+        n_steps=n_steps,
+        batch_size=batch_size,
+        n_epochs=n_epochs,
         gamma=gamma,
         device=device,
         seed=seed,
@@ -127,33 +147,17 @@ def run_rl_training_pipeline(
         verbose=1,
     )
 
-    total_timesteps = num_updates * 64
+    total_timesteps = num_updates * n_steps
     sb3_model.learn(total_timesteps=total_timesteps)
 
-    from grasping_ai.models.rl_policy import build_policy_network
-
-    legacy_policy = cast(
-        torch.nn.Module,
-        build_policy_network(observation_dim, action_dim, hidden_dim, 2),
+    from grasping_ai.models.rl_policy import (
+        build_policy_network,
+        copy_sb3_policy_weights,
+        save_rl_policy_checkpoint,
     )
-    sb3_policy = sb3_model.policy
-    sb3_pi = sb3_policy.mlp_extractor.policy_net
 
-    layer0 = cast(torch.nn.Linear, sb3_pi[0])
-    layer2 = cast(torch.nn.Linear, sb3_pi[2])
-    action_net = cast(torch.nn.Linear, sb3_policy.action_net)
-
-    legacy_state = legacy_policy.state_dict()
-    legacy_state["0.weight"] = layer0.weight.data.clone()
-    legacy_state["0.bias"] = layer0.bias.data.clone()
-    legacy_state["2.weight"] = layer2.weight.data.clone()
-    legacy_state["2.bias"] = layer2.bias.data.clone()
-    legacy_state["4.weight"] = action_net.weight.data.clone()
-    legacy_state["4.bias"] = action_net.bias.data.clone()
-
-    legacy_policy.load_state_dict(legacy_state)
-
-    from grasping_ai.models.rl_policy import save_rl_policy_checkpoint
+    legacy_policy = build_policy_network(observation_dim, action_dim, hidden_dim, policy_num_layers)
+    copy_sb3_policy_weights(sb3_model.policy, legacy_policy)
 
     save_rl_policy_checkpoint(
         policy=legacy_policy,
@@ -162,6 +166,6 @@ def run_rl_training_pipeline(
         observation_dim=observation_dim,
         action_dim=action_dim,
         hidden_dim=hidden_dim,
-        num_layers=2,
+        num_layers=policy_num_layers,
         seed=seed,
     )

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from grasping_ai.robotics.gripper import (
     load_gripper_model,
     make_close_command,

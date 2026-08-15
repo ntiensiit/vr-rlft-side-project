@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import socket
 from collections.abc import Callable
@@ -6,6 +8,8 @@ from typing import Any
 
 import numpy as np
 from loguru import logger
+
+from grasping_ai.utils.path_validation import require_optional_path, require_path
 
 
 def load_visualization_scene(
@@ -26,12 +30,10 @@ def load_visualization_scene(
     Returns:
         ``(mj_model, mj_data)`` ready for ``mujoco.viewer``.
     """
-    if not isinstance(robot_xml_path, Path):
-        raise TypeError("robot_xml_path must be a pathlib.Path instance")
+    require_path(robot_xml_path, "robot_xml_path")
     if not robot_xml_path.is_file():
         raise FileNotFoundError(f"robot_xml_path not found: {robot_xml_path}")
-    if table_xml_path is not None and not isinstance(table_xml_path, Path):
-        raise TypeError("table_xml_path must be a pathlib.Path instance or None")
+    require_optional_path(table_xml_path, "table_xml_path")
     if table_xml_path is not None and not table_xml_path.is_file():
         raise FileNotFoundError(f"table_xml_path not found: {table_xml_path}")
     if object_id is not None and not isinstance(object_id, str):

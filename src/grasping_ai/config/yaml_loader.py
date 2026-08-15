@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml  # type: ignore[import-untyped]
 
+from grasping_ai.utils.path_validation import require_path
+
 
 def load_yaml_mapping(path: Path) -> dict[str, object]:
     """Load a YAML mapping from disk.
@@ -20,8 +22,7 @@ def load_yaml_mapping(path: Path) -> dict[str, object]:
         FileNotFoundError: If ``path`` does not exist.
         TypeError: If the YAML root is not a mapping.
     """
-    if not isinstance(path, Path):
-        raise TypeError("path must be a pathlib.Path instance")
+    require_path(path, "path")
     if not path.is_file():
         raise FileNotFoundError(f"YAML config file not found: {path}")
     with path.open(encoding="utf-8") as fp:
@@ -95,8 +96,7 @@ def load_project_yaml_config(
             composed root is not a mapping.
         FileNotFoundError: If Hydra cannot find the requested entrypoint YAML.
     """
-    if not isinstance(config_dir, Path):
-        raise TypeError("config_dir must be a pathlib.Path instance")
+    require_path(config_dir, "config_dir")
 
     config_yaml = (config_dir / config_name).with_suffix(".yaml")
     if config_yaml.is_file():

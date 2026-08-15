@@ -1,11 +1,12 @@
-from collections.abc import Callable
+from __future__ import annotations
 
-import numpy as np
 import torch
 
-from grasping_ai.perception.geometry import invert_transform
-
-EquivariantFeatures = torch.Tensor
+from grasping_ai.utils.numerics import (
+    DEGENERATE_COMPONENT_EPS,
+    DEGENERATE_SPAN_EPS,
+    TORCH_DEGENERATE_CLAMP_MIN,
+)
 
 
 def _compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -29,13 +30,13 @@ def _compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor
     rel = points - centroid  # (B, N, 3)
     norms = torch.norm(rel, dim=-1)  # (B, N)
     span = norms.sum(dim=1)  # (B,)
-    degenerate_cloud = span < 1e-12
+    degenerate_cloud = span < DEGENERATE_SPAN_EPS
 
     # u1: direction of the point farthest from the centroid.
     idx_a = norms.argmax(dim=1)  # (B,)
     idx_a_3d = idx_a.view(b_size, 1, 1).expand(-1, 1, 3)
     a = rel.gather(1, idx_a_3d).squeeze(1)  # (B, 3)
-    u1 = a / torch.norm(a, dim=-1, keepdim=True).clamp(min=1e-12)
+    u1 = a / torch.norm(a, dim=-1, keepdim=True).clamp(min=TORCH_DEGENERATE_CLAMP_MIN)
 
     # u2: largest residual component orthogonal to u1.
     proj = torch.einsum("bnk,bk->bn", rel, u1).unsqueeze(-1)  # (B, N, 1)
@@ -45,9 +46,9 @@ def _compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor
     idx_b_3d = idx_b.view(b_size, 1, 1).expand(-1, 1, 3)
     b_vec = residual.gather(1, idx_b_3d).squeeze(1)  # (B, 3)
     b_norm = torch.norm(b_vec, dim=-1)  # (B,)
-    u2 = b_vec / b_norm.clamp(min=1e-12).unsqueeze(-1)
+    u2 = b_vec / b_norm.clamp(min=TORCH_DEGENERATE_CLAMP_MIN).unsqueeze(-1)
 
-    degenerate = b_norm < 1e-9
+    degenerate = b_norm < DEGENERATE_COMPONENT_EPS
     if bool(degenerate.any()):
         # Degenerate (collinear) elements: pick the reference axis least
         # aligned with u1 and orthonormalize it against u1.
@@ -55,7 +56,7 @@ def _compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor
         abs_dot = torch.abs(u1 @ axes)  # (B, 3)
         ref = axes[abs_dot.argmin(dim=1)]  # (B, 3)
         ref = ref - (ref * u1).sum(-1, keepdim=True) * u1
-        fallback = ref / torch.norm(ref, dim=-1, keepdim=True).clamp(min=1e-12)
+        fallback = ref / torch.norm(ref, dim=-1, keepdim=True).clamp(min=TORCH_DEGENERATE_CLAMP_MIN)
         u2 = torch.where(degenerate.unsqueeze(-1), fallback, u2)
 
     u3 = torch.cross(u1, u2, dim=-1)
@@ -115,6 +116,26 @@ def world_transform_from_frame(frame: torch.Tensor, centroid: torch.Tensor) -> t
     return world
 
 
+def invert_rigid_transform_batch(transforms: torch.Tensor) -> torch.Tensor:
+    """Invert batched rigid ``(4, 4)`` SE(3) transformation matrices on device.
+
+    Args:
+        transforms: Homogeneous transforms with shape ``(B, 4, 4)``.
+
+    Returns:
+        Batch of inverse transforms with shape ``(B, 4, 4)``.
+    """
+    rotation = transforms[:, :3, :3]
+    translation = transforms[:, :3, 3]
+    rotation_inv = rotation.mT
+    translation_inv = -(rotation_inv @ translation.unsqueeze(-1)).squeeze(-1)
+    result = torch.zeros_like(transforms)
+    result[:, :3, :3] = rotation_inv
+    result[:, :3, 3] = translation_inv
+    result[:, 3, 3] = 1.0
+    return result
+
+
 def compose_with_se3_frame(transforms: torch.Tensor, frame: torch.Tensor, centroid: torch.Tensor) -> torch.Tensor:
     """Express canonical-frame grasp poses in the input point-cloud frame.
 
@@ -131,12 +152,7 @@ def compose_with_se3_frame(transforms: torch.Tensor, frame: torch.Tensor, centro
         Input-frame grasp transforms with shape ``(B, 4, 4)``.
     """
     world = world_transform_from_frame(frame, centroid)
-    world_inv = torch.from_numpy(
-        np.stack(
-            [invert_transform(world[i].detach().cpu().numpy()) for i in range(world.shape[0])],
-            axis=0,
-        )
-    ).to(device=world.device, dtype=world.dtype)
+    world_inv = invert_rigid_transform_batch(world)
     return torch.matmul(torch.matmul(world, transforms), world_inv)
 
 
@@ -176,7 +192,7 @@ class SE3EquivariantPointNet(torch.nn.Module):
         return features
 
 
-def build_equivariant_encoder(feature_dim: int, num_layers: int) -> Callable[[torch.Tensor], torch.Tensor]:
+def build_equivariant_encoder(feature_dim: int, num_layers: int) -> SE3EquivariantPointNet:
     """Construct a callable SE(3)-equivariant point-cloud encoder.
 
     The encoder projects each centered point onto a deterministic
@@ -195,7 +211,7 @@ def build_equivariant_encoder(feature_dim: int, num_layers: int) -> Callable[[to
     return SE3EquivariantPointNet(feature_dim, num_layers)
 
 
-def encode_point_cloud(encoder: Callable[[torch.Tensor], torch.Tensor], points: torch.Tensor) -> torch.Tensor:
+def encode_point_cloud(encoder: torch.nn.Module, points: torch.Tensor) -> torch.Tensor:
     """Run an SE(3)-equivariant encoder on a batched point cloud.
 
     Args:

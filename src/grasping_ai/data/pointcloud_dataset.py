@@ -1,12 +1,25 @@
+from __future__ import annotations
+
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TypedDict
 
 import numpy as np
+from loguru import logger
 
 from grasping_ai.perception.geometry import make_transform
 from grasping_ai.perception.pointcloud import build_kdtree
+from grasping_ai.utils.numerics import GRASP_DISTANCE_EPS, ROTATION_DET_EPS
+from grasping_ai.utils.path_validation import require_path
 
-type GraspSample = dict[str, np.ndarray | str | None]
+
+class GraspSample(TypedDict):
+    """Single grasp-dataset record loaded from disk."""
+
+    point_cloud: np.ndarray
+    grasp_poses: np.ndarray | None
+    scores: np.ndarray | None
+    object_id: str | None
 
 
 def discover_dataset_files(dataset_root: Path) -> list[Path]:
@@ -18,14 +31,11 @@ def discover_dataset_files(dataset_root: Path) -> list[Path]:
     Returns:
         A sorted list of file paths representing individual dataset records.
     """
-    if not isinstance(dataset_root, Path):
-        raise TypeError("dataset_root must be a pathlib.Path instance")
+    require_path(dataset_root, "dataset_root")
     if not dataset_root.exists():
         raise FileNotFoundError(f"Dataset root directory '{dataset_root}' does not exist")
     if not dataset_root.is_dir():
         raise ValueError(f"Dataset root '{dataset_root}' is not a directory")
-
-    from loguru import logger
 
     records = sorted([p for p in dataset_root.rglob("*.npy") if p.is_file()])
     if not records:
@@ -47,8 +57,7 @@ def load_grasp_sample(record_path: Path) -> GraspSample:
     Raises:
         FileNotFoundError: If ``record_path`` does not exist.
     """
-    if not isinstance(record_path, Path):
-        raise TypeError("record_path must be a pathlib.Path instance")
+    require_path(record_path, "record_path")
     if not record_path.exists():
         raise FileNotFoundError(f"Record file '{record_path}' not found")
     if not record_path.is_file():
@@ -95,8 +104,7 @@ def iterate_grasp_dataset(dataset_root: Path) -> Iterator[GraspSample]:
     Yields:
         ``GraspSample`` records loaded one at a time.
     """
-    if not isinstance(dataset_root, Path):
-        raise TypeError("dataset_root must be a pathlib.Path instance")
+    require_path(dataset_root, "dataset_root")
 
     records = discover_dataset_files(dataset_root)
     for record in records:
@@ -113,8 +121,7 @@ def resolve_ycb_object_id(ycb_root: Path, object_name: str) -> Path:
     Returns:
         Path to the YCB object resource directory or mesh file.
     """
-    if not isinstance(ycb_root, Path):
-        raise TypeError("ycb_root must be a pathlib.Path instance")
+    require_path(ycb_root, "ycb_root")
     if not isinstance(object_name, str):
         raise TypeError("object_name must be a string")
     if not ycb_root.exists():
@@ -129,6 +136,131 @@ def resolve_ycb_object_id(ycb_root: Path, object_name: str) -> Path:
         return find_ycb_mesh_file(object_dir)
     except FileNotFoundError:
         return object_dir
+
+
+def _antipodal_grasp_from_contacts(
+    p_i: np.ndarray,
+    n_i: np.ndarray,
+    p_j: np.ndarray,
+    n_j: np.ndarray,
+    d_unit: np.ndarray,
+    antipodal_dot: float,
+    alignment_dot: float | None = None,
+) -> np.ndarray | None:
+    """Build a single antipodal grasp pose from a contact pair when constraints pass.
+
+    Args:
+        p_i: First contact position.
+        n_i: Outward normal at the first contact.
+        p_j: Second contact position.
+        n_j: Outward normal at the second contact.
+        d_unit: Unit vector from ``p_i`` to ``p_j``.
+        antipodal_dot: Minimum cosine similarity between ``n_i`` and ``-n_j``.
+        alignment_dot: Optional minimum alignment between normals and ``d_unit``.
+
+    Returns:
+        A valid ``(4, 4)`` grasp transform, or ``None`` when constraints fail.
+    """
+    if np.dot(n_i, -n_j) <= antipodal_dot:
+        return None
+    if alignment_dot is not None and (
+        np.dot(n_i, d_unit) <= alignment_dot or np.dot(n_j, -d_unit) <= alignment_dot
+    ):
+        return None
+
+    z_axis = d_unit
+    avg_normal = 0.5 * (n_i + n_j)
+    x_axis = np.cross(z_axis, avg_normal)
+    x_norm = np.linalg.norm(x_axis)
+    if x_norm < GRASP_DISTANCE_EPS:
+        ref = np.array([1.0, 0.0, 0.0])
+        if np.abs(np.dot(ref, z_axis)) > 0.9:
+            ref = np.array([0.0, 1.0, 0.0])
+        x_axis = np.cross(z_axis, ref)
+        x_norm = np.linalg.norm(x_axis)
+    x_axis = x_axis / x_norm
+    y_axis = np.cross(z_axis, x_axis)
+    y_axis = y_axis / np.linalg.norm(y_axis)
+
+    pose = make_transform(
+        np.column_stack([x_axis, y_axis, z_axis]),
+        0.5 * (p_i + p_j),
+    )
+    det = np.linalg.det(pose[:3, :3])
+    if np.abs(det - 1.0) >= ROTATION_DET_EPS:
+        return None
+    return pose
+
+
+def _search_antipodal_grasps(
+    points: np.ndarray,
+    normals: np.ndarray,
+    tree: object,
+    num_grasps: int,
+    gripper_width: float,
+    rng: np.random.Generator,
+    attempts: int,
+    antipodal_dot: float,
+    alignment_dot: float | None = None,
+) -> list[np.ndarray]:
+    """Collect antipodal grasps from randomized contact-pair search.
+
+    Args:
+        points: Point cloud of shape ``(N, 3)``.
+        normals: Point normals of shape ``(N, 3)``.
+        tree: KD-tree built over ``points``.
+        num_grasps: Maximum number of grasps to return.
+        gripper_width: Maximum contact separation distance.
+        rng: Random generator for sampling and shuffling.
+        attempts: Number of random seed contacts to try.
+        antipodal_dot: Antipodal normal cosine threshold.
+        alignment_dot: Optional action-line alignment threshold.
+
+    Returns:
+        List of valid grasp transforms, each with shape ``(4, 4)``.
+    """
+    valid_grasps: list[np.ndarray] = []
+    n = points.shape[0]
+
+    for _ in range(attempts):
+        if len(valid_grasps) >= num_grasps:
+            break
+
+        i = int(rng.choice(n))
+        p_i = points[i]
+        n_i = normals[i]
+
+        neighbors = tree.query_ball_point(p_i, r=gripper_width)  # type: ignore[attr-defined]
+        if not neighbors:
+            continue
+
+        rng.shuffle(neighbors)
+        for j in neighbors:
+            if j == i:
+                continue
+            p_j = points[j]
+            n_j = normals[j]
+
+            d = p_j - p_i
+            dist = np.linalg.norm(d)
+            if dist < GRASP_DISTANCE_EPS:
+                continue
+            d_unit = d / dist
+
+            pose = _antipodal_grasp_from_contacts(
+                p_i,
+                n_i,
+                p_j,
+                n_j,
+                d_unit,
+                antipodal_dot,
+                alignment_dot,
+            )
+            if pose is not None:
+                valid_grasps.append(pose)
+                break
+
+    return valid_grasps
 
 
 def generate_analytical_grasps(
@@ -192,123 +324,30 @@ def generate_analytical_grasps(
         raise ValueError("search_multiplier must be a positive integer")
 
     tree = build_kdtree(points)
-    valid_grasps: list[np.ndarray] = []
-    n = points.shape[0]
-
     attempts = num_grasps * search_multiplier
-    for _ in range(attempts):
-        if len(valid_grasps) >= num_grasps:
-            break
+    valid_grasps = _search_antipodal_grasps(
+        points,
+        normals,
+        tree,
+        num_grasps,
+        gripper_width,
+        rng,
+        attempts,
+        strict_antipodal_dot,
+        strict_alignment_dot,
+    )
 
-        i = int(rng.choice(n))
-        p_i = points[i]
-        n_i = normals[i]
-
-        # Find neighbors within gripper_width
-        neighbors = tree.query_ball_point(p_i, r=gripper_width)
-        if not neighbors:
-            continue
-
-        # Shuffle neighbors using rng
-        rng.shuffle(neighbors)
-
-        for j in neighbors:
-            if j == i:
-                continue
-            p_j = points[j]
-            n_j = normals[j]
-
-            d = p_j - p_i
-            dist = np.linalg.norm(d)
-            if dist < 1e-4:
-                continue
-            d = d / dist
-
-            # Antipodal condition: normals face each other, and action line aligns with normals
-            if (
-                np.dot(n_i, -n_j) > strict_antipodal_dot
-                and np.dot(n_i, d) > strict_alignment_dot
-                and np.dot(n_j, -d) > strict_alignment_dot
-            ):
-                z_axis = d
-                avg_normal = 0.5 * (n_i + n_j)
-                x_axis = np.cross(z_axis, avg_normal)
-                x_norm = np.linalg.norm(x_axis)
-                if x_norm < 1e-4:
-                    ref = np.array([1.0, 0.0, 0.0])
-                    if np.abs(np.dot(ref, z_axis)) > 0.9:
-                        ref = np.array([0.0, 1.0, 0.0])
-                    x_axis = np.cross(z_axis, ref)
-                    x_norm = np.linalg.norm(x_axis)
-                x_axis = x_axis / x_norm
-                y_axis = np.cross(z_axis, x_axis)
-                y_axis = y_axis / np.linalg.norm(y_axis)
-
-                pose = make_transform(
-                    np.column_stack([x_axis, y_axis, z_axis]),
-                    0.5 * (p_i + p_j),
-                )
-
-                # Ensure determinant is +1 within tolerance
-                det = np.linalg.det(pose[:3, :3])
-                if np.abs(det - 1.0) < 1e-4:
-                    valid_grasps.append(pose)
-                    break
-
-    # Fallback if no valid grasps found: relax constraints only when explicitly
-    # allowed. The relaxed search still requires normals to face each other
-    # beyond relaxed_antipodal_dot so unconstrained grasps are never saved.
     if not valid_grasps and allow_relaxed:
-        for _ in range(attempts):
-            if len(valid_grasps) >= num_grasps:
-                break
-
-            i = int(rng.choice(n))
-            p_i = points[i]
-            n_i = normals[i]
-
-            neighbors = tree.query_ball_point(p_i, r=gripper_width)
-            if not neighbors:
-                continue
-
-            rng.shuffle(neighbors)
-            for j in neighbors:
-                if j == i:
-                    continue
-                p_j = points[j]
-                n_j = normals[j]
-
-                d = p_j - p_i
-                dist = np.linalg.norm(d)
-                if dist < 1e-4:
-                    continue
-                d = d / dist
-
-                # Relaxed antipodal condition
-                if np.dot(n_i, -n_j) > relaxed_antipodal_dot:
-                    z_axis = d
-                    avg_normal = 0.5 * (n_i + n_j)
-                    x_axis = np.cross(z_axis, avg_normal)
-                    x_norm = np.linalg.norm(x_axis)
-                    if x_norm < 1e-4:
-                        ref = np.array([1.0, 0.0, 0.0])
-                        if np.abs(np.dot(ref, z_axis)) > 0.9:
-                            ref = np.array([0.0, 1.0, 0.0])
-                        x_axis = np.cross(z_axis, ref)
-                        x_norm = np.linalg.norm(x_axis)
-                    x_axis = x_axis / x_norm
-                    y_axis = np.cross(z_axis, x_axis)
-                    y_axis = y_axis / np.linalg.norm(y_axis)
-
-                    pose = make_transform(
-                        np.column_stack([x_axis, y_axis, z_axis]),
-                        0.5 * (p_i + p_j),
-                    )
-
-                    det = np.linalg.det(pose[:3, :3])
-                    if np.abs(det - 1.0) < 1e-4:
-                        valid_grasps.append(pose)
-                        break
+        valid_grasps = _search_antipodal_grasps(
+            points,
+            normals,
+            tree,
+            num_grasps,
+            gripper_width,
+            rng,
+            attempts,
+            relaxed_antipodal_dot,
+        )
 
     if not valid_grasps:
         return np.empty((0, 4, 4), dtype=np.float32)

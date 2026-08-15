@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 from functools import partial
 from pathlib import Path
-from typing import cast
 
 import torch
 
@@ -8,8 +9,18 @@ from grasping_ai.data.training_pairs import (
     build_supervised_training_pairs,
     validate_grasp_dataset,
 )
+from grasping_ai.models.diffusion import GraspGeneratorModel
 from grasping_ai.pipelines.supervised_training import iter_conditioned_training_batches
+from grasping_ai.training import trainer as training_trainer
 from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+from grasping_ai.training.losses import build_diffusion_score_loss
+from grasping_ai.training.trainer import (
+    BatchSource,
+    build_adam_optimizer,
+    build_training_step,
+    load_training_checkpoint,
+)
+from grasping_ai.utils.path_validation import require_path
 
 
 def run_diffusion_training_pipeline(
@@ -57,8 +68,7 @@ def run_diffusion_training_pipeline(
         FileNotFoundError: If ``dataset_root`` or required checkpoints are missing.
         ValueError: If the dataset cannot be converted into training pairs.
     """
-    if not isinstance(dataset_root, Path):
-        raise TypeError("dataset_root must be a pathlib.Path instance")
+    require_path(dataset_root, "dataset_root")
     if not dataset_root.exists():
         raise FileNotFoundError(f"Dataset root does not exist: {dataset_root}")
 
@@ -66,16 +76,6 @@ def run_diffusion_training_pipeline(
 
     if seed is not None:
         torch.manual_seed(seed)
-
-    from grasping_ai.models.diffusion import GraspGeneratorModel
-    from grasping_ai.training.losses import build_diffusion_score_loss
-    from grasping_ai.training.trainer import (
-        BatchSource,
-        build_adam_optimizer,
-        build_training_step,
-        load_training_checkpoint,
-        run_training_loop,
-    )
 
     model = GraspGeneratorModel(feature_dim, hidden_dim, num_layers)
     model.to(device)
@@ -85,14 +85,13 @@ def run_diffusion_training_pipeline(
     if resume_checkpoint_path is not None:
         resume_epoch = load_training_checkpoint(
             resume_checkpoint_path,
-            cast(torch.nn.Module, model),
-            cast(torch.optim.Optimizer, optimizer),
+            model,
+            optimizer,
             device,
         )
 
     if pretrained_encoder_path is not None:
-        if not isinstance(pretrained_encoder_path, Path):
-            raise TypeError("pretrained_encoder_path must be a pathlib.Path instance")
+        require_path(pretrained_encoder_path, "pretrained_encoder_path")
         checkpoint = load_torch_checkpoint(pretrained_encoder_path, device)
         state_dict = checkpoint.get("model_state_dict", checkpoint)
         encoder_state: dict[str, torch.Tensor] = {}
@@ -101,7 +100,7 @@ def run_diffusion_training_pipeline(
                 encoder_state[key[len("encoder.") :]] = value
             else:
                 encoder_state[key] = value
-        cast(torch.nn.Module, model.encoder).load_state_dict(encoder_state, strict=False)
+        model.encoder.load_state_dict(encoder_state, strict=False)
 
     try:
         training_pairs = build_supervised_training_pairs(
@@ -115,22 +114,18 @@ def run_diffusion_training_pipeline(
     except Exception as e:
         raise ValueError(f"Failed to build supervised training pairs: {e}") from e
 
-    model_generator = cast(GraspGeneratorModel, model)
     loss_fn = build_diffusion_score_loss()
     training_step = build_training_step(
-        model_generator, loss_fn, cast(torch.optim.Optimizer, optimizer), device, seed=seed
+        model, loss_fn, optimizer, device, seed=seed
     )
 
-    dataloader = cast(
-        BatchSource,
-        partial(
-            iter_conditioned_training_batches,
-            training_pairs,
-            batch_size,
-            device,
-            seed,
-            cast(torch.nn.Module, model_generator.encoder),
-        ),
+    dataloader: BatchSource = partial(
+        iter_conditioned_training_batches,
+        training_pairs,
+        batch_size,
+        device,
+        seed,
+        model.encoder,
     )
 
     metadata = {
@@ -151,7 +146,7 @@ def run_diffusion_training_pipeline(
     if resume_epoch > 0:
         metadata["resume_from_epoch"] = resume_epoch
 
-    run_training_loop(
+    training_trainer.run_training_loop(
         training_step,
         dataloader,
         num_epochs,

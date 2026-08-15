@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -11,6 +13,7 @@ from grasping_ai.perception.geometry import (
     rotation_matrix_to_axis_angle,
 )
 from grasping_ai.robotics.transforms import transform_grasp_pose
+from grasping_ai.utils.path_validation import require_path
 
 SampleTransform = Callable[
     [np.ndarray, np.ndarray | None, np.ndarray | None],
@@ -160,8 +163,7 @@ def save_grasp_dataset_index(dataset_root: Path, entries: list[dict[str, str]], 
         entries: List of metadata entries describing dataset records.
         filename: Name of the index file written under ``dataset_root``.
     """
-    if not isinstance(dataset_root, Path):
-        raise TypeError("dataset_root must be a pathlib.Path instance")
+    require_path(dataset_root, "dataset_root")
     if not isinstance(entries, list):
         raise TypeError("entries must be a list of dictionaries")
     for entry in entries:

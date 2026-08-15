@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -5,6 +7,7 @@ from typing import Any, cast
 import torch
 
 from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
+from grasping_ai.models.mlp import build_mish_mlp
 from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 
 FlowField = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
@@ -16,14 +19,7 @@ class FlowFieldNet(torch.nn.Module):
 
     def __init__(self, feature_dim: int, hidden_dim: int, num_layers: int) -> None:
         super().__init__()
-        layers: list[torch.nn.Module] = []
-        in_dim = 9 + feature_dim
-        for _ in range(num_layers - 1):
-            layers.append(torch.nn.Linear(in_dim, hidden_dim))
-            layers.append(torch.nn.Mish())
-            in_dim = hidden_dim
-        layers.append(torch.nn.Linear(in_dim, 9))
-        self.mlp = torch.nn.Sequential(*layers)
+        self.mlp = build_mish_mlp(9 + feature_dim, hidden_dim, 9, num_layers)
 
     def forward(self, x: torch.Tensor, conditioning: torch.Tensor) -> torch.Tensor:
         """Forward pass predicting velocity."""
@@ -49,6 +45,7 @@ class FlowGeneratorModel(torch.nn.Module):
     """
 
     def __init__(self, feature_dim: int, hidden_dim: int, num_layers: int) -> None:
+        """Initialize the flow grasp generator."""
         super().__init__()
         self.feature_dim = feature_dim
         self.hidden_dim = hidden_dim
@@ -63,7 +60,17 @@ class FlowGeneratorModel(torch.nn.Module):
         return self.flow_field(x, conditioning)
 
     def condition(self, point_clouds: torch.Tensor) -> torch.Tensor:
-        """Encode a batch of point clouds into pooled conditioning features."""
+        """Encode a batch of point clouds into pooled conditioning features.
+
+        Runs the equivariant encoder and mean-pools per-point features into an
+        SE(3)-invariant object descriptor for the flow field network.
+
+        Args:
+            point_clouds: Batched point cloud with shape ``(B, N, 3)``.
+
+        Returns:
+            Pooled conditioning features with shape ``(B, feature_dim)``.
+        """
         from grasping_ai.models.equivariant_encoder import (
             encode_point_cloud,
             pool_object_features,

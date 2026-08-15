@@ -11,6 +11,10 @@ rl:
   entropy_coefficient: 0.0
   gamma: 0.99
   gae_lambda: 0.95
+  n_steps: 64
+  batch_size: 64
+  n_epochs: 1
+  policy_num_layers: 2
   reward:
     action_cost_weight: 0.01
     survival_bonus: 1.0

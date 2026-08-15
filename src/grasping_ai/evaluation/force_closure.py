@@ -1,13 +1,66 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
 
 import numpy as np
+from loguru import logger
 from scipy.optimize import linprog  # type: ignore[import-untyped]
 from scipy.spatial import ConvexHull  # type: ignore[import-untyped]
 
+from grasping_ai.utils.numerics import HULL_HALFSPACE_EPS, LP_FEASIBILITY_EPS, NORM_EPS
+from grasping_ai.utils.path_validation import require_path
+
 ContactSet = list[dict[str, np.ndarray]]
 ForceClosureJudge = Callable[[ContactSet], bool]
+
+
+def _parse_contact_record(record: object) -> dict[str, np.ndarray]:
+    """Validate one contact record from a serialized contact set.
+
+    Args:
+        record: Single contact entry loaded from disk.
+
+    Returns:
+        Mapping from string field names to ``numpy.ndarray`` values.
+
+    Raises:
+        TypeError: If ``record`` is not a dictionary or contains non-string
+            keys or non-array values.
+    """
+    if not isinstance(record, dict):
+        raise TypeError("Each contact record must be a dictionary")
+    parsed: dict[str, np.ndarray] = {}
+    for key, value in record.items():
+        if not isinstance(key, str):
+            raise TypeError("Contact record keys must be strings")
+        if not isinstance(value, np.ndarray):
+            raise TypeError(f"Contact record value for '{key}' must be a numpy array")
+        parsed[key] = value
+    return parsed
+
+
+def parse_contact_set(loaded: object) -> ContactSet:
+    """Validate a deserialized contact-set payload.
+
+    Args:
+        loaded: Raw object from ``numpy.load`` — a list of contact dicts, a
+            single contact dict, or a numpy array convertible to a list.
+
+    Returns:
+        A list of validated contact records.
+
+    Raises:
+        TypeError: If ``loaded`` is not a list, dict, or numpy array, or if
+            any contact record fails validation.
+    """
+    if isinstance(loaded, np.ndarray):
+        loaded = loaded.tolist()
+    if isinstance(loaded, dict):
+        loaded = [loaded]
+    if not isinstance(loaded, list):
+        raise TypeError("Contact set must deserialize to a list of contact records")
+    return [_parse_contact_record(record) for record in loaded]
 
 
 def load_contact_set(contact_path: Path) -> ContactSet:
@@ -18,9 +71,14 @@ def load_contact_set(contact_path: Path) -> ContactSet:
 
     Returns:
         A list of contact records, each describing contact points and normals.
+
+    Raises:
+        TypeError: If ``contact_path`` is not a ``pathlib.Path`` instance or
+            the deserialized payload has invalid record types.
+        FileNotFoundError: If the contact file does not exist.
+        ValueError: If loading or parsing the file fails.
     """
-    if not isinstance(contact_path, Path):
-        raise TypeError("contact_path must be a pathlib.Path instance")
+    require_path(contact_path, "contact_path")
     if not contact_path.exists():
         raise FileNotFoundError(f"Contact file not found at: {contact_path}")
 
@@ -30,7 +88,7 @@ def load_contact_set(contact_path: Path) -> ContactSet:
             loaded = data.item()
         else:
             loaded = list(data)
-        return cast(ContactSet, loaded)
+        return parse_contact_set(loaded)
     except Exception as e:
         raise ValueError(f"Failed to load contact set: {e}") from e
 
@@ -104,9 +162,10 @@ def build_force_closure_judge(friction_coefficient: float, wrench_regularization
             )
             if res.success:
                 t_val = res.x[-1]
-                return bool(t_val > 1e-5)
+                return bool(t_val > LP_FEASIBILITY_EPS)
             return False
-        except Exception:
+        except Exception as exc:
+            logger.warning("Force-closure LP failed: {}", exc)
             return False
 
     return judge
@@ -150,7 +209,7 @@ def compute_grasp_wrench_matrix(contact_set: ContactSet, friction_coefficient: f
 
         # Normalize normal
         norm_val = np.linalg.norm(normal)
-        if norm_val <= 1e-8:
+        if norm_val <= NORM_EPS:
             continue
         normal = normal / norm_val
 
@@ -162,13 +221,13 @@ def compute_grasp_wrench_matrix(contact_set: ContactSet, friction_coefficient: f
 
         t1 = np.cross(normal, other)
         norm_t1 = np.linalg.norm(t1)
-        if norm_t1 <= 1e-8:
+        if norm_t1 <= NORM_EPS:
             continue
         t1 = t1 / norm_t1
 
         t2 = np.cross(normal, t1)
         norm_t2 = np.linalg.norm(t2)
-        if norm_t2 <= 1e-8:
+        if norm_t2 <= NORM_EPS:
             continue
         t2 = t2 / norm_t2
 
@@ -219,7 +278,7 @@ def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) 
     # Normalize column vectors of g_mat by maximum finite column norm
     col_norms = np.linalg.norm(g_mat, axis=0)
     max_norm = np.max(col_norms)
-    if max_norm > 1e-8:
+    if max_norm > NORM_EPS:
         g_mat_normalized = g_mat / max_norm
     else:
         g_mat_normalized = g_mat
@@ -229,11 +288,11 @@ def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) 
         try:
             hull = ConvexHull(g_mat_normalized.T)
             # check if origin is inside the hull
-            if np.all(hull.equations[:, -1] <= 1e-9):
+            if np.all(hull.equations[:, -1] <= HULL_HALFSPACE_EPS):
                 # distance is -offset / norm(normal). Since normal has norm 1:
                 return float(np.min(-hull.equations[:, -1]))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Convex hull grasp-quality computation failed: {}", exc)
 
     # Fallback to LP formulation (similar to Ferrari-Canny sum-of-forces margin)
     m = g_mat_normalized.shape[1]
@@ -266,7 +325,7 @@ def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) 
         if res.success:
             t_val = res.x[-1]
             return max(0.0, float(t_val))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Grasp-quality LP fallback failed: {}", exc)
 
     return 0.0
