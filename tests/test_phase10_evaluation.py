@@ -690,10 +690,13 @@ def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:
         return orig_max(a, *args, **kwargs)
     monkeypatch.setattr(np, "max", fake_max)
 
-    # 3. Test LP success on ConvexHull exception (lines 235-236, 267-268)
     import scipy.spatial
+    class ConvexHullError(RuntimeError):
+        def __init__(self):
+            super().__init__("Convex hull failed")
+
     def raise_hull(*args, **kwargs):
-        raise RuntimeError("Convex hull failed")
+        raise ConvexHullError()
     monkeypatch.setattr(scipy.spatial, "ConvexHull", raise_hull)
 
     c_valid = [
@@ -705,8 +708,12 @@ def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:
 
     # 4. Test LP exception (lines 269-270)
     import scipy.optimize
+    class LinprogError(RuntimeError):
+        def __init__(self):
+            super().__init__("linprog failed")
+
     def raise_linprog(*args, **kwargs):
-        raise RuntimeError("linprog failed")
+        raise LinprogError()
     monkeypatch.setattr(scipy.optimize, "linprog", raise_linprog)
     q_err = compute_grasp_quality(c_valid, friction_coefficient=0.5)
     assert q_err == 0.0

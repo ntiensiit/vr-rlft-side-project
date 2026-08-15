@@ -26,7 +26,7 @@ def load_contact_set(contact_path: Path) -> ContactSet:
 
     try:
         data = np.load(contact_path, allow_pickle=True)
-        if hasattr(data, "item"):
+        if data.ndim == 0:
             loaded = data.item()
         else:
             loaded = list(data)

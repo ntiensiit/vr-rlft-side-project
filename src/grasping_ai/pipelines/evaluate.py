@@ -235,14 +235,12 @@ def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
     """
     if not isinstance(input_path, Path):
         raise TypeError("input_path must be a pathlib.Path instance")
-    if not input_path.is_file():
-        raise FileNotFoundError(f"JSONL file not found: {input_path}")
 
     try:
         with input_path.open(encoding="utf-8") as fp:
             lines = [line.strip() for line in fp]
     except OSError as e:
-        raise ValueError(f"Failed to read JSONL records from {input_path}: {e}") from e
+        raise ValueError(f"Failed to read JSONL records: {e}") from e
 
     records: list[dict[str, object]] = []
     for line_number, stripped_line in enumerate(lines, start=1):
@@ -251,7 +249,7 @@ def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
         try:
             loaded = json.loads(stripped_line)
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse JSONL line {line_number} in {input_path}: {e}") from e
+            raise ValueError(f"Failed to read JSONL records: {e}") from e
         if not isinstance(loaded, dict):
             raise TypeError(f"JSONL line {line_number} in {input_path} must be a mapping")
         records.append(loaded)
