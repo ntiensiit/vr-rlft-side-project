@@ -36,6 +36,7 @@ def run_workflow_main(
     lift_height_threshold: float = 0.05,
     contact_clearance: float = 0.005,
     wrench_regularization: float = 1.0,
+    grasp_pose_format: str = "world",
 ) -> None:
     """Run the end-to-end runtime workflow on a single object.
 
@@ -80,6 +81,8 @@ def run_workflow_main(
         lift_height_threshold: Height threshold used by lift success.
         contact_clearance: Clearance threshold used by contact detection.
         wrench_regularization: Wrench regularization used by force closure.
+        grasp_pose_format: Coordinate frame format for target grasp poses
+            (``"world"`` or ``"object"``).
     """
     root = Path(__file__).resolve().parents[1]
     src = root / "src"
@@ -151,7 +154,7 @@ def run_workflow_main(
             "--gripper-close-command",
             str(gripper_close_command),
             "--grasp-pose-format",
-            "world",
+            grasp_pose_format,
         ]
         if table_xml_path is not None:
             sim_cmd += ["--table-xml", str(table_xml_path)]
@@ -426,6 +429,12 @@ if __name__ == "__main__":
         type=float,
         default=float(config_get(cfg, "metrics", "wrench_regularization")),
     )
+    parser.add_argument(
+        "--grasp-pose-format",
+        type=str,
+        choices=["world", "object"],
+        default="object",
+    )
     args = parser.parse_args(parse_clean_argv())
     if args.checkpoint is None:
         parser.error(
@@ -463,4 +472,5 @@ if __name__ == "__main__":
         lift_height_threshold=args.lift_height_threshold,
         contact_clearance=args.contact_clearance,
         wrench_regularization=args.wrench_regularization,
+        grasp_pose_format=args.grasp_pose_format,
     )
