@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 from grasping_ai.config.yaml_loader import optional_cli_path
