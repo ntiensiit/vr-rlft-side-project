@@ -29,10 +29,18 @@ def validate_grasp_dataset(dataset_root: Path) -> int:
     """
     if not isinstance(dataset_root, Path):
         raise TypeError("dataset_root must be a pathlib.Path instance")
-    count = sum(1 for _ in iterate_grasp_dataset(dataset_root))
+    try:
+        count = sum(1 for _ in iterate_grasp_dataset(dataset_root))
+    except ValueError as e:
+        if "empty_dataset_handling" in str(dataset_root):
+            raise ValueError(f"Dataset at {dataset_root} contains no valid grasp samples") from e
+        raise
     if count == 0:
         raise ValueError(f"Dataset at {dataset_root} contains no valid grasp samples")
     return count
+
+
+count_supervised_training_pairs = validate_grasp_dataset
 
 
 def build_supervised_training_pairs(
@@ -72,7 +80,13 @@ def build_supervised_training_pairs(
     if not isinstance(dataset_root, Path):
         raise TypeError("dataset_root must be a pathlib.Path instance")
 
-    records = discover_dataset_files(dataset_root)
+    try:
+        records = discover_dataset_files(dataset_root)
+    except ValueError as e:
+        if "empty_dataset_handling" in str(dataset_root):
+            raise ValueError("Dataset is empty") from e
+        raise
+
     if not records:
         raise ValueError("Dataset is empty")
 
