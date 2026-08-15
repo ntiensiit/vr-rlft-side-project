@@ -213,7 +213,7 @@ def main() -> None:
     retained_artifacts = sorted(
         p.resolve().relative_to(root_resolved).as_posix()
         for p in (
-            *data_processed.glob("*.npy"),
+            *data_processed.glob("*.npz"),
             *data_processed.glob("index.json"),
             *mjcf_root.rglob("*.xml"),
             *artifacts.rglob("*.pt"),

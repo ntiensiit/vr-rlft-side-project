@@ -6,6 +6,7 @@ from grasping_ai.data.pointcloud_dataset import (
     discover_dataset_files,
     load_grasp_sample,
     resolve_ycb_object_id,
+    save_grasp_sample,
 )
 from grasping_ai.data.training_pairs import (
     build_supervised_training_pairs,
@@ -20,6 +21,7 @@ __all__ = [
     "load_grasp_sample",
     "resolve_ycb_object_id",
     "save_grasp_dataset_index",
+    "save_grasp_sample",
     "se3_to_vec",
     "validate_grasp_dataset",
     "vec_to_se3",

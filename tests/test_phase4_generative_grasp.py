@@ -119,19 +119,22 @@ def test_training_creates_checkpoint():
         dataset_root = temp_path / "dataset"
         dataset_root.mkdir()
 
-        # Create synthetic record matching Phase 3
-        record_data = {
-            "point_cloud": np.random.randn(50, 3).astype(np.float32),
-            "grasp_poses": np.array([np.eye(4) for _ in range(3)], dtype=np.float32),
-            "object_id": "ycb_master_chef_can",
-        }
-        np.save(dataset_root / "sample_0.npy", record_data, allow_pickle=True)
+        from grasping_ai.data.pointcloud_dataset import save_grasp_sample
+
+        save_grasp_sample(
+            dataset_root / "sample_0.npz",
+            {
+                "point_cloud": np.random.randn(50, 3).astype(np.float32),
+                "grasp_poses": np.array([np.eye(4) for _ in range(3)], dtype=np.float32),
+                "object_id": "ycb_master_chef_can",
+            },
+        )
 
         # Write Phase 3 dataset index.json
         index = {
             "records": [
                 {
-                    "file_path": "sample_0.npy",
+                    "file_path": "sample_0.npz",
                     "object_id": "ycb_master_chef_can",
                 }
             ]
@@ -179,16 +182,20 @@ def test_training_reiterates_dataloader_per_epoch():
         dataset_root = temp_path / "dataset"
         dataset_root.mkdir()
 
-        record_data = {
-            "point_cloud": np.random.randn(50, 3).astype(np.float32),
-            "grasp_poses": np.array([np.eye(4) for _ in range(3)], dtype=np.float32),
-            "object_id": "ycb_master_chef_can",
-        }
-        np.save(dataset_root / "sample_0.npy", record_data, allow_pickle=True)
+        from grasping_ai.data.pointcloud_dataset import save_grasp_sample
+
+        save_grasp_sample(
+            dataset_root / "sample_0.npz",
+            {
+                "point_cloud": np.random.randn(50, 3).astype(np.float32),
+                "grasp_poses": np.array([np.eye(4) for _ in range(3)], dtype=np.float32),
+                "object_id": "ycb_master_chef_can",
+            },
+        )
         index = {
             "records": [
                 {
-                    "file_path": "sample_0.npy",
+                    "file_path": "sample_0.npz",
                     "object_id": "ycb_master_chef_can",
                 }
             ]

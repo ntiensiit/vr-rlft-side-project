@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict, cast
 
 import numpy as np
 from loguru import logger
@@ -22,6 +22,86 @@ class GraspSample(TypedDict):
     object_id: str | None
 
 
+def _validate_point_cloud(point_cloud: object) -> np.ndarray:
+    """Validate a loaded point cloud array.
+
+    Args:
+        point_cloud: Deserialized ``point_cloud`` payload from a dataset record.
+
+    Returns:
+        The validated point cloud array.
+
+    Raises:
+        TypeError: If ``point_cloud`` is not a ``numpy.ndarray``.
+        ValueError: If the array shape or values are invalid.
+    """
+    if not isinstance(point_cloud, np.ndarray):
+        raise TypeError("'point_cloud' must be a numpy array")
+    if point_cloud.ndim != 2 or point_cloud.shape[1] != 3:
+        raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
+    if not np.isfinite(point_cloud).all():
+        raise ValueError("point_cloud must contain only finite values")
+    return point_cloud
+
+
+def _decode_object_id(object_id: object) -> str | None:
+    """Decode an optional object identifier stored in an NPZ archive.
+
+    Args:
+        object_id: Deserialized ``object_id`` payload from a dataset record.
+
+    Returns:
+        The object identifier string, or ``None`` when absent.
+    """
+    if object_id is None:
+        return None
+    if isinstance(object_id, np.ndarray):
+        if object_id.shape == ():
+            return str(object_id.item())
+        if object_id.ndim == 1 and object_id.dtype.kind in {"U", "S"}:
+            return str(object_id.item())
+    if isinstance(object_id, str):
+        return object_id
+    return str(object_id)
+
+
+def save_grasp_sample(record_path: Path, sample: GraspSample) -> None:
+    """Persist a grasp-pose dataset record as a pickle-free NPZ archive.
+
+    Args:
+        record_path: Destination ``.npz`` path for the serialized record.
+        sample: Dataset record containing point-cloud and grasp metadata.
+
+    Raises:
+        TypeError: If ``point_cloud`` is not a ``numpy.ndarray``.
+        ValueError: If ``point_cloud`` has an invalid shape or non-finite values.
+    """
+    require_path(record_path, "record_path")
+    if record_path.suffix != ".npz":
+        raise ValueError(f"Record path '{record_path}' must use the .npz extension")
+
+    point_cloud = _validate_point_cloud(sample["point_cloud"])
+
+    archive_fields: dict[str, np.ndarray] = {
+        "point_cloud": np.asarray(point_cloud, dtype=np.float32),
+    }
+
+    grasp_poses = sample.get("grasp_poses")
+    if grasp_poses is not None:
+        archive_fields["grasp_poses"] = np.asarray(grasp_poses, dtype=np.float32)
+
+    scores = sample.get("scores")
+    if scores is not None:
+        archive_fields["scores"] = np.asarray(scores, dtype=np.float32)
+
+    object_id = sample.get("object_id")
+    if object_id is not None:
+        archive_fields["object_id"] = np.asarray(object_id, dtype=np.str_)
+
+    record_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(record_path, **cast(Any, archive_fields))
+
+
 def discover_dataset_files(dataset_root: Path) -> list[Path]:
     """List dataset record files under a dataset root directory.
 
@@ -37,18 +117,46 @@ def discover_dataset_files(dataset_root: Path) -> list[Path]:
     if not dataset_root.is_dir():
         raise ValueError(f"Dataset root '{dataset_root}' is not a directory")
 
-    records = sorted([p for p in dataset_root.rglob("*.npy") if p.is_file()])
+    records = sorted([p for p in dataset_root.rglob("*.npz") if p.is_file()])
     if not records:
-        raise ValueError(f"No dataset record files (.npy) found under '{dataset_root}'")
+        raise ValueError(f"No dataset record files (.npz) found under '{dataset_root}'")
     logger.info("Discovered {} dataset record files under {}", len(records), dataset_root)
     return records
+
+
+def _read_grasp_sample_archive(archive: np.lib.npyio.NpzFile) -> GraspSample:
+    """Parse a loaded NPZ archive into a ``GraspSample``.
+
+    Args:
+        archive: Open NPZ archive containing dataset record arrays.
+
+    Returns:
+        Parsed grasp dataset record.
+
+    Raises:
+        ValueError: If required fields are missing or invalid.
+    """
+    if "point_cloud" not in archive:
+        raise ValueError("Record is missing 'point_cloud' key")
+
+    point_cloud = _validate_point_cloud(archive["point_cloud"])
+    grasp_poses = archive["grasp_poses"] if "grasp_poses" in archive.files else None
+    scores = archive["scores"] if "scores" in archive.files else None
+    object_id = _decode_object_id(archive["object_id"]) if "object_id" in archive.files else None
+
+    return {
+        "point_cloud": point_cloud,
+        "grasp_poses": grasp_poses,
+        "scores": scores,
+        "object_id": object_id,
+    }
 
 
 def load_grasp_sample(record_path: Path) -> GraspSample:
     """Load a single grasp-pose dataset record from disk.
 
     Args:
-        record_path: Path to a serialized record file.
+        record_path: Path to a serialized ``.npz`` record file.
 
     Returns:
         A ``GraspSample`` containing a point cloud, grasp poses, optional scores,
@@ -56,43 +164,23 @@ def load_grasp_sample(record_path: Path) -> GraspSample:
 
     Raises:
         FileNotFoundError: If ``record_path`` does not exist.
+        ValueError: If the record format is invalid or missing required fields.
     """
     require_path(record_path, "record_path")
     if not record_path.exists():
         raise FileNotFoundError(f"Record file '{record_path}' not found")
     if not record_path.is_file():
         raise ValueError(f"Record path '{record_path}' is not a file")
+    if record_path.suffix != ".npz":
+        raise ValueError(f"Record path '{record_path}' must use the .npz extension")
 
     try:
-        data = np.load(record_path, allow_pickle=True)
+        with np.load(record_path) as archive:
+            return _read_grasp_sample_archive(archive)
+    except ValueError:
+        raise
     except Exception as e:
         raise ValueError(f"Failed to load record file: {e}") from e
-
-    if data.ndim == 0:
-        sample = data.item()
-    else:
-        raise ValueError("Invalid record file format: expected a serialized dictionary")
-
-    if not isinstance(sample, dict):
-        raise TypeError("Serialized record is not a dictionary")
-
-    if "point_cloud" not in sample:
-        raise ValueError("Record is missing 'point_cloud' key")
-
-    pc = sample["point_cloud"]
-    if not isinstance(pc, np.ndarray):
-        raise TypeError("'point_cloud' must be a numpy array")
-    if pc.ndim != 2 or pc.shape[1] != 3:
-        raise ValueError(f"point_cloud must have shape (N, 3), got {pc.shape}")
-    if not np.isfinite(pc).all():
-        raise ValueError("point_cloud must contain only finite values")
-
-    return {
-        "point_cloud": pc,
-        "grasp_poses": sample.get("grasp_poses"),
-        "scores": sample.get("scores"),
-        "object_id": sample.get("object_id"),
-    }
 
 
 def iterate_grasp_dataset(dataset_root: Path) -> Iterator[GraspSample]:

@@ -200,11 +200,11 @@ def test_prepare_data_synthetic_pipeline(tmp_path):
 
     subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
 
-    npy_file = dataset_root / f"{obj_name}.npy"
-    assert npy_file.is_file()
+    npz_file = dataset_root / f"{obj_name}.npz"
+    assert npz_file.is_file()
     assert output_index.is_file()
 
-    sample = load_grasp_sample(npy_file)
+    sample = load_grasp_sample(npz_file)
     assert "point_cloud" in sample
     assert "grasp_poses" in sample
     assert "scores" in sample
@@ -247,8 +247,8 @@ def test_generate_synthetic_dataset_skips_zero_grasp_objects(monkeypatch):
             seed=42,
         )
 
-        npy_file = output_dir / "006_mustard_bottle.npy"
-        assert not npy_file.exists()
+        npz_file = output_dir / "006_mustard_bottle.npz"
+        assert not npz_file.exists()
 
 
 def test_generate_synthetic_dataset_fail_fast_on_required_objects(monkeypatch):
@@ -350,7 +350,7 @@ def test_generate_synthetic_dataset_sim_fallback_to_analytical(tmp_path, monkeyp
         gripper_close_command=np.array([0.0]),
         sim_validate_fallback_analytical=True,
     )
-    assert (output_dir / f"{obj_name}.npy").is_file()
+    assert (output_dir / f"{obj_name}.npz").is_file()
 
 
 def test_audit_synthetic_labels(tmp_path):

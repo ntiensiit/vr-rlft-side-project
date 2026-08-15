@@ -116,16 +116,20 @@ def test_evaluation_tracking(tmp_path):
 
 def test_supervised_reproducibility(tmp_path):
     """Verify that supervised model training is reproducible with matching seeds and stochastic with different seeds."""
+    from grasping_ai.data.pointcloud_dataset import save_grasp_sample
+
     dataset_root = tmp_path / "mock_dataset"
     dataset_root.mkdir()
 
-    record = {
-        "point_cloud": np.random.randn(10, 3).astype(np.float32),
-        "grasp_poses": np.array([np.eye(4) for _ in range(2)]),
-        "scores": None,
-        "object_id": "test_object",
-    }
-    np.save(dataset_root / "test_object.npy", record)
+    save_grasp_sample(
+        dataset_root / "test_object.npz",
+        {
+            "point_cloud": np.random.randn(10, 3).astype(np.float32),
+            "grasp_poses": np.array([np.eye(4) for _ in range(2)], dtype=np.float32),
+            "scores": None,
+            "object_id": "test_object",
+        },
+    )
 
     checkpoint_path1 = tmp_path / "chk1.pt"
     checkpoint_path2 = tmp_path / "chk2.pt"

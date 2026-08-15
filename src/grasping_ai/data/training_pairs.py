@@ -24,7 +24,7 @@ def validate_grasp_dataset(dataset_root: Path) -> int:
     """Validate that a dataset root yields readable grasp samples.
 
     Args:
-        dataset_root: Root directory containing ``.npy`` grasp dataset records.
+        dataset_root: Root directory containing ``.npz`` grasp dataset records.
 
     Returns:
         Number of valid grasp samples discovered under ``dataset_root``.

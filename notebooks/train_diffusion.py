@@ -109,7 +109,7 @@ paths = run_dataset_preparation(
 )
 dataset_root = paths["dataset_root"]
 print("dataset_root:", dataset_root)
-print("records:", sorted(p.name for p in dataset_root.glob("*.npy")))
+print("records:", sorted(p.name for p in dataset_root.glob("*.npz")))
 
 # %% [markdown]
 # ## 4. Training

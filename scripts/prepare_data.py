@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import open3d as _open3d  # noqa: F401
 import numpy as np
@@ -10,6 +10,7 @@ from grasping_ai.data.pointcloud_dataset import (
     discover_dataset_files,
     generate_analytical_grasps,
     resolve_ycb_object_id,
+    save_grasp_sample,
 )
 from grasping_ai.data.transforms import save_grasp_dataset_index
 from grasping_ai.evaluation.collision import generate_analytical_contacts
@@ -79,7 +80,7 @@ def generate_synthetic_dataset(
 
     Args:
         ycb_root: Path to YCB raw data directory.
-        output_dir: Output directory where .npy files will be saved.
+        output_dir: Output directory where ``.npz`` files will be saved.
         num_samples: Number of points to sample per mesh.
         num_grasps: Number of analytical grasps to generate.
         gripper_width: Maximum gripper width.
@@ -370,8 +371,8 @@ def generate_synthetic_dataset(
                 "object_id": name,
             }
 
-            output_file = output_dir / f"{name}.npy"
-            np.save(output_file, cast(Any, sample))
+            output_file = output_dir / f"{name}.npz"
+            save_grasp_sample(output_file, sample)
 
         except Exception as e:
             print(f"Failed to generate synthetic data for '{name}': {e}")

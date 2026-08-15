@@ -12,21 +12,22 @@ import torch
 
 def _make_dataset(tmp_path: Path, *, n_grasps: int, seed: int) -> Path:
     """Create a mock grasp dataset file for testing flow matching models."""
+    from grasping_ai.data.pointcloud_dataset import save_grasp_sample
+
     dataset_root = tmp_path / "dataset"
     dataset_root.mkdir()
     rng = np.random.default_rng(seed)
     pc = rng.standard_normal((64, 3)).astype(np.float32)
     grasps = np.tile(np.eye(4, dtype=np.float32)[None], (n_grasps, 1, 1))
     grasps[:, :3, 3] = rng.standard_normal((n_grasps, 3)).astype(np.float32) * 0.1
-    np.save(
-        dataset_root / "flow_obj.npy",
+    save_grasp_sample(
+        dataset_root / "flow_obj.npz",
         {
             "point_cloud": pc,
             "grasp_poses": grasps,
             "scores": None,
             "object_id": "flow_obj",
         },
-        allow_pickle=True,
     )
     return dataset_root
 

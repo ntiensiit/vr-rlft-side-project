@@ -21,7 +21,7 @@ artifacts/exports/tensorboard/
 artifacts/reports/*.jsonl
 artifacts/manifest.jsonl
 artifacts/rl_inference_smoke.py
-data/processed/*.npy
+data/processed/*.npz
 data/processed/index.json
 data/processed/ycb_mjcf/
 data/observations/

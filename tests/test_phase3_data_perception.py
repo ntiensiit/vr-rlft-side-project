@@ -13,6 +13,7 @@ from grasping_ai.data.pointcloud_dataset import (
     iterate_grasp_dataset,
     load_grasp_sample,
     resolve_ycb_object_id,
+    save_grasp_sample,
 )
 from grasping_ai.data.training_pairs import (
     build_supervised_training_pairs,
@@ -70,14 +71,16 @@ def test_prepare_data_creates_index_from_minimal_dataset(tmp_path):
     dataset_root.mkdir()
 
     # Create dummy record
-    record_data = {
-        "point_cloud": np.random.rand(10, 3),
-        "grasp_poses": np.random.rand(2, 4, 4),
-        "scores": np.random.rand(2),
-        "object_id": "bottle",
-    }
-    record_path = dataset_root / "record_0.npy"
-    np.save(record_path, record_data, allow_pickle=True)
+    record_path = dataset_root / "record_0.npz"
+    save_grasp_sample(
+        record_path,
+        {
+            "point_cloud": np.random.rand(10, 3).astype(np.float32),
+            "grasp_poses": np.random.rand(2, 4, 4).astype(np.float32),
+            "scores": np.random.rand(2).astype(np.float32),
+            "object_id": "bottle",
+        },
+    )
 
     records = discover_dataset_files(dataset_root)
     assert len(records) == 1
@@ -100,7 +103,7 @@ def test_save_grasp_dataset_index_honors_custom_filename():
     """Verify that a custom index filename is honored instead of defaulting to index.json."""
     with tempfile.TemporaryDirectory() as tmpdir:
         dataset_root = Path(tmpdir)
-        entries = [{"path": "record_0.npy"}]
+        entries = [{"path": "record_0.npz"}]
         save_grasp_dataset_index(dataset_root, entries, "custom_index.json")
 
         index_file = dataset_root / "custom_index.json"
@@ -138,10 +141,10 @@ def test_index_loader_reads_prepared_index(tmp_path):
     record1 = {"point_cloud": rng.random((10, 3)), "object_id": "obj1"}
     record2 = {"point_cloud": rng.random((15, 3)), "object_id": "obj2"}
 
-    path1 = dataset_root / "rec1.npy"
-    path2 = dataset_root / "rec2.npy"
-    np.save(path1, record1, allow_pickle=True)
-    np.save(path2, record2, allow_pickle=True)
+    path1 = dataset_root / "rec1.npz"
+    path2 = dataset_root / "rec2.npz"
+    save_grasp_sample(path1, record1)
+    save_grasp_sample(path2, record2)
 
     samples = list(iterate_grasp_dataset(dataset_root))
     assert len(samples) == 2
@@ -157,14 +160,59 @@ def test_index_loader_rejects_invalid_structure(tmp_path):
         list(iterate_grasp_dataset("not-a-path"))  # type: ignore[arg-type]
 
 
-def test_point_cloud_loader_reads_valid_npy_point_cloud(tmp_path):
-    """Test load_grasp_sample on valid file."""
-    record_data = {
-        "point_cloud": np.ones((5, 3)),
-        "object_id": "box",
+def test_save_grasp_sample_roundtrip(tmp_path):
+    """Verify save_grasp_sample writes pickle-free archives readable by load_grasp_sample."""
+    path = tmp_path / "record.npz"
+    sample = {
+        "point_cloud": np.random.randn(12, 3).astype(np.float32),
+        "grasp_poses": np.tile(np.eye(4, dtype=np.float32), (2, 1, 1)),
+        "scores": np.array([0.1, 0.9], dtype=np.float32),
+        "object_id": "mustard_bottle",
     }
-    path = tmp_path / "sample.npy"
-    np.save(path, record_data, allow_pickle=True)
+    save_grasp_sample(path, sample)
+    loaded = load_grasp_sample(path)
+    assert np.allclose(loaded["point_cloud"], sample["point_cloud"])
+    assert np.allclose(loaded["grasp_poses"], sample["grasp_poses"])
+    assert np.allclose(loaded["scores"], sample["scores"])
+    assert loaded["object_id"] == sample["object_id"]
+
+    with np.load(path) as archive:
+        assert "point_cloud" in archive
+        assert archive["point_cloud"].dtype == np.float32
+
+
+def test_save_grasp_sample_validates_point_cloud(tmp_path):
+    """Verify save_grasp_sample rejects invalid point-cloud payloads before writing."""
+    path = tmp_path / "invalid.npz"
+    with pytest.raises(TypeError, match="'point_cloud' must be a numpy array"):
+        save_grasp_sample(path, {"point_cloud": [[0.0, 0.0, 0.0]]})  # type: ignore[typeddict-item]
+
+    with pytest.raises(ValueError, match="point_cloud must have shape"):
+        save_grasp_sample(path, {"point_cloud": np.zeros((4, 2), dtype=np.float32)})
+
+
+def test_load_grasp_sample_decodes_object_id_array(tmp_path):
+    """Verify object identifiers stored as unicode arrays decode to plain strings."""
+    path = tmp_path / "object_id_array.npz"
+    np.savez(
+        path,
+        point_cloud=np.zeros((3, 3), dtype=np.float32),
+        object_id=np.array(["004_sugar_box"], dtype=np.str_),
+    )
+    sample = load_grasp_sample(path)
+    assert sample["object_id"] == "004_sugar_box"
+
+
+def test_point_cloud_loader_reads_valid_npz_point_cloud(tmp_path):
+    """Test load_grasp_sample on valid file."""
+    path = tmp_path / "sample.npz"
+    save_grasp_sample(
+        path,
+        {
+            "point_cloud": np.ones((5, 3), dtype=np.float32),
+            "object_id": "box",
+        },
+    )
 
     sample = load_grasp_sample(path)
     assert np.allclose(sample["point_cloud"], 1.0)
@@ -173,28 +221,23 @@ def test_point_cloud_loader_reads_valid_npy_point_cloud(tmp_path):
 
 def test_point_cloud_loader_rejects_wrong_shape(tmp_path):
     """Verify loader validation on malformed shapes."""
-    path = tmp_path / "bad.npy"
+    path = tmp_path / "bad.npz"
 
     # Missing point_cloud key
-    np.save(path, {"other": 123}, allow_pickle=True)
+    np.savez(path, other=np.array([123], dtype=np.int64))
     with pytest.raises(ValueError, match="missing 'point_cloud'"):
         load_grasp_sample(path)
 
-    # Not a numpy array
-    np.save(path, {"point_cloud": "not-array"}, allow_pickle=True)
-    with pytest.raises(TypeError, match="must be a numpy array"):
-        load_grasp_sample(path)
-
     # Wrong shape
-    np.save(path, {"point_cloud": np.zeros((10, 2))}, allow_pickle=True)
+    np.savez(path, point_cloud=np.zeros((10, 2), dtype=np.float32))
     with pytest.raises(ValueError, match="shape"):
         load_grasp_sample(path)
 
 
 def test_point_cloud_loader_rejects_non_finite_values(tmp_path):
     """Verify loader validation rejects NaN and Inf."""
-    path = tmp_path / "nan.npy"
-    np.save(path, {"point_cloud": np.array([[1.0, 2.0, np.nan]])}, allow_pickle=True)
+    path = tmp_path / "nan.npz"
+    np.savez(path, point_cloud=np.array([[1.0, 2.0, np.nan]], dtype=np.float32))
     with pytest.raises(ValueError, match="finite"):
         load_grasp_sample(path)
 
@@ -383,27 +426,30 @@ def test_data_perception_error_handling(tmp_path):
     with pytest.raises(TypeError, match="record_path"):
         load_grasp_sample("not-a-path")  # type: ignore[arg-type]
     with pytest.raises(FileNotFoundError, match="not found"):
-        load_grasp_sample(tmp_path / "non_existent.npy")
+        load_grasp_sample(tmp_path / "non_existent.npz")
     with pytest.raises(ValueError, match="not a file"):
         load_grasp_sample(tmp_path)
 
     # Invalid np load (corrupted file)
-    bad_npy = tmp_path / "corrupted.npy"
-    bad_npy.write_text("corrupted content", encoding="utf-8")
+    bad_npz = tmp_path / "corrupted.npz"
+    bad_npz.write_bytes(b"PK\x03\x04this is not a valid npz archive")
     with pytest.raises(ValueError, match="Failed to load"):
-        load_grasp_sample(bad_npy)
+        load_grasp_sample(bad_npz)
 
-    # Loaded not a dict (loaded array instead of 0-D dict)
+    # Legacy pickled record extension is rejected
+    legacy_npy = tmp_path / "legacy.npy"
+    np.save(legacy_npy, {"point_cloud": np.zeros((2, 3))}, allow_pickle=True)
+    with pytest.raises(ValueError, match=r"must use the \.npz extension"):
+        load_grasp_sample(legacy_npy)
+
+    # Plain numeric .npy arrays are not dataset records
     array_npy = tmp_path / "array.npy"
     np.save(array_npy, np.zeros((2, 3)))
-    with pytest.raises(ValueError, match="expected a serialized dictionary"):
+    with pytest.raises(ValueError, match=r"must use the \.npz extension"):
         load_grasp_sample(array_npy)
 
-    # Loaded dict is not a dict (pickled string)
-    str_npy = tmp_path / "str.npy"
-    np.save(str_npy, "not-a-dict", allow_pickle=True)
-    with pytest.raises(TypeError, match="not a dictionary"):
-        load_grasp_sample(str_npy)
+    with pytest.raises(ValueError, match=r"must use the \.npz extension"):
+        save_grasp_sample(tmp_path / "invalid_suffix.npy", {"point_cloud": np.zeros((2, 3))})
 
     # resolve_ycb_object_id validations
     with pytest.raises(TypeError, match="ycb_root"):
@@ -718,10 +764,16 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
 
     dataset_dir = tmp_path / "valid_dataset"
     dataset_dir.mkdir()
-    sample_file = dataset_dir / "sample_001.npy"
+    sample_file = dataset_dir / "sample_001.npz"
     pc = np.random.randn(20, 3).astype(np.float32)
     grasps = np.tile(np.eye(4, dtype=np.float32), (2, 1, 1))
-    np.save(sample_file, {"point_cloud": pc, "grasp_poses": grasps}, allow_pickle=True)
+    save_grasp_sample(
+        sample_file,
+        {
+            "point_cloud": pc,
+            "grasp_poses": grasps,
+        },
+    )
 
     pairs = build_supervised_training_pairs(dataset_dir, augment=True, seed=42)
     assert len(pairs) == 2
@@ -730,25 +782,28 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
 
     scored_dir = tmp_path / "scored_dataset"
     scored_dir.mkdir()
-    scored_file = scored_dir / "scored_sample.npy"
+    scored_file = scored_dir / "scored_sample.npz"
     scores = np.array([0.2, 0.9], dtype=np.float32)
-    np.save(
+    save_grasp_sample(
         scored_file,
-        {"point_cloud": pc, "grasp_poses": grasps, "scores": scores},
-        allow_pickle=True,
+        {
+            "point_cloud": pc,
+            "grasp_poses": grasps,
+            "scores": scores,
+        },
     )
     filtered_pairs = build_supervised_training_pairs(
         scored_dir, min_grasp_score=0.5, score_repeat_factor=2, score_repeat_power=1.0
     )
     assert len(filtered_pairs) == 2
 
-    invalid_file = dataset_dir / "invalid_sample.npy"
-    np.save(
+    invalid_file = dataset_dir / "invalid_sample.npz"
+    np.savez(
         invalid_file,
-        {"point_cloud": "not_array", "grasp_poses": grasps},
-        allow_pickle=True,
+        point_cloud=np.array("not_array"),
+        grasp_poses=grasps,
     )
-    with pytest.raises(TypeError, match="must be a numpy array"):
+    with pytest.raises(ValueError, match="point_cloud must have shape"):
         build_supervised_training_pairs(dataset_dir)
 
 
@@ -819,21 +874,20 @@ def test_training_pairs_validations_and_error_paths(tmp_path: Path) -> None:
 
     corrupt_ds = tmp_path / "corrupt_ds"
     corrupt_ds.mkdir()
-    np.save(
-        corrupt_ds / "sample_invalid_pc.npy",
-        {"point_cloud": "not_an_array", "grasp_poses": np.eye(4)[None]},
-        allow_pickle=True,
+    np.savez(
+        corrupt_ds / "sample_invalid_pc.npz",
+        point_cloud=np.array("not_an_array"),
+        grasp_poses=np.eye(4, dtype=np.float32)[None],
     )
 
-    with pytest.raises(TypeError, match=r"point_cloud.*must be a numpy array"):
+    with pytest.raises(ValueError, match="point_cloud must have shape"):
         build_supervised_training_pairs(corrupt_ds)
 
     corrupt_ds2 = tmp_path / "corrupt_ds2"
     corrupt_ds2.mkdir()
-    np.save(
-        corrupt_ds2 / "sample_invalid_grasps.npy",
-        {"point_cloud": np.zeros((10, 3)), "grasp_poses": "not_an_array"},
-        allow_pickle=True,
+    np.savez(
+        corrupt_ds2 / "sample_invalid_grasps.npz",
+        point_cloud=np.zeros((10, 3), dtype=np.float32),
     )
 
     with pytest.raises(TypeError, match=r"grasp poses must be a numpy array"):
@@ -841,10 +895,12 @@ def test_training_pairs_validations_and_error_paths(tmp_path: Path) -> None:
 
     corrupt_ds3 = tmp_path / "corrupt_ds3"
     corrupt_ds3.mkdir()
-    np.save(
-        corrupt_ds3 / "sample_empty_grasps.npy",
-        {"point_cloud": np.zeros((10, 3)), "grasp_poses": np.zeros((0, 4, 4))},
-        allow_pickle=True,
+    save_grasp_sample(
+        corrupt_ds3 / "sample_empty_grasps.npz",
+        {
+            "point_cloud": np.zeros((10, 3), dtype=np.float32),
+            "grasp_poses": np.zeros((0, 4, 4), dtype=np.float32),
+        },
     )
 
     with pytest.raises(ValueError, match="has no target grasp poses"):
