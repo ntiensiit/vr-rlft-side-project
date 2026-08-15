@@ -1,6 +1,0 @@
-# Headless CI has no GPU. Official Linux torch wheels pull triton, and
-# Optimizer.__init__ -> _disable_dynamo imports it and segfaults on runners.
-[[index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
