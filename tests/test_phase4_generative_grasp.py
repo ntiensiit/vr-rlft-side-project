@@ -23,13 +23,10 @@ from grasping_ai.inference.grasp_generator import (
     build_diffusion_grasp_generator,
     build_flow_grasp_generator,
     generate_candidate_grasps,
-    load_grasp_model_checkpoint,
 )
 from grasping_ai.models.diffusion import (
     GraspGeneratorModel,
-    ScoreNetwork,
     build_diffusion_sampler,
-    build_score_network,
     sample_grasps_with_diffusion,
 )
 from grasping_ai.models.equivariant_encoder import (
@@ -41,7 +38,6 @@ from grasping_ai.models.equivariant_encoder import (
 )
 from grasping_ai.models.flow import (
     FlowGeneratorModel,
-    build_flow_field,
     build_flow_integrator,
 )
 from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
@@ -197,7 +193,7 @@ def test_training_creates_checkpoint() -> None:
             raise AssertionError
 
         # Load and verify checkpoint contents
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
         if "model_state_dict" not in checkpoint:
             raise AssertionError
         if not (int(checkpoint["feature_dim"]) == EXPECTED_FEATURE_DIM):
@@ -341,7 +337,7 @@ def test_generate_grasps_output_shape_single_observation() -> None:
         optimizer = build_adam_optimizer(model.parameters(), 0.01)
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
         generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, device="cpu")
 
         rng = np.random.default_rng()
@@ -364,7 +360,7 @@ def test_generate_grasps_rotations_are_valid() -> None:
         optimizer = build_adam_optimizer(model.parameters(), 0.01)
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
         generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, device="cpu")
 
         rng = np.random.default_rng()
@@ -385,9 +381,9 @@ def test_generate_grasps_rotations_are_valid() -> None:
 
 
 def test_generate_grasps_rejects_invalid_checkpoint() -> None:
-    """Verify load_grasp_model_checkpoint error validation."""
+    """Verify checkpoint loading error validation."""
     with pytest.raises(FileNotFoundError):
-        load_grasp_model_checkpoint(Path("non_existent_ckpt.pt"), "cpu")
+        load_torch_checkpoint(Path("non_existent_ckpt.pt"), "cpu")
 
 
 def test_generate_grasps_rejects_invalid_observation_shape() -> None:
@@ -400,7 +396,7 @@ def test_generate_grasps_rejects_invalid_observation_shape() -> None:
         optimizer = build_adam_optimizer(model.parameters(), 0.01)
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
         generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, device="cpu")
 
         # Invalid shape: 3D array (expected 2D)
@@ -420,7 +416,7 @@ def test_inference_grasps_follow_input_point_cloud_frame() -> None:
         optimizer = build_adam_optimizer(model.parameters(), 0.01)
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
         generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, device="cpu")
 
         rng = np.random.RandomState(0)
@@ -452,7 +448,7 @@ def test_model_inference_is_repeatable_without_global_state() -> None:
         optimizer = build_adam_optimizer(model.parameters(), 0.01)
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
         generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, device="cpu")
 
         rng = np.random.default_rng()
@@ -476,19 +472,9 @@ def test_flow_matching_loss_is_finite() -> None:
         raise AssertionError
 
 
-def test_flow_field_forward_shape() -> None:
-    """Verify flow field forward shape."""
-    flow = build_flow_field(8, 16, 2)
-    x = torch.randn(4, 9)
-    cond = torch.randn(4, 8)
-    out = flow(x, cond)
-    if not (out.shape == (4, 9)):
-        raise AssertionError
-
-
 def test_flow_integrator_shape() -> None:
     """Verify flow integrator execution."""
-    flow = build_flow_field(8, 16, 2)
+    flow = FlowGeneratorModel(feature_dim=8, hidden_dim=16, num_layers=2)
     integrator = build_flow_integrator(5)
     x0 = torch.randn(4, 9)
     cond = torch.randn(4, 8)
@@ -507,7 +493,7 @@ def test_flow_grasp_generator_inference() -> None:
         checkpoint_path = temp_path / "flow_model.pt"
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
 
         generator = build_flow_grasp_generator(checkpoint, feature_dim=8, num_flow_steps=5, device="cpu")
 
@@ -528,7 +514,7 @@ def test_generation_pipeline_and_writing() -> None:
         optimizer = build_adam_optimizer(model.parameters(), 0.01)
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
         generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, device="cpu")
 
         rng = np.random.default_rng()
@@ -693,7 +679,7 @@ def test_generator_seed_is_configurable() -> None:
     """Verify inference seeds are configurable and reproducible."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         checkpoint_path = _make_checkpoint(Path(tmp_dir))
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
         rng = np.random.default_rng()
         pc = rng.standard_normal((60, 3)).astype(np.float32)
 
@@ -723,7 +709,7 @@ def test_flow_generator_seed_is_configurable() -> None:
         checkpoint_path = tmp_path / "flow_model.pt"
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
 
         rng = np.random.default_rng()
         pc = rng.standard_normal((40, 3)).astype(np.float32)
@@ -860,7 +846,7 @@ def _build_checkpoint_generator(builder: str) -> tuple[object, Path]:
         optimizer = build_adam_optimizer(model.parameters(), 0.01)
         save_training_checkpoint(model, optimizer, 1, checkpoint_path)
 
-        checkpoint = load_grasp_model_checkpoint(checkpoint_path, "cpu")
+        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
         if builder == "diffusion":
             generator = build_diffusion_grasp_generator(checkpoint, feature_dim=8, device="cpu")
         else:
@@ -1124,11 +1110,8 @@ def test_batch_conditioned_grasp_samples_validations() -> None:
 
 
 def test_diffusion_and_score_network_additional_coverage() -> None:
-    """Verify that building score networks and diffusion samplers handles dummy inference passes correctly."""
-    net = build_score_network(8, 16, 2)
-    if not (isinstance(net, ScoreNetwork)):
-        raise TypeError
-
+    """Verify that a trained model's score network works with the sampler."""
+    net = GraspGeneratorModel(feature_dim=8, hidden_dim=16, num_layers=2).score_net
     sampler = build_diffusion_sampler()
     x0 = torch.randn(2, 9)
     cond = torch.randn(2, 8)

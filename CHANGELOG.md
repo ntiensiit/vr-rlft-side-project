@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dead helpers wired; duplicate training/checkpoint/SE(3) paths consolidated — [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md).
 - Dual inference CLIs share runtime helpers; artifact and runtime grasp formats reconciled — [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
 - Diffusion training entry points renamed (`scripts/train_diffusion.py`, `pipelines/train_diffusion.py`); artifact outputs use method-specific filenames (`diffusion_grasp_generator.pt`, `flow_grasp_generator.pt`, `rl_grasp_policy.pt`, `{method}_grasp_candidates.npy`, etc.).
-- `configs/` restructured as Hydra config groups (`config.yaml` entrypoint, `<group>/default.yaml`); `load_project_yaml_config` composes via Hydra with CLI override support (`seed=100`) — [ADR-0008](docs/adr/008-hydra-configuration.md).
+- `configs/` restructured as Hydra config groups (`config.yaml` entrypoint, `<group>/default.yaml`); `compose_config` composes via Hydra with CLI override support (`seed=100`) — [ADR-0008](docs/adr/008-hydra-configuration.md).
 - Flat config files (`configs/data.yaml`, `configs/model.yaml`, etc.) replaced by group defaults under `configs/<group>/default.yaml`.
 - Franka Emika Panda replaces toy 2-DOF arm in `deploy/robot.xml`; robot viewing is consolidated in `pipelines/visualize_robot.py`.
 

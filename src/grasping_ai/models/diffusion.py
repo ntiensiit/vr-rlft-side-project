@@ -83,21 +83,6 @@ class GraspGeneratorModel(torch.nn.Module):
         return pool_object_features(features)
 
 
-def build_score_network(feature_dim: int, hidden_dim: int, num_layers: int) -> DiffusionScoreModel:
-    """Construct a score network for grasp-pose diffusion.
-
-    Args:
-        feature_dim: Conditioning feature dimension from the encoder.
-        hidden_dim: Width of the hidden layers.
-        num_layers: Number of hidden layers in the score network.
-
-    Returns:
-        A callable score model accepting ``(x, t, conditioning)`` and returning
-        a tensor with the same shape as ``x``.
-    """
-    return ScoreNetwork(feature_dim, hidden_dim, num_layers)
-
-
 def build_diffusion_sampler() -> DiffusionSampler:
     """Construct a score-based diffusion sampler for grasp poses.
 
@@ -164,7 +149,7 @@ def sample_grasps_with_diffusion(  # noqa: PLR0913,PLR0917
 
     Args:
         sampler: Diffusion sampler returned by ``build_diffusion_sampler``.
-        score_model: Score network produced by ``build_score_network``.
+        score_model: Score network used for denoising.
         conditioning: Object-level conditioning features with shape ``(B, F)``.
         grasp_dim: Dimensionality of a single grasp pose vector.
         num_samples: Number of grasp poses to sample per conditioning element.

@@ -13,7 +13,6 @@ import grasping_ai
 import grasping_ai.config.config as loader_mod
 from grasping_ai.inference.policy_runner import (
     build_rl_policy_runner,
-    load_rl_policy_checkpoint,
     run_policy_step,
 )
 from grasping_ai.models.rl_policy import (
@@ -21,7 +20,6 @@ from grasping_ai.models.rl_policy import (
     RL_POLICY_ARCHITECTURE,
     build_policy_network,
     build_sb3_net_arch,
-    build_value_network,
     copy_sb3_policy_weights,
     read_rl_policy_metadata,
     save_rl_policy_checkpoint,
@@ -34,7 +32,7 @@ from grasping_ai.simulation.mujoco_env import (
 )
 from grasping_ai.simulation.scene import build_scene_xml
 from grasping_ai.simulation.ycb import resolve_ycb_object_directory
-from grasping_ai.training.checkpoint_io import read_model_checkpoint_metadata
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint, read_model_checkpoint_metadata
 
 CHECKPOINT_OBSERVATION_DIM = 4
 CHECKPOINT_ACTION_DIM = 2
@@ -96,15 +94,6 @@ def test_policy_network_forward_shape() -> None:
     obs = torch.randn(3, 4)
     out = policy(obs)
     if not (out.shape == (3, 2)):
-        raise AssertionError
-
-
-def test_value_network_forward_shape() -> None:
-    """Verify value network output has correct shape."""
-    value_net = build_value_network(4, 16, 2)
-    obs = torch.randn(3, 4)
-    out = value_net(obs)
-    if not (out.shape == (3, 1)):
         raise AssertionError
 
 
@@ -271,7 +260,7 @@ def test_rl_checkpoint_is_loadable_or_discoverable(panda_robot_xml: Path) -> Non
             device="cpu",
         )
 
-        checkpoint = load_rl_policy_checkpoint(ckpt_path, "cpu")
+        checkpoint = load_torch_checkpoint(ckpt_path, "cpu")
         if not (isinstance(checkpoint, dict)):
             raise TypeError
         if "model_state_dict" not in checkpoint:
@@ -643,14 +632,14 @@ def test_build_rl_policy_runner_additional_branches(tmp_path: Path) -> None:
         stochastic_runner(np.zeros(3))
 
 
-def test_load_rl_policy_checkpoint_validations(tmp_path: Path) -> None:
-    """Verify that load_rl_policy_checkpoint raises appropriate errors for invalid checkpoint paths or missing files."""
+def test_checkpoint_loader_validations(tmp_path: Path) -> None:
+    """Verify that the shared checkpoint loader rejects invalid paths."""
     with pytest.raises(TypeError, match="checkpoint_path must be"):
-        load_rl_policy_checkpoint("invalid_path", "cpu")  # type: ignore[arg-type]
+        load_torch_checkpoint("invalid_path", "cpu")  # type: ignore[arg-type]
 
     non_existent = tmp_path / "missing.pt"
     with pytest.raises(FileNotFoundError, match="Checkpoint file not found"):
-        load_rl_policy_checkpoint(non_existent, "cpu")
+        load_torch_checkpoint(non_existent, "cpu")
 
 
 def test_run_policy_step_execution() -> None:
@@ -701,15 +690,6 @@ def test_rl_policy_additional_validations(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="num_layers must be positive"):
         build_policy_network(4, 2, 16, 0)
-
-    with pytest.raises(ValueError, match="observation_dim must be positive"):
-        build_value_network(0, 16, 2)
-
-    with pytest.raises(ValueError, match="hidden_dim must be positive"):
-        build_value_network(4, 0, 2)
-
-    with pytest.raises(ValueError, match="num_layers must be positive"):
-        build_value_network(4, 16, 0)
 
     obs = torch.randn(2, 4)
     with pytest.raises(TypeError, match=r"rng must be a torch\.Generator"):
@@ -936,7 +916,7 @@ def test_run_rl_training_pipeline_config_exception(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify train_rl pipeline fallback RewardConfig is loaded when yaml load fails."""
-    monkeypatch.setattr(loader_mod, "load_project_yaml_config", _raise_config_load_error)
+    monkeypatch.setattr(loader_mod, "compose_config", _raise_config_load_error)
 
     valid_robot = panda_robot_xml
     valid_ycb = tmp_path / "ycb_raw"

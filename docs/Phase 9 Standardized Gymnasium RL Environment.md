@@ -50,7 +50,6 @@ After this phase:
 - **RL policy network construction**
   - File: `src/grasping_ai/models/rl_policy.py`
   - `build_policy_network` constructs a Torch sequential policy mapping observation vectors to action vectors.
-  - `build_value_network` exists but is not used by the current custom RL update path.
   - `select_action` exists but is not used by the inspected pipeline rollout path.
 
 - **Custom RL training pipeline**
@@ -66,7 +65,7 @@ After this phase:
 
 - **RL policy inference**
   - File: `src/grasping_ai/inference/policy_runner.py`
-  - `load_rl_policy_checkpoint` loads a Torch checkpoint.
+  - `load_torch_checkpoint` loads a Torch checkpoint.
   - `build_rl_policy_runner` reconstructs a policy using `build_policy_network` and expects a checkpoint field named `model_state_dict`.
 
 - **CLI entry point**
@@ -121,10 +120,6 @@ After this phase:
 - **`compute_gae_advantages`**
   - File: `src/grasping_ai/training/rl_trainer.py` *(historical: module removed in the SB3 PPO migration)*
   - Implemented, but the inspected custom update step does not use it.
-
-- **`build_value_network`**
-  - File: `src/grasping_ai/models/rl_policy.py`
-  - Implemented, but the current custom training step does not use a value network.
 
 ## 3. Phase Boundary
 
@@ -287,7 +282,7 @@ New RL execution flow:
 
 - Torch save file.
 - Must contain a `model_state_dict` entry loadable by `build_policy_network`.
-- Must remain readable by `src/grasping_ai/inference/policy_runner.py::load_rl_policy_checkpoint`.
+- Must remain readable by `src/grasping_ai/training/checkpoint_io.py::load_torch_checkpoint`.
 
 ### Cross-module interactions
 
@@ -611,7 +606,7 @@ After stable-baselines3 training completes, the pipeline must:
     - `model_state_dict` from the legacy policy module,
     - an epoch or update-count field,
     - any additional scalar metadata required for future inspection.
-5. Ensure the checkpoint can be loaded by `load_rl_policy_checkpoint` and used by `build_rl_policy_runner` without modifying inference code.
+5. Ensure the checkpoint can be loaded by `load_torch_checkpoint` and used by `build_rl_policy_runner` without modifying inference code.
 
 ### Edge cases
 
@@ -713,7 +708,7 @@ Required integration tests must cover:
 
 - Stable-baselines3 training for a tiny number of steps using the new environment.
 - Checkpoint export after training.
-- Loading the exported checkpoint through `load_rl_policy_checkpoint`.
+- Loading the exported checkpoint through `load_torch_checkpoint`.
 - Building a policy runner through `build_rl_policy_runner`.
 - Running the policy runner on an environment observation and receiving a finite action of the correct shape.
 
@@ -825,7 +820,7 @@ Before committing, the full existing test suite must pass, including:
 
 - Training completes without error.
 - A checkpoint file is written.
-- The checkpoint loads through `load_rl_policy_checkpoint`.
+- The checkpoint loads through `load_torch_checkpoint`.
 - `build_rl_policy_runner` returns a callable policy.
 - The callable policy produces a finite action with the correct shape.
 

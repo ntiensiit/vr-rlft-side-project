@@ -55,7 +55,7 @@ Users must understand which one they are loading.
   into a `build_policy_network(obs_dim, act_dim, hidden_dim, 2)` instance.
 * Saved via `save_rl_policy_checkpoint` to the path passed as
   `--policy-checkpoint` (e.g., `artifacts/checkpoints/rl_grasp_policy.pt`).
-* Loaded by `load_rl_policy_checkpoint` + `build_rl_policy_runner`
+* Loaded by `load_torch_checkpoint` + `build_rl_policy_runner`
   (in `src/grasping_ai/inference/policy_runner.py`) into a deterministic
   `Sequential` MLP that returns a single mean action per observation.
 * **Does not reproduce the full SB3 stochastic policy**: the stochastic

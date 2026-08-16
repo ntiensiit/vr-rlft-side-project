@@ -34,15 +34,6 @@ def compose_config(
         return compose(config_name=config_name, overrides=overrides or [])
 
 
-def load_project_yaml_config(
-    config_dir: Path,
-    config_name: str = "config",
-    overrides: list[str] | None = None,
-) -> DictConfig:
-    """Compose project configuration via Hydra."""
-    return compose_config(config_dir=config_dir, config_name=config_name, overrides=overrides)
-
-
 def hydra_cfg_to_dict(cfg: DictConfig) -> dict[str, object]:
     """Resolve a Hydra ``DictConfig`` to a plain mapping."""
     container = OmegaConf.to_container(cfg, resolve=True)

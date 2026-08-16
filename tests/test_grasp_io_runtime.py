@@ -89,7 +89,7 @@ def test_run_single_object_grasp_inference_from_observation(tmp_path: Path, monk
     dummy_grasps = _sample_grasps(2)
 
     monkeypatch.setattr(
-        "grasping_ai.inference.grasp_inference_runtime.load_grasp_model_checkpoint",
+        "grasping_ai.inference.grasp_inference_runtime.load_torch_checkpoint",
         lambda _path, _device: {},
     )
     monkeypatch.setattr(
@@ -153,7 +153,7 @@ def test_run_single_object_grasp_inference_rejects_unknown_method(
     ckpt_path = tmp_path / "ckpt.pt"
     ckpt_path.touch()
     monkeypatch.setattr(
-        "grasping_ai.inference.grasp_inference_runtime.load_grasp_model_checkpoint",
+        "grasping_ai.inference.grasp_inference_runtime.load_torch_checkpoint",
         lambda _path, _device: {},
     )
 
@@ -188,7 +188,7 @@ def test_run_single_object_grasp_inference_diffusion_and_flow(tmp_path: Path, mo
         return "flow_generator"
 
     monkeypatch.setattr(
-        "grasping_ai.inference.grasp_inference_runtime.load_grasp_model_checkpoint",
+        "grasping_ai.inference.grasp_inference_runtime.load_torch_checkpoint",
         lambda _path, _device: {},
     )
     monkeypatch.setattr(
@@ -309,7 +309,7 @@ def test_run_single_object_grasp_inference_from_ycb_mesh(tmp_path: Path, monkeyp
         lambda _mesh_path, count, _rng: np.ones((count, 3), dtype=np.float32),
     )
     monkeypatch.setattr(
-        "grasping_ai.inference.grasp_inference_runtime.load_grasp_model_checkpoint",
+        "grasping_ai.inference.grasp_inference_runtime.load_torch_checkpoint",
         lambda _path, _device: {},
     )
     monkeypatch.setattr(

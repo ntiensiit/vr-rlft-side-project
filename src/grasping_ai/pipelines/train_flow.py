@@ -94,7 +94,7 @@ def build_flow_training_step(
         predicted_velocity = model.flow_field(x_t, cond)
         return loss_fn(predicted_velocity, target_velocity)
 
-    return training_trainer.build_supervised_training_step(model, optimizer, device, flow_forward)
+    return SupervisedTrainingStep(model, optimizer, device, flow_forward)
 
 
 def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tests pass options as keywords

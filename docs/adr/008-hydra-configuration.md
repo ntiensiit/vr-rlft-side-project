@@ -34,7 +34,7 @@ standard override syntax and a single composable config entrypoint.
      - _self_
    ```
 
-4. Rewrite `load_project_yaml_config` to compose via Hydra when
+4. Rewrite the project loader to use `compose_config` via Hydra when
    `config.yaml` is present; retain the legacy flat-file merge path for
    partial test directories without `config.yaml`.
 5. Add `parse_config_overrides_from_argv` so scripts accept Hydra-style
@@ -55,7 +55,7 @@ standard override syntax and a single composable config entrypoint.
 
 - Flat group files (`configs/data.yaml`, etc.) are replaced by
   `configs/<group>/default.yaml`.
-- Scripts continue calling `load_project_yaml_config`; no `@hydra.main` wrapper
+- Scripts continue calling `compose_config`; no `@hydra.main` wrapper
   on each entrypoint.
 - New experiment variants add files such as `configs/model/flow.yaml` and
   override with `model=flow`.
@@ -79,7 +79,7 @@ Unified config layout to match the ADR-0008 group names and remove split keys:
 - All `paths` consolidated under `configs/data/default.yaml` with `${paths.input_dir}` interpolation; removed from `base.yaml`.
 - All `rl` settings consolidated under `configs/rl/default.yaml` (removed from `model/` and `training/`).
 - `configs/model/flow.yaml` exports aligned with diffusion export paths.
-- CLI scripts call `load_project_yaml_config(config_dir)` without redundant layer lists when `config.yaml` is present.
+- CLI scripts call `compose_config(config_dir)` without redundant layer lists when `config.yaml` is present.
 - `configs/gripper/default.yaml` split into `configs/gripper/franka_emika_panda.yaml`; `default.yaml` defaults to Franka.
 - `configs/model/default.yaml` split into `configs/model/diffusion.yaml` and `configs/model/flow.yaml`; `default.yaml` defaults to diffusion.
 - Config deduplication: shared `configs/model/grasp.yaml`; artifact paths use `${paths.checkpoints|exports|reports|tensorboard}`; synthetic `gripper_width`, friction/collision, and RL `lift_height_threshold` interpolate from gripper/metrics; object-specific export filenames use `${objects.ids.0}`; removed unused `diffusion.train_steps`.

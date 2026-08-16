@@ -32,7 +32,7 @@ Full Hydra compositions live in the matching config group files. Each notebook s
 
 Data-prep subprocesses receive the same `--config-name` so scripts load an identical composed tree.
 
-Edit the ``notebook`` block in each entrypoint YAML for notebook-only flags (`download_ycb`, `augment`, `object_index`, `experiment`, `mount_drive`). Set ``notebook.mount_drive: true`` on Colab to persist ``data/`` and ``artifacts/`` under ``MyDrive/<drive_storage_dir>/`` across sessions. Hyperparameters and paths come from the composed config. Override at runtime with Hydra, e.g. ``load_project_yaml_config(CONFIG_DIR, config_name=CONFIG_NAME, overrides=["notebook.augment=true"])``.
+Edit the ``notebook`` block in each entrypoint YAML for notebook-only flags (`download_ycb`, `augment`, `object_index`, `experiment`, `mount_drive`). Set ``notebook.mount_drive: true`` on Colab to persist ``data/`` and ``artifacts/`` under ``MyDrive/<drive_storage_dir>/`` across sessions. Hyperparameters and paths come from the composed config. Override at runtime with Hydra, e.g. ``compose_config(CONFIG_DIR, config_name=CONFIG_NAME, overrides=["notebook.augment=true"])``.
 
 ## Colab quick start
 

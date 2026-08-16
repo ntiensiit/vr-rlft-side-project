@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 import torch
@@ -13,33 +13,9 @@ from grasping_ai.models.rl_policy import (
     read_rl_policy_metadata,
     select_action,
 )
-from grasping_ai.training.checkpoint_io import (
-    load_torch_checkpoint,
-    read_checkpoint_model_state_dict,
-)
-
-if TYPE_CHECKING:
-    from pathlib import Path
+from grasping_ai.training.checkpoint_io import read_checkpoint_model_state_dict
 
 PolicyActionSampler = Callable[[np.ndarray], np.ndarray]
-
-
-def load_rl_policy_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
-    """Load an RL policy checkpoint from disk.
-
-    Args:
-        checkpoint_path: Path to the RL policy checkpoint file.
-        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
-
-    Returns:
-        Deserialized checkpoint dictionary including ``model_state_dict``.
-
-    Raises:
-        TypeError: If ``checkpoint_path`` is not a ``pathlib.Path`` instance.
-        FileNotFoundError: If the checkpoint file does not exist.
-        ValueError: If ``torch.load`` fails or the payload is not a dictionary.
-    """
-    return load_torch_checkpoint(checkpoint_path, device)
 
 
 def _resolve_policy_architecture(

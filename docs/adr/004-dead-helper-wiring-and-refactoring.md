@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted (2026-08-12). Updated 2026-08-13 — code audit complete; see follow-up section.
+Accepted (2026-08-12). Updated 2026-08-16 — explicit dead-code removal
+supersedes the earlier helper-retention policy.
 
 ## Context
 
@@ -16,8 +17,9 @@ A refactoring audit identified four classes of cleanup work:
 4. **Dependencies** — `theseus` had no production imports; `pytransform3d` was
    flagged for dev-only relocation despite runtime use.
 
-User direction: **"check where them should be used, dont delete them"** — retain
-audited helpers and wire them into production rather than deleting dead code.
+The earlier direction was to retain audited helpers and wire them into
+production. The current cleanup request explicitly authorizes removing helpers
+that remain test-only after the wiring audit.
 
 ## Decision
 
@@ -47,7 +49,7 @@ behavior change; no tests weakened or removed.
 | Training | `load_pretrained_encoder`, `invert_rigid_transform` → `pipelines/train_flow.py` |
 | Perception/data | `sample_point_cloud`, `farthest_point_sampling`, `voxel_downsample` → `scripts/prepare_data.py`; `merge_point_clouds`, `normalize_point_cloud` → `scripts/prepare_observations.py`; transform helpers → `data/transforms.py`; `invert_transform` → `models/equivariant_encoder.py` |
 | Frames | `convert_grasps_to_world_frame`, `identity_transform` → `scripts/run_simulation.py` |
-| RL | `build_value_network` → `pipelines/train_rl.py`; `select_action` → `inference/policy_runner.py`, `scripts/run_rl_evaluation.py` |
+| RL | `select_action` → `inference/policy_runner.py`, `scripts/run_rl_evaluation.py` |
 
 ### Duplicate code extraction
 
@@ -58,7 +60,6 @@ behavior change; no tests weakened or removed.
 | `prepare_point_cloud_tensor`, `encode_grasp_conditioning`, `sample_to_world_frame` | `inference/grasp_sampling.py` |
 | `load_torch_checkpoint`, `read_model_checkpoint_metadata`, `checkpoint_scalar_int`, `checkpoint_dict_int` | `training/checkpoint_io.py` |
 | `SupervisedTrainingDataloader`, `ConditionedTrainingDataloader` | `pipelines/supervised_training.py` |
-| `build_supervised_training_step` | `training/trainer.py` |
 | `build_grasp_sampling_batch` | `models/grasp_sampling_batch.py` |
 
 Callers updated: `pipelines/train.py`, `pipelines/train_flow.py`,
@@ -72,19 +73,21 @@ Callers updated: `pipelines/train.py`, `pipelines/train_flow.py`,
 - **Scene XML output:** `build_scene_xml`, `attach_object_to_scene`, and
   `MuJoCoScene` accept optional `output_dir` / `scene_output_dir`; default is
   `$TMPDIR/grasping_ai_scenes` instead of repo-relative `data/interim`.
-- **`__init__.py` re-exports:** consolidated; test-only factories demoted
-  (`build_score_network`, augmentation/dataset iterator from package roots).
+- **`__init__.py` re-exports:** consolidated; augmentation and dataset
+  iterators remain available only from their owning modules.
 - **SE(3) helpers:** `invert_rigid_transform` delegates to `invert_transform`;
   `transform_between_frames` delegates to `apply_transform`.
 - **Removed dead surface:** `FrameConversion` alias, `flow_field` compat dict key,
   metadata-only regression baseline in `pipelines/train.py`, redundant final
   checkpoint write in `train_flow.py`, obsolete notebooks (see
-  `notebooks/archive/README.md`).
+  `notebooks/archive/README.md`), and the remaining test-only
+  `build_gripper_controller`, `build_score_network`, and `build_flow_field`
+  factories.
 
 ### 2026-08-13 follow-up (code audit completion)
 
-Wire remaining test-only helpers into production rather than delete (per original
-policy):
+The helpers below were wired into production rather than deleted under the
+original policy:
 
 | Helper / flag | Production caller |
 | --- | --- |
@@ -124,9 +127,9 @@ Do **not** remove `theseus` or demote `pytransform3d` to dev-only.
 
 - Refactoring implementation work is closed; open items are research validation
   (see `CHECKLIST.md`).
-- **Do not delete** wired helpers unless this ADR is explicitly superseded.
-- New helpers should follow the same pattern: wire into a production caller or
-  document why they remain test-only.
+- Wired helpers remain part of the production API. Test-only helpers without a
+  production caller should be removed during cleanup rather than retained
+  solely for isolated tests.
 
 ## Verification state (2026-08-13)
 
@@ -143,6 +146,6 @@ Gate: `uv run pytest -q`, `uv run ruff check src tests scripts`, `uv run mypy sr
 
 Revisit when:
 
-- the wiring policy is reversed (explicit deletion of helpers is requested);
+- a removed helper gains a production caller and must be restored or replaced;
 - a dependency is replaced (e.g. swap PyPI `theseus` for a robotics optimizer);
 - duplicate patterns reappear across new pipelines without using shared modules.

@@ -12,10 +12,10 @@ from grasping_ai.inference.grasp_generator import (
     build_diffusion_grasp_generator,
     build_flow_grasp_generator,
     generate_candidate_grasps,
-    load_grasp_model_checkpoint,
 )
 from grasping_ai.pipelines.generate_grasps import write_generated_grasps
 from grasping_ai.sensors.pointcloud_sensor import acquire_point_cloud_stream, sample_point_cloud_from_mesh
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
@@ -89,7 +89,7 @@ def run_single_object_grasp_inference(  # noqa: PLR0913
         msg = f"point_cloud must have shape (N, 3), got {point_cloud.shape}"
         raise ValueError(msg)
 
-    checkpoint = load_grasp_model_checkpoint(checkpoint_path, device)
+    checkpoint = load_torch_checkpoint(checkpoint_path, device)
     if method == "diffusion":
         generator = build_diffusion_grasp_generator(checkpoint, feature_dim, num_steps, device, seed)
     elif method == "flow":
@@ -117,7 +117,7 @@ def run_batch_grasp_inference(  # noqa: PLR0913
     seed: int,
 ) -> dict[str, np.ndarray]:
     """Generate grasp candidates for multiple observations and persist them."""
-    model_checkpoint = load_grasp_model_checkpoint(checkpoint_path, device)
+    model_checkpoint = load_torch_checkpoint(checkpoint_path, device)
     generator = build_diffusion_grasp_generator(model_checkpoint, feature_dim, device=device, seed=seed)
     point_clouds = list(acquire_point_cloud_stream(observation_paths))
     grasps = {

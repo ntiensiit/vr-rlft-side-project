@@ -55,16 +55,6 @@ class SupervisedTrainingStep:
         return {"loss": float(loss.item())}
 
 
-def build_supervised_training_step(
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    device: str,
-    forward_fn: LossForward,
-) -> SupervisedTrainingStep:
-    """Build a generic supervised step closure with pluggable forward/loss logic."""
-    return SupervisedTrainingStep(model, optimizer, device, forward_fn)
-
-
 def build_adam_optimizer(parameters: Iterator[torch.nn.Parameter], learning_rate: float) -> torch.optim.Optimizer:
     """Create an Adam optimizer for the given parameters.
 
@@ -120,7 +110,7 @@ def build_training_step(
         pred_noise = model(x_t, t, cond)
         return loss_fn(pred_noise, noise)
 
-    return build_supervised_training_step(model, optimizer, device, diffusion_forward)
+    return SupervisedTrainingStep(model, optimizer, device, diffusion_forward)
 
 
 def _init_writer(experiment_log_dir: Path | None, metadata: dict[str, object] | None) -> SummaryWriter | None:

@@ -9,7 +9,6 @@ from grasping_ai.config.config import (
     config_get,
     config_value,
     hydra_cfg_to_dict,
-    load_project_yaml_config,
 )
 from grasping_ai.config.diffusion import (
     DEFAULT_DIFFUSION_SCHEDULE,
@@ -33,5 +32,4 @@ __all__ = [
     "config_value",
     "hydra_cfg_to_dict",
     "linear_beta_schedule",
-    "load_project_yaml_config",
 ]

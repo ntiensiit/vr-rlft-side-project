@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 PolicyNetwork = torch.nn.Sequential
-ValueNetwork = torch.nn.Sequential
 
 RL_CHECKPOINT_FORMAT_VERSION = 1
 RL_POLICY_ARCHITECTURE = "mlp"
@@ -258,28 +257,6 @@ def build_policy_network(observation_dim: int, action_dim: int, hidden_dim: int,
     return build_tanh_mlp(observation_dim, hidden_dim, action_dim, num_layers)
 
 
-def build_value_network(observation_dim: int, hidden_dim: int, num_layers: int) -> ValueNetwork:
-    """Construct a value network for actor-critic style algorithms.
-
-    Args:
-        observation_dim: Dimensionality of the observation vector.
-        hidden_dim: Width of the hidden layers.
-        num_layers: Number of hidden layers in the value network.
-
-    Returns:
-        A callable value network mapping observations to scalar values.
-    """
-    if observation_dim <= 0:
-        msg = "observation_dim must be positive"
-        raise ValueError(msg)
-    if hidden_dim <= 0:
-        msg = "hidden_dim must be positive"
-        raise ValueError(msg)
-    if num_layers <= 0:
-        msg = "num_layers must be positive"
-        raise ValueError(msg)
-
-    return build_tanh_mlp(observation_dim, hidden_dim, 1, num_layers)
 
 
 def select_action(

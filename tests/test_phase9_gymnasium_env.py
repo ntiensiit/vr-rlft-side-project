@@ -12,7 +12,6 @@ from gymnasium.utils.env_checker import check_env
 import grasping_ai.simulation.mujoco_env as mujoco_env_module
 from grasping_ai.inference.policy_runner import (
     build_rl_policy_runner,
-    load_rl_policy_checkpoint,
 )
 from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
 from grasping_ai.simulation.mujoco_env import (
@@ -23,6 +22,7 @@ from grasping_ai.simulation.mujoco_env import (
     set_actuator_controls,
 )
 from grasping_ai.simulation.scene import build_scene_xml
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -352,7 +352,7 @@ def test_sb3_training_and_inference_compatibility(panda_robot_xml: Path, tmp_pat
     if not (checkpoint_path.is_file()):
         raise AssertionError
 
-    checkpoint = load_rl_policy_checkpoint(checkpoint_path, "cpu")
+    checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
     if "model_state_dict" not in checkpoint:
         raise AssertionError
 

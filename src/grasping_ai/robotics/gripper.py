@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
@@ -11,10 +11,6 @@ import pytransform3d.rotations as pr
 from loguru import logger
 
 from grasping_ai.perception.geometry import make_transform
-from grasping_ai.simulation.mujoco_env import set_actuator_controls
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 DEFAULT_GRIPPER_GRID: dict[str, dict[str, float | int]] = {
     "x": {"start": -0.03, "stop": 0.03, "count": 4},
@@ -137,51 +133,6 @@ def load_gripper_model(gripper_description_path: str) -> dict[str, object]:
         "nu": model.nu,
         "nq": model.nq,
     }
-
-
-def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[np.ndarray], None]:
-    """Build a callable gripper controller that issues open/close commands.
-
-    The controller writes through the authoritative actuator-control path
-    (``set_actuator_controls``), the same path used by the Gymnasium
-    environment and the grasp-simulation pipeline. The gripper model must be
-    bound to simulation data via the ``"model"`` and ``"data"`` keys before
-    the controller is invoked.
-
-    Args:
-        gripper_model: Gripper model returned by ``load_gripper_model``.
-
-    Returns:
-        A callable accepting a gripper command vector and applying it to the
-        underlying simulation environment.
-    """
-    if not isinstance(gripper_model, dict) or "model" not in gripper_model:
-        msg = "gripper_model must be a dictionary returned by load_gripper_model"
-        raise TypeError(msg)
-
-    def controller(command: np.ndarray) -> None:
-        if not isinstance(command, np.ndarray):
-            msg = "command must be a numpy array"
-            raise TypeError(msg)
-        if not np.isfinite(command).all():
-            msg = "command must contain only finite values"
-            raise ValueError(msg)
-
-        data: Any = gripper_model.get("data")
-        model: Any = gripper_model.get("model")
-
-        if data is None or model is None:
-            msg = "Simulation data or model is not bound to gripper model"
-            raise RuntimeError(msg)
-
-        expected_nu: Any = gripper_model["nu"]
-        if command.shape != (expected_nu,):
-            msg = f"command shape {command.shape} does not match gripper actuators ({expected_nu},)"
-            raise ValueError(msg)
-
-        set_actuator_controls({"model": model, "data": data}, command)
-
-    return controller
 
 
 def make_open_command(gripper_model: dict[str, object]) -> np.ndarray:

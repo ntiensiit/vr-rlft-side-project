@@ -68,10 +68,8 @@ path (`GraspGeneratorModel`):
   and the diffusion path already pays it.
 * The optimizer covers more parameters (encoder + flow field). For the
   small configurations used by the unit tests this is harmless.
-* Code that constructed a flow model by calling `build_flow_field(...)`
-  directly still works (the legacy function is preserved for inference
-  paths that want only the flow field), but the **training path** now
-  must go through `FlowGeneratorModel`.
+* The standalone flow-field factory was removed because it had no production
+  caller; all training and inference paths use `FlowGeneratorModel`.
 * Inference code that wants to load a trained flow checkpoint should use
   `load_flow_model_checkpoint(...)` rather than rebuilding the
   architecture independently.

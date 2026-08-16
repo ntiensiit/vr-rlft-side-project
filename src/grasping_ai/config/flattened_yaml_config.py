@@ -9,9 +9,9 @@ from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 
 from .config import (
     DEFAULT_CONFIG_DIR,
+    compose_config,
     config_get,
     config_value,
-    load_project_yaml_config,
 )
 
 if TYPE_CHECKING:
@@ -43,7 +43,7 @@ class FlattenedYAMLConfig:
         merged_overrides = list(overrides or [])
         if library_defaults and config_name == "project":
             merged_overrides = list(_DEFAULT_LIBRARY_OVERRIDES) + merged_overrides
-        cfg = load_project_yaml_config(resolved_dir, config_name, merged_overrides)
+        cfg = compose_config(resolved_dir, config_name, merged_overrides)
         return cls(cfg)
 
     @staticmethod

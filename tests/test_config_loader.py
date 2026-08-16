@@ -12,7 +12,6 @@ from grasping_ai.config.config import (
     config_get,
     config_value,
     hydra_cfg_to_dict,
-    load_project_yaml_config,
 )
 
 EXPECTED_FEATURE_DIM = 32
@@ -28,9 +27,9 @@ EXPECTED_DEFAULT_SEED = 42
 EXPECTED_NUM_STEPS = 64
 
 
-def test_load_project_yaml_config_merges_layers() -> None:
-    """Verify that load_project_yaml_config merges all configuration layers correctly."""
-    cfg = load_project_yaml_config(Path("configs"))
+def test_compose_config_merges_layers() -> None:
+    """Verify that compose_config merges all configuration layers correctly."""
+    cfg = compose_config(Path("configs"))
     if not (cfg["device"] == "cpu"):
         raise AssertionError
     if not (config_get(cfg, "architecture", "feature_dim") == EXPECTED_FEATURE_DIM):
@@ -45,9 +44,9 @@ def test_load_project_yaml_config_merges_layers() -> None:
         raise AssertionError
 
 
-def test_load_project_yaml_config_composes_evaluation_groups() -> None:
+def test_compose_config_composes_evaluation_groups() -> None:
     """Verify that evaluation defaults compose common metrics and method settings."""
-    cfg = load_project_yaml_config(Path("configs"))
+    cfg = compose_config(Path("configs"))
     if not (config_get(cfg, "metrics", "friction_coefficient") == EXPECTED_FRICTION_COEFFICIENT):
         raise AssertionError
     if not (config_get(cfg, "limits", "max_linear_velocity") == EXPECTED_MAX_LINEAR_VELOCITY):
@@ -56,9 +55,9 @@ def test_load_project_yaml_config_composes_evaluation_groups() -> None:
         raise AssertionError
 
 
-def test_load_project_yaml_config_applies_evaluation_override() -> None:
+def test_compose_config_applies_evaluation_override() -> None:
     """Verify that evaluation=rl selects RL rollout settings."""
-    cfg = load_project_yaml_config(Path("configs"), overrides=["evaluation=rl"])
+    cfg = compose_config(Path("configs"), overrides=["evaluation=rl"])
     if not (config_get(cfg, "evaluation", "method") == "rl"):
         raise AssertionError
     if not (config_get(cfg, "evaluation", "episodes") == EXPECTED_RL_EPISODES):
@@ -67,9 +66,9 @@ def test_load_project_yaml_config_applies_evaluation_override() -> None:
         raise AssertionError
 
 
-def test_load_project_yaml_config_applies_training_override() -> None:
+def test_compose_config_applies_training_override() -> None:
     """Verify that training=flow selects the flow supervised config group."""
-    cfg = load_project_yaml_config(
+    cfg = compose_config(
         Path("configs"),
         overrides=["model=flow", "training=flow"],
     )
@@ -79,9 +78,9 @@ def test_load_project_yaml_config_applies_training_override() -> None:
         raise AssertionError
 
 
-def test_load_project_yaml_config_applies_hydra_overrides() -> None:
-    """Verify that load_project_yaml_config applies Hydra overrides correctly."""
-    cfg = load_project_yaml_config(
+def test_compose_config_applies_hydra_overrides() -> None:
+    """Verify that compose_config applies Hydra overrides correctly."""
+    cfg = compose_config(
         Path("configs"),
         overrides=["seed=100"],
     )
@@ -91,7 +90,7 @@ def test_load_project_yaml_config_applies_hydra_overrides() -> None:
 
 def test_config_value_path_and_list_helpers() -> None:
     """Verify typed config_value helpers retrieve paths and string lists."""
-    cfg = load_project_yaml_config(Path("configs"))
+    cfg = compose_config(Path("configs"))
     if not (config_value(cfg, "paths", "dataset_root", value_type=Path) == Path("data/processed")):
         raise AssertionError
     if not (
@@ -105,7 +104,7 @@ def test_config_value_path_and_list_helpers() -> None:
         raise AssertionError
 
 
-def test_load_project_yaml_config_skips_missing_layers(tmp_path: Path) -> None:
+def test_compose_config_skips_missing_layers(tmp_path: Path) -> None:
     """Compose only defaults that exist when ``config.yaml`` is present."""
     config_dir = tmp_path / "configs"
     config_dir.mkdir()
@@ -114,23 +113,23 @@ def test_load_project_yaml_config_skips_missing_layers(tmp_path: Path) -> None:
         "defaults:\n  - base\n  - _self_\n",
         encoding="utf-8",
     )
-    cfg = load_project_yaml_config(config_dir)
+    cfg = compose_config(config_dir)
     if not (cfg["seed"] == EXPECTED_SEED):
         raise AssertionError
 
 
-def test_load_project_yaml_config_uses_named_entrypoint() -> None:
+def test_compose_config_uses_named_entrypoint() -> None:
     """Verify that config_name selects a full preset composition."""
-    cfg = load_project_yaml_config(Path("configs"), config_name="training/flow")
+    cfg = compose_config(Path("configs"), config_name="training/flow")
     if not (config_get(cfg, "default_method") == "flow"):
         raise AssertionError
     if not (config_get(cfg, "supervised", "batch_size") == EXPECTED_BATCH_SIZE):
         raise AssertionError
 
 
-def test_load_project_yaml_config_includes_notebook_settings() -> None:
+def test_compose_config_includes_notebook_settings() -> None:
     """Verify that notebook entrypoints compose shared notebook run settings."""
-    cfg = load_project_yaml_config(Path("configs"), config_name="training/diffusion")
+    cfg = compose_config(Path("configs"), config_name="training/diffusion")
     if not (config_get(cfg, "notebook", "experiment") == "diffusion_grasp_colab"):
         raise AssertionError
     if config_get(cfg, "notebook", "download_ycb") is not True:
@@ -145,10 +144,10 @@ def test_load_project_yaml_config_includes_notebook_settings() -> None:
         raise AssertionError
 
 
-def test_load_project_yaml_config_invalid_name_raises() -> None:
+def test_compose_config_invalid_name_raises() -> None:
     """Verify that an invalid config entrypoint name raises FileNotFoundError."""
     with pytest.raises(FileNotFoundError, match="Hydra config entrypoint not found"):
-        load_project_yaml_config(Path("configs"), config_name="nonexistent_config")
+        compose_config(Path("configs"), config_name="nonexistent_config")
 
 
 def test_config_get_returns_default_for_missing_path() -> None:
@@ -319,7 +318,7 @@ def test_config_value_script_or_required_path() -> None:
 
 def test_hydra_cfg_to_dict_resolves_interpolation() -> None:
     """Verify hydra_cfg_to_dict resolves interpolated values."""
-    cfg = load_project_yaml_config(Path("configs"))
+    cfg = compose_config(Path("configs"))
     cfg_dict = hydra_cfg_to_dict(cfg)
     if not (isinstance(cfg_dict, dict)):
         raise AssertionError  # noqa: TRY004  # value expectation, not a signature type check

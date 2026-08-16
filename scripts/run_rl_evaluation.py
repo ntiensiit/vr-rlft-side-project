@@ -11,7 +11,6 @@ import numpy as np
 from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
 from grasping_ai.inference.policy_runner import (
     build_rl_policy_runner,
-    load_rl_policy_checkpoint,
     run_policy_step,
 )
 from grasping_ai.pipelines.evaluate import write_jsonl_records
@@ -21,6 +20,7 @@ from grasping_ai.simulation.ycb import (
     find_ycb_mjcf,
     resolve_ycb_object_directory,
 )
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
@@ -157,7 +157,7 @@ def run_rl_evaluation_main(  # noqa: PLR0913  # flat signature mirrors the hydra
     )
     action_bounds = _action_space_bounds(env)
 
-    checkpoint = load_rl_policy_checkpoint(policy_checkpoint_path, device)
+    checkpoint = load_torch_checkpoint(policy_checkpoint_path, device)
     runner = build_rl_policy_runner(
         checkpoint,
         observation_dim,

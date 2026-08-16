@@ -84,21 +84,6 @@ class FlowGeneratorModel(torch.nn.Module):
         return pool_object_features(features)
 
 
-def build_flow_field(feature_dim: int, hidden_dim: int, num_layers: int) -> FlowField:
-    """Construct a continuous flow field for grasp-pose generation.
-
-    Args:
-        feature_dim: Conditioning feature dimension from the encoder.
-        hidden_dim: Width of the hidden layers.
-        num_layers: Number of hidden layers in the flow field.
-
-    Returns:
-        A callable mapping ``(x, conditioning)`` to a velocity tensor with the
-        same shape as ``x``.
-    """
-    return FlowFieldNet(feature_dim, hidden_dim, num_layers)
-
-
 def build_flow_integrator(num_steps: int) -> FlowIntegrator:
     """Construct a numerical integrator for sampling along the flow field.
 
@@ -140,7 +125,7 @@ def sample_grasps_with_flow(  # noqa: PLR0913
 
     Args:
         integrator: Integrator returned by ``build_flow_integrator``.
-        flow_field: Flow field returned by ``build_flow_field``.
+        flow_field: Flow field used to evolve the samples.
         conditioning: Object-level conditioning features with shape ``(B, F)``.
         grasp_dim: Dimensionality of a single grasp pose vector.
         num_samples: Number of grasp poses to sample per conditioning element.

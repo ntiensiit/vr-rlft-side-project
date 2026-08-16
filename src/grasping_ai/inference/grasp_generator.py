@@ -21,14 +21,9 @@ from grasping_ai.models.flow import (
     load_flow_model_from_state,
     sample_grasps_with_flow,
 )
-from grasping_ai.training.checkpoint_io import (
-    checkpoint_scalar_int,
-    load_torch_checkpoint,
-)
+from grasping_ai.training.checkpoint_io import checkpoint_scalar_int
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import numpy as np
 
 
@@ -48,19 +43,6 @@ class GraspPoseGenerator(Protocol):
         ...
 
 
-def load_grasp_model_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
-    """Load a grasp-generation model checkpoint from disk.
-
-    Args:
-        checkpoint_path: Path to the checkpoint file produced during training.
-        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
-
-    Returns:
-        Deserialized checkpoint dictionary for grasp-generation models.
-    """
-    return load_torch_checkpoint(checkpoint_path, device)
-
-
 def build_diffusion_grasp_generator(
     checkpoint: dict[str, Any],
     feature_dim: int,
@@ -71,7 +53,7 @@ def build_diffusion_grasp_generator(
     """Create a callable that generates grasps using a diffusion model.
 
     Args:
-        checkpoint: Loaded model parameters from ``load_grasp_model_checkpoint``.
+        checkpoint: Loaded model parameters from ``load_torch_checkpoint``.
         feature_dim: Conditioning feature dimension expected by the score model.
         num_steps: Accepted for parity with the flow builder. Diffusion
             sampling uses the sampler's configured schedule.
@@ -131,7 +113,7 @@ def build_flow_grasp_generator(
     """Create a callable that generates grasps using a flow model.
 
     Args:
-        checkpoint: Loaded model parameters from ``load_grasp_model_checkpoint``.
+        checkpoint: Loaded model parameters from ``load_torch_checkpoint``.
         feature_dim: Conditioning feature dimension expected by the flow field.
         num_flow_steps: Number of integration steps for the flow sampler.
         device: Device identifier on which inference runs.

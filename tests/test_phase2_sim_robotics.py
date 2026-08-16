@@ -17,7 +17,6 @@ from grasping_ai.pipelines.simulate_grasp import (
     simulate_grasp,
 )
 from grasping_ai.robotics.gripper import (
-    build_gripper_controller,
     gripper_actuator_indices,
     load_gripper_model,
     make_close_command,
@@ -322,31 +321,6 @@ def test_make_open_close_commands(minimal_gripper_xml: Path) -> None:
         raise AssertionError
 
 
-def test_build_gripper_controller(minimal_gripper_xml: Path) -> None:
-    """Verify command limits, mapping, and application to ctrl array."""
-    import mujoco  # noqa: PLC0415  # deferred: optional heavy dependency
-
-    g_model = load_gripper_model(str(minimal_gripper_xml))
-    controller = build_gripper_controller(g_model)
-
-    # Bind data
-    mj_model = g_model["model"]
-    mj_data = mujoco.MjData(mj_model)
-    g_model["model"] = mj_model
-    g_model["data"] = mj_data
-
-    # Valid command
-    controller(np.array([0.02]))
-    if not (np.allclose(mj_data.ctrl[0], 0.02)):
-        raise AssertionError
-
-    # Invalid inputs
-    with pytest.raises(ValueError, match="finite"):
-        controller(np.array([np.nan]))
-    with pytest.raises(ValueError, match="shape"):
-        controller(np.array([0.01, 0.02]))
-
-
 def test_load_robot_model(panda_robot_xml: Path) -> None:
     """Load the Franka Panda MJCF and report nine generalized coordinates.
 
@@ -467,19 +441,12 @@ def _check_gripper_error_handling(minimal_gripper_xml: Path) -> None:
         if bad_xml.is_file():
             bad_xml.unlink()
 
-    with pytest.raises(TypeError, match="gripper_model"):
-        build_gripper_controller("not-a-dict")  # type: ignore[arg-type]
+    g_model = load_gripper_model(str(minimal_gripper_xml))
+
     with pytest.raises(TypeError, match="gripper_model"):
         make_open_command("not-a-dict")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="gripper_model"):
         make_close_command("not-a-dict")  # type: ignore[arg-type]
-
-    g_model = load_gripper_model(str(minimal_gripper_xml))
-    controller = build_gripper_controller(g_model)
-    with pytest.raises(TypeError, match="command"):
-        controller("not-a-numpy-array")  # type: ignore[arg-type]
-    with pytest.raises(RuntimeError, match="not bound"):
-        controller(np.array([0.02]))
 
     # Test open/close commands with explicit override keys
     g_model_override = {
@@ -548,36 +515,6 @@ def test_robotics_error_handling(minimal_gripper_xml: Path, panda_robot_xml: Pat
     _check_transform_error_handling()
     _check_gripper_error_handling(minimal_gripper_xml)
     _check_kinematics_error_handling(panda_robot_xml)
-
-
-def test_gripper_controller_uses_shared_command_path(minimal_gripper_xml: Path) -> None:
-    """Verify that gripper controllers correctly command actuator inputs through shared state mappings."""
-    import mujoco  # noqa: PLC0415  # deferred: optional heavy dependency
-
-    g_model = load_gripper_model(str(minimal_gripper_xml))
-    controller = build_gripper_controller(g_model)
-
-    mj_model = g_model["model"]
-    mj_data = mujoco.MjData(mj_model)
-    g_model["model"] = mj_model
-    g_model["data"] = mj_data
-
-    controller(np.array([0.02]))
-    if not (np.allclose(mj_data.ctrl[0], 0.02)):
-        raise AssertionError
-
-    with pytest.raises(ValueError, match="finite"):
-        controller(np.array([np.nan]))
-    with pytest.raises(ValueError, match="shape"):
-        controller(np.array([0.01, 0.02]))
-
-
-def test_gripper_controller_requires_bound_simulation(minimal_gripper_xml: Path) -> None:
-    """Verify that the gripper controller raises a RuntimeError if invoked before binding to active simulation state."""
-    g_model = load_gripper_model(str(minimal_gripper_xml))
-    controller = build_gripper_controller(g_model)
-    with pytest.raises(RuntimeError, match="not bound"):
-        controller(np.array([0.02]))
 
 
 def test_simulation_initializes_with_minimal_robot_description(panda_robot_xml: Path) -> None:
