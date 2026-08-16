@@ -7,5 +7,6 @@ defaults:
   - object: default
   - model: default
   - rl: default
+  - workflow: default
   - notebook: default
   - _self_

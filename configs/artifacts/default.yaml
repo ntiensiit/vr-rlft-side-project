@@ -5,3 +5,27 @@ artifacts:
   exports: ${artifacts.root}/exports
   reports: ${artifacts.root}/reports
   tensorboard: ${artifacts.root}/exports/tensorboard
+  manifest: ${artifacts.root}/manifest.jsonl
+  config_dir: configs
+  pycache_dir: .pycache
+  rl_inference_smoke: ${artifacts.root}/rl_inference_smoke.py
+  retained:
+    dataset_globs:
+      - "*.npz"
+      - index.json
+    mjcf_glob: "**/*.xml"
+    artifact_globs:
+      - "**/*.pt"
+      - "**/*.npy"
+      - "**/*.jsonl"
+  chain:
+    description: >-
+      Reproducible artifact chain: supervised (YCB mesh -> synthetic dataset
+      -> grasp checkpoint -> generated grasps -> MuJoCo simulation -> eval report)
+      and RL (SB3 PPO -> legacy checkpoint -> policy_runner inference)
+    wandb:
+      job_type: artifact-chain
+      tags:
+        - artifact-chain
+      artifact_name: artifact-chain
+      artifact_type: pipeline-output

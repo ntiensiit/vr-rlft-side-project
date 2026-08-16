@@ -646,10 +646,6 @@ def generate_synthetic_dataset(
         raise RuntimeError(msg)
 
 
-def _cfg_mapping_value(cfg: DictConfig, *keys: str, default: object) -> object:
-    return config_get(cfg, *keys, default=default)
-
-
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/prepare_data")
 def main(cfg: DictConfig) -> None:
     mode = str(config_value(cfg, "mode", "prepare", "mode", value_type=object, script_or=True))
@@ -671,10 +667,8 @@ def main(cfg: DictConfig) -> None:
         close_command = np.asarray(gripper_close, dtype=np.float64) if isinstance(gripper_close, list) else None
         synthetic_cfg = config_get(cfg, "synthetic")
         limits_cfg = config_get(cfg, "limits")
-        sim_position = config_value(cfg, "synthetic", "sim_object_position", value_type=list[float])
-        sim_object_position = (
-            np.asarray(sim_position, dtype=np.float64) if sim_position else np.array([0.5, 0.0, 0.1], dtype=np.float64)
-        )
+        sim_position = config_value(cfg, "synthetic", "sim_object_position", value_type=list[float], required=True)
+        sim_object_position = np.asarray(sim_position, dtype=np.float64)
         sim_table = config_get(cfg, "synthetic", "sim_table_xml")
         table_xml = Path(str(sim_table)) if isinstance(sim_table, str) else None
         if table_xml is not None and not table_xml.is_absolute():
@@ -688,40 +682,36 @@ def main(cfg: DictConfig) -> None:
             gripper_width=config_value(cfg, "synthetic", "gripper_width", value_type=float),
             seed=config_value(cfg, "synthetic", "seed", value_type=int),
             required_objects=config_value(cfg, "objects", "ids", value_type=list[str]),
-            oversample_factor=int(_cfg_mapping_value(cfg, "synthetic", "oversample_factor", default=2)),
-            oversample_extra=int(_cfg_mapping_value(cfg, "synthetic", "oversample_extra", default=256)),
-            neighborhood_size=int(_cfg_mapping_value(cfg, "synthetic", "neighborhood_size", default=30)),
-            voxel_size=float(_cfg_mapping_value(cfg, "synthetic", "voxel_size", default=1e-5)),
-            strict_antipodal_dot=float(_cfg_mapping_value(cfg, "synthetic", "strict_antipodal_dot", default=0.5)),
-            strict_alignment_dot=float(_cfg_mapping_value(cfg, "synthetic", "strict_alignment_dot", default=0.5)),
-            relaxed_antipodal_dot=float(_cfg_mapping_value(cfg, "synthetic", "relaxed_antipodal_dot", default=0.3)),
-            allow_relaxed=bool(_cfg_mapping_value(cfg, "synthetic", "allow_relaxed", default=True)),
-            search_multiplier=int(_cfg_mapping_value(cfg, "synthetic", "search_multiplier", default=50)),
-            candidate_multiplier=int(_cfg_mapping_value(cfg, "synthetic", "candidate_multiplier", default=3)),
-            min_grasp_translation=float(_cfg_mapping_value(cfg, "synthetic", "min_grasp_translation", default=0.01)),
-            min_grasp_rotation=float(_cfg_mapping_value(cfg, "synthetic", "min_grasp_rotation", default=0.2)),
-            min_quality_score=float(_cfg_mapping_value(cfg, "synthetic", "min_quality_score", default=0.0)),
-            friction_coefficient=config_value(cfg, "synthetic", "friction_coefficient", value_type=float, default=0.5),
-            collision_clearance=config_value(cfg, "synthetic", "collision_clearance", value_type=float, default=0.005),
-            sim_validate=config_value(cfg, "synthetic", "sim_validate", value_type=bool, default=False),
+            oversample_factor=config_value(cfg, "synthetic", "oversample_factor", value_type=int),
+            oversample_extra=config_value(cfg, "synthetic", "oversample_extra", value_type=int),
+            neighborhood_size=config_value(cfg, "synthetic", "neighborhood_size", value_type=int),
+            voxel_size=config_value(cfg, "synthetic", "voxel_size", value_type=float),
+            strict_antipodal_dot=config_value(cfg, "synthetic", "strict_antipodal_dot", value_type=float),
+            strict_alignment_dot=config_value(cfg, "synthetic", "strict_alignment_dot", value_type=float),
+            relaxed_antipodal_dot=config_value(cfg, "synthetic", "relaxed_antipodal_dot", value_type=float),
+            allow_relaxed=config_value(cfg, "synthetic", "allow_relaxed", value_type=bool),
+            search_multiplier=config_value(cfg, "synthetic", "search_multiplier", value_type=int),
+            candidate_multiplier=config_value(cfg, "synthetic", "candidate_multiplier", value_type=int),
+            min_grasp_translation=config_value(cfg, "synthetic", "min_grasp_translation", value_type=float),
+            min_grasp_rotation=config_value(cfg, "synthetic", "min_grasp_rotation", value_type=float),
+            min_quality_score=config_value(cfg, "synthetic", "min_quality_score", value_type=float),
+            friction_coefficient=config_value(cfg, "synthetic", "friction_coefficient", value_type=float),
+            collision_clearance=config_value(cfg, "synthetic", "collision_clearance", value_type=float),
+            sim_validate=config_value(cfg, "synthetic", "sim_validate", value_type=bool),
             mjcf_root=config_value(cfg, "paths", "ycb_mjcf", value_type=Path),
             robot_xml=config_value(cfg, "robot", "description", value_type=Path),
-            num_simulation_steps=config_value(cfg, "num_steps", value_type=int, default=500),
+            num_simulation_steps=config_value(cfg, "synthetic", "num_simulation_steps", value_type=int),
             gripper_close_command=close_command,
-            lift_height_threshold=config_value(cfg, "metrics", "lift_height_threshold", value_type=float, default=0.05),
-            max_linear_velocity=float(_cfg_mapping_value(cfg, "limits", "max_linear_velocity", default=0.05)),
-            max_angular_velocity=float(_cfg_mapping_value(cfg, "limits", "max_angular_velocity", default=0.1)),
+            lift_height_threshold=config_value(cfg, "metrics", "lift_height_threshold", value_type=float),
+            max_linear_velocity=config_value(cfg, "limits", "max_linear_velocity", value_type=float),
+            max_angular_velocity=config_value(cfg, "limits", "max_angular_velocity", value_type=float),
             quality_report_path=config_value(cfg, "quality_report", "prepare", "quality_report", value_type=Path, script_or=True),
             sim_object_position=sim_object_position,
-            sim_validate_require_lift=bool(
-                _cfg_mapping_value(cfg, "synthetic", "sim_validate_require_lift", default=False),
-            ),
-            sim_validate_require_ik=bool(_cfg_mapping_value(cfg, "synthetic", "sim_validate_require_ik", default=True)),
-            sim_validate_min_contacts=float(
-                _cfg_mapping_value(cfg, "synthetic", "sim_validate_min_contacts", default=1.0),
-            ),
-            sim_validate_fallback_analytical=bool(
-                _cfg_mapping_value(cfg, "synthetic", "sim_validate_fallback_analytical", default=True),
+            sim_validate_require_lift=config_value(cfg, "synthetic", "sim_validate_require_lift", value_type=bool),
+            sim_validate_require_ik=config_value(cfg, "synthetic", "sim_validate_require_ik", value_type=bool),
+            sim_validate_min_contacts=config_value(cfg, "synthetic", "sim_validate_min_contacts", value_type=float),
+            sim_validate_fallback_analytical=config_value(
+                cfg, "synthetic", "sim_validate_fallback_analytical", value_type=bool
             ),
             table_xml=table_xml,
         )

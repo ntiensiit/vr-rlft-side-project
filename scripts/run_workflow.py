@@ -32,6 +32,15 @@ def run_workflow_main(
     num_grasps: int,
     device: str,
     seed: int,
+    gripper_point_cloud_path: Path,
+    eval_object_key: str,
+    rl_rollout_report_name: str,
+    grasp_candidates_name: str,
+    simulation_outcomes_name: str,
+    analytical_evaluation_name: str,
+    object_point_cloud_name: str,
+    point_cloud_sample_multiplier: int,
+    pycache_dir: str,
     observation_path: Path | None = None,
     ycb_root_raw: Path | None = None,
     ycb_root_mjcf: Path | None = None,
@@ -43,13 +52,13 @@ def run_workflow_main(
     rl_episodes: int | None = None,
     rl_max_steps: int | None = None,
     table_xml_path: Path | None = None,
-    num_simulation_steps: int = 50,
-    gripper_close_command: float = 0.02,
-    friction_coefficient: float = 0.5,
-    lift_height_threshold: float = 0.05,
-    contact_clearance: float = 0.005,
-    wrench_regularization: float = 1.0,
-    grasp_pose_format: str = "world",
+    num_simulation_steps: int | None = None,
+    gripper_close_command: float | None = None,
+    friction_coefficient: float | None = None,
+    lift_height_threshold: float | None = None,
+    contact_clearance: float | None = None,
+    wrench_regularization: float | None = None,
+    grasp_pose_format: str | None = None,
 ) -> None:
     """Run the end-to-end runtime workflow on a single object.
 
@@ -99,19 +108,33 @@ def run_workflow_main(
     """
     root = Path(__file__).resolve().parents[1]
     src = root / "src"
+    if num_simulation_steps is None:
+        raise ValueError("num_simulation_steps is required")
+    if gripper_close_command is None:
+        raise ValueError("gripper_close_command is required")
+    if friction_coefficient is None:
+        raise ValueError("friction_coefficient is required")
+    if lift_height_threshold is None:
+        raise ValueError("lift_height_threshold is required")
+    if contact_clearance is None:
+        raise ValueError("contact_clearance is required")
+    if wrench_regularization is None:
+        raise ValueError("wrench_regularization is required")
+    if grasp_pose_format is None:
+        raise ValueError("grasp_pose_format is required")
     workflow_env = {
         **os.environ,
         "PYTHONPATH": str(src),
-        "PYTHONPYCACHEPREFIX": str(root / ".pycache"),
+        "PYTHONPYCACHEPREFIX": str(root / pycache_dir),
     }
 
     exports_dir = output_dir / "exports"
     reports_dir = output_dir / "reports"
     exports_dir.mkdir(parents=True, exist_ok=True)
     reports_dir.mkdir(parents=True, exist_ok=True)
-    grasps_path = exports_dir / f"{method}_grasp_candidates.npy"
-    sim_path = reports_dir / f"{method}_simulation_outcomes.jsonl"
-    eval_path = reports_dir / f"{method}_analytical_evaluation_report.jsonl"
+    grasps_path = exports_dir / grasp_candidates_name.format(method=method)
+    sim_path = reports_dir / simulation_outcomes_name.format(method=method)
+    eval_path = reports_dir / analytical_evaluation_name.format(method=method)
 
     # Stage 1: generate grasps.
     grasp_inference_cmd: list[str] = [
@@ -180,18 +203,20 @@ def run_workflow_main(
     if observation_path is not None:
         object_pc_path = observation_path
     elif ycb_root_raw is not None and object_id is not None:
-        object_pc_path = output_dir / "object_point_cloud.npy"
+        object_pc_path = output_dir / object_point_cloud_name
         rng = np.random.default_rng(seed)
         mesh_path = resolve_ycb_object_id(ycb_root_raw, object_id)
-        object_pc = sample_point_cloud_from_mesh(mesh_path, num_grasps * 8, rng)
+        object_pc = sample_point_cloud_from_mesh(mesh_path, num_grasps * point_cloud_sample_multiplier, rng)
         np.save(object_pc_path, object_pc.astype(np.float32))
     else:
         raise ValueError("Cannot locate an object point cloud for evaluation")
 
-    gripper_pc_path = Path("data/observations/gripper.npy")
-    if not gripper_pc_path.is_file():
+    if not gripper_point_cloud_path.is_absolute():
+        gripper_point_cloud_path = root / gripper_point_cloud_path
+    if not gripper_point_cloud_path.is_file():
         msg = (
-            f"Gripper point cloud not found at {gripper_pc_path}; run scripts/prepare_observations.py first"
+            f"Gripper point cloud not found at {gripper_point_cloud_path}; "
+            "run scripts/prepare_observations.py first"
         )
         raise FileNotFoundError(msg)
 
@@ -201,11 +226,11 @@ def run_workflow_main(
         "--grasps",
         str(grasps_path),
         "--object-id",
-        "object_0",
+        eval_object_key,
         "--object-point-cloud",
         str(object_pc_path),
         "--gripper-point-cloud",
-        str(gripper_pc_path),
+        str(gripper_point_cloud_path),
         "--report",
         str(eval_path),
         "--friction-coefficient",
@@ -220,7 +245,7 @@ def run_workflow_main(
     logger.info(">>> {}", " ".join(eval_cmd))
     subprocess.run(eval_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
 
-    rl_path = reports_dir / "rl_grasp_rollout_report.jsonl"
+    rl_path = reports_dir / rl_rollout_report_name
     if rl_policy_checkpoint_path is not None:
         if (
             robot_xml_path is None
@@ -290,7 +315,9 @@ def run_workflow_main(
                 n = len(outcomes)
                 successes = sum(1 for outcome in outcomes if bool(outcome.get("success")))
                 summary["simulated_success_rate"] = float(successes / n)
-                summary["simulated_object_success_rate"] = aggregate_grasp_success_rate({"object_0": successes > 0})
+                summary["simulated_object_success_rate"] = aggregate_grasp_success_rate(
+                    {eval_object_key: successes > 0}
+                )
         except (OSError, ValueError):
             pass
     if rl_path.is_file():
@@ -318,16 +345,40 @@ def main(cfg: DictConfig) -> None:
 
     output_dir = config_value(cfg, "output_dir", "artifacts", "root", value_type=Path, script_or=True, required=True)
     close_default = config_value(cfg, "robot", "gripper", "close_command", value_type=list[float]) or [0.0]
+    intermediate = config_get(cfg, "workflow", "intermediate")
+    if not isinstance(intermediate, dict):
+        msg = "workflow.intermediate must be a mapping"
+        raise TypeError(msg)
+    rl_report = config_value(
+        cfg, "rl_rollout_report", "workflow", "rl_rollout_report", value_type=Path, script_or=True, required=True
+    )
 
     run_workflow_main(
         checkpoint_path=checkpoint,
         output_dir=output_dir,
         method=method,
         feature_dim=config_value(cfg, "architecture", "feature_dim", value_type=int),
-        num_steps=config_value(cfg, "model", "inference_steps", value_type=int, default=5),
+        num_steps=config_value(cfg, "model", "inference_steps", value_type=int),
         num_grasps=config_value(cfg, "architecture", "num_grasps", value_type=int),
         device=str(config_get(cfg, "device")),
         seed=config_value(cfg, "seed", value_type=int),
+        gripper_point_cloud_path=config_value(
+            cfg, "gripper_point_cloud", "workflow", "gripper_point_cloud", value_type=Path, script_or=True, required=True
+        ),
+        eval_object_key=str(
+            config_value(cfg, "eval_object_key", "workflow", "eval_object_key", value_type=object, script_or=True)
+        ),
+        rl_rollout_report_name=rl_report.name,
+        grasp_candidates_name=str(intermediate["grasp_candidates"]),
+        simulation_outcomes_name=str(intermediate["simulation_outcomes"]),
+        analytical_evaluation_name=str(intermediate["analytical_evaluation"]),
+        object_point_cloud_name=str(
+            config_value(cfg, "object_point_cloud", "workflow", "object_point_cloud", value_type=object, script_or=True)
+        ),
+        point_cloud_sample_multiplier=config_value(
+            cfg, "point_cloud_sample_multiplier", "workflow", "point_cloud_sample_multiplier", value_type=int, script_or=True
+        ),
+        pycache_dir=str(config_value(cfg, "pycache_dir", "workflow", "pycache_dir", value_type=object, script_or=True)),
         observation_path=config_value(cfg, "observation", value_type=Path, script_or=True),
         ycb_root_raw=config_value(cfg, "ycb_root", "paths", "ycb_root", value_type=Path, script_or=True),
         ycb_root_mjcf=config_value(cfg, "ycb_mjcf", "paths", "ycb_mjcf", value_type=Path, script_or=True),
@@ -345,7 +396,9 @@ def main(cfg: DictConfig) -> None:
         lift_height_threshold=config_value(cfg, "metrics", "lift_height_threshold", value_type=float),
         contact_clearance=config_value(cfg, "metrics", "collision_clearance", value_type=float),
         wrench_regularization=config_value(cfg, "metrics", "wrench_regularization", value_type=float),
-        grasp_pose_format=str(config_value(cfg, "grasp_pose_format", value_type=object, default="object", script_or=True)),
+        grasp_pose_format=str(
+            config_value(cfg, "grasp_pose_format", "workflow", "grasp_pose_format", value_type=object, script_or=True)
+        ),
     )
 
 

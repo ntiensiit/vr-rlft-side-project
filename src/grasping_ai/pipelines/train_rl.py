@@ -102,21 +102,9 @@ def run_rl_training_pipeline(
 
     from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
 
-    try:
-        from grasping_ai.config.config import DEFAULT_CONFIG_DIR, load_project_yaml_config
+    from grasping_ai.config.config import DEFAULT_CONFIG_DIR, load_project_yaml_config
 
-        _cfg = load_project_yaml_config(DEFAULT_CONFIG_DIR)
-        reward_config = RewardConfig.load_from_config(_cfg)
-    except Exception:
-        reward_config = RewardConfig(
-            action_cost_weight=0.01,
-            survival_bonus=1.0,
-            contact_reward=0.5,
-            lift_reward_weight=2.0,
-            grasp_success_bonus=5.0,
-            lift_height_threshold=0.05,
-            drop_height_threshold=0.1,
-        )
+    reward_config = RewardConfig.load_from_config(load_project_yaml_config(DEFAULT_CONFIG_DIR))
     env = MuJoCoGraspingEnv(env_xml_path, object_name=object_name, reward_config=reward_config)
 
     obs_shape = env.observation_space.shape

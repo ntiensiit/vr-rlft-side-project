@@ -5,4 +5,4 @@ defaults:
 script:
   input: ${model.exports.grasp_candidates}
   output: ${model.exports.grasp_poses}
-  key: object_0
+  key: ${evaluation.single_object_key}

@@ -1,0 +1,13 @@
+# @package _global_
+workflow:
+  grasp_pose_format: object
+  eval_object_key: ${evaluation.single_object_key}
+  gripper_point_cloud: ${observations.gripper_point_cloud}
+  object_point_cloud: object_point_cloud.npy
+  point_cloud_sample_multiplier: 8
+  pycache_dir: .pycache
+  intermediate:
+    grasp_candidates: "{method}_grasp_candidates.npy"
+    simulation_outcomes: "{method}_simulation_outcomes.jsonl"
+    analytical_evaluation: "{method}_analytical_evaluation_report.jsonl"
+  rl_rollout_report: ${rl.exports.rollout_report}

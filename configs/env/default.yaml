@@ -1,5 +1,6 @@
 # @package _global_
 dt: 0.002
+fallback_timestep: ${dt}
 num_steps: 50
 contact_body_names: []
 table_xml: deploy/table.xml

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from loguru import logger
 
+from grasping_ai.config.config import DEFAULT_CONFIG_DIR, config_value, load_project_yaml_config
 from grasping_ai.utils.constants import (
     ACTUATOR_SPAN_LARGE_THRESHOLD,
     ACTUATOR_STEP_LARGE,
@@ -515,7 +516,7 @@ def run_robot_control_loop(
 
     dt = float(mj_model.opt.timestep)
     if dt <= 0 or not np.isfinite(dt):
-        dt = 0.002
+        dt = float(config_value(load_project_yaml_config(DEFAULT_CONFIG_DIR), "fallback_timestep", value_type=float))
 
     print(
         "Robot control keys come from run_keyboard_tui (UDP topic robot/keyboard):\n"

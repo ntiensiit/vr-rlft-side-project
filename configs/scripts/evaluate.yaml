@@ -4,4 +4,4 @@ defaults:
   - _self_
 
 script:
-  object_id: object_0
+  object_id: ${evaluation.single_object_key}

@@ -14,4 +14,10 @@ script:
   rl_episodes: null
   rl_max_steps: null
   table_xml: null
-  grasp_pose_format: object
+  grasp_pose_format: ${workflow.grasp_pose_format}
+  eval_object_key: ${workflow.eval_object_key}
+  gripper_point_cloud: ${workflow.gripper_point_cloud}
+  object_point_cloud: ${workflow.object_point_cloud}
+  point_cloud_sample_multiplier: ${workflow.point_cloud_sample_multiplier}
+  pycache_dir: ${workflow.pycache_dir}
+  rl_rollout_report: ${workflow.rl_rollout_report}

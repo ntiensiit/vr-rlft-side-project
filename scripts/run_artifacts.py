@@ -33,7 +33,7 @@ def main(cfg: DictConfig) -> None:
     env_vars = {
         **os.environ,
         "PYTHONPATH": str(root / "src"),
-        "PYTHONPYCACHEPREFIX": str(root / ".pycache"),
+        "PYTHONPYCACHEPREFIX": str(root / config_value(cfg, "artifacts", "pycache_dir", value_type=object)),
     }
     log: list[dict[str, object]] = []
 
@@ -79,27 +79,39 @@ def main(cfg: DictConfig) -> None:
         mjcf_root = root / mjcf_root
 
     root_resolved = root.resolve()
+    retained_cfg = config_get(cfg, "artifacts", "retained")
+    if not isinstance(retained_cfg, dict):
+        msg = "artifacts.retained must be a mapping"
+        raise TypeError(msg)
+    dataset_globs = retained_cfg.get("dataset_globs", [])
+    mjcf_glob = str(retained_cfg.get("mjcf_glob", "**/*.xml"))
+    artifact_globs = retained_cfg.get("artifact_globs", [])
+    retained_paths: list[Path] = []
+    if isinstance(dataset_globs, list):
+        for pattern in dataset_globs:
+            retained_paths.extend(data_processed.glob(str(pattern)))
+    retained_paths.extend(mjcf_root.rglob(mjcf_glob))
+    if isinstance(artifact_globs, list):
+        for pattern in artifact_globs:
+            retained_paths.extend(artifacts.rglob(str(pattern)))
     retained_artifacts = sorted(
         p.resolve().relative_to(root_resolved).as_posix()
-        for p in (
-            *data_processed.glob("*.npz"),
-            *data_processed.glob("index.json"),
-            *mjcf_root.rglob("*.xml"),
-            *artifacts.rglob("*.pt"),
-            *artifacts.rglob("*.npy"),
-            *artifacts.rglob("*.jsonl"),
-        )
+        for p in retained_paths
     )
-    manifest_path = artifacts / "manifest.jsonl"
-    config_dir_arg = "configs"
+    manifest_cfg = config_value(cfg, "artifacts", "manifest", value_type=Path, required=True)
+    manifest_path = manifest_cfg if manifest_cfg.is_absolute() else artifacts / manifest_cfg.name
+    config_dir_arg = str(config_value(cfg, "artifacts", "config_dir", value_type=object, required=True))
+    chain_cfg = config_get(cfg, "artifacts", "chain")
+    if not isinstance(chain_cfg, dict):
+        msg = "artifacts.chain must be a mapping"
+        raise TypeError(msg)
+    wandb_cfg = chain_cfg.get("wandb", {})
+    if not isinstance(wandb_cfg, dict):
+        wandb_cfg = {}
     manifest_records: list[dict[str, object]] = [
         {
             "record_type": "manifest",
-            "description": (
-                "Reproducible artifact chain: supervised (YCB mesh -> synthetic dataset "
-                "-> grasp checkpoint -> generated grasps -> MuJoCo simulation -> eval report) "
-                "and RL (SB3 PPO -> legacy checkpoint -> policy_runner inference)"
-            ),
+            "description": str(chain_cfg.get("description", "")),
             "config_dir": config_dir_arg,
         },
     ]
@@ -114,21 +126,21 @@ def main(cfg: DictConfig) -> None:
         wandb_mode = str(config_get(cfg, "tracking", "mode", default="offline"))
         wandb_init: dict[str, object] = {
             "project": wandb_project,
-            "job_type": "artifact-chain",
+            "job_type": str(wandb_cfg.get("job_type", "artifact-chain")),
             "mode": wandb_mode,
             "config": {
                 "config_dir": config_dir_arg,
                 "artifact_count": len(retained_artifacts),
             },
-            "tags": ["artifact-chain"],
+            "tags": list(wandb_cfg.get("tags", ["artifact-chain"])),
         }
         if isinstance(wandb_entity, str) and wandb_entity:
             wandb_init["entity"] = wandb_entity
         wandb_run = wandb.init(**wandb_init)
         try:
             wandb_artifact = wandb.Artifact(
-                name="artifact-chain",
-                type="pipeline-output",
+                name=str(wandb_cfg.get("artifact_name", "artifact-chain")),
+                type=str(wandb_cfg.get("artifact_type", "pipeline-output")),
                 metadata={"config_dir": config_dir_arg},
             )
             manifest_rel = manifest_path.resolve().relative_to(root_resolved).as_posix()
@@ -167,7 +179,9 @@ def main(cfg: DictConfig) -> None:
     if not rl_checkpoint.is_absolute():
         rl_checkpoint = root / rl_checkpoint
     rl_checkpoint_arg = rl_checkpoint.resolve().relative_to(root_resolved).as_posix()
-    infer_path_arg = (artifacts / "rl_inference_smoke.py").resolve().relative_to(root_resolved).as_posix()
+    infer_cfg = config_value(cfg, "artifacts", "rl_inference_smoke", value_type=Path, required=True)
+    infer_path = infer_cfg if infer_cfg.is_absolute() else artifacts / infer_cfg.name
+    infer_path_arg = infer_path.resolve().relative_to(root_resolved).as_posix()
     infer_script = (
         "from pathlib import Path\n"
         "import numpy as np\n"
@@ -181,14 +195,13 @@ def main(cfg: DictConfig) -> None:
         "act = run_policy_step(runner, obs)\n"
         "print('policy inference OK', np.asarray(act).shape)\n"
     )
-    infer_path = artifacts / "rl_inference_smoke.py"
     infer_path.write_text(infer_script, encoding="utf-8")
     logger.info(">>> {} {}", sys.executable, infer_path)
     subprocess.run([sys.executable, str(infer_path)], cwd=root, env=env_vars, check=True)
     log.append({"command": f"python {infer_path_arg}", "cwd": "."})
 
     logger.info("All artifact-chain steps completed.")
-    logger.info("Manifest written to artifacts/manifest.jsonl")
+    logger.info("Manifest written to {}", manifest_path)
 
 
 if __name__ == "__main__":

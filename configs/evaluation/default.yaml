@@ -9,3 +9,4 @@ limits:
   max_angular_velocity: 0.1
 evaluation:
   filter_collisions: false
+  single_object_key: object_0

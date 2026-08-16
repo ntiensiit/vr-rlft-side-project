@@ -88,7 +88,9 @@ def main(cfg: DictConfig) -> None:
                 filter_collisions=filter_collisions,
             )
     else:
-        object_id = str(config_value(cfg, "object_id", value_type=object, default="object_0", script_or=True))
+        object_id = str(
+            config_value(cfg, "object_id", "evaluation", "single_object_key", value_type=object, script_or=True)
+        )
         object_point_cloud_path = config_value(cfg, "object_point_cloud", value_type=Path, script_or=True)
         if object_point_cloud_path is None:
             raise ValueError("object_point_cloud is required unless multi_object is true")

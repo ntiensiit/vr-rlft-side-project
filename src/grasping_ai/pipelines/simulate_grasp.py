@@ -7,7 +7,12 @@ from pathlib import Path
 import numpy as np
 from loguru import logger
 
+from grasping_ai.config.config import DEFAULT_CONFIG_DIR, config_value, load_project_yaml_config
 from grasping_ai.utils.constants import DUAL_GRIPPER_COUNT, GRASP_POSES_NDIM, POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE
+
+
+def _fallback_timestep() -> float:
+    return float(config_value(load_project_yaml_config(DEFAULT_CONFIG_DIR), "fallback_timestep", value_type=float))
 
 
 def simulate_grasp(
@@ -180,7 +185,7 @@ def simulate_grasp(
 
     dt = mj_model.opt.timestep
     if dt <= 0 or not np.isfinite(dt):
-        dt = 0.002
+        dt = _fallback_timestep()
 
     gripper_model = load_gripper_model(str(robot_xml_path))
     gripper_model["model"] = mj_model

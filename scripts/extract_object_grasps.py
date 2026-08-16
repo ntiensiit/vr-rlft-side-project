@@ -27,7 +27,9 @@ def main(cfg: DictConfig) -> None:
             script_or=True,
             required=True,
         ),
-        object_key=str(config_value(cfg, "key", value_type=object, default="object_0", script_or=True)),
+        object_key=str(
+            config_value(cfg, "key", "evaluation", "single_object_key", value_type=object, script_or=True)
+        ),
     )
     write_generated_grasps_array(
         config_value(
