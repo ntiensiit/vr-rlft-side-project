@@ -1,0 +1,7 @@
+defaults:
+  - /scripts/base
+  - _self_
+
+script:
+  prepare_data_mode: ${artifact_chain.prepare_data_mode}
+  evaluate_multi_object: ${artifact_chain.evaluate_multi_object}

@@ -56,7 +56,7 @@ root = bootstrap_notebook()
 import json
 import numpy as np
 
-from grasping_ai.config.yaml_loader import config_bool, config_float, config_get, config_int, config_path
+from grasping_ai.config.config import config_get, config_value
 from notebook_helpers import (
     config_dir_relative,
     load_notebook_config,
@@ -81,8 +81,8 @@ object_id = selected_object_id(cfg)
 seed, device = configure_seeds_and_device(cfg)
 experiment = notebook_experiment(cfg)
 
-exports_dir = config_path(cfg, "paths", "exports")
-reports_dir = config_path(cfg, "paths", "reports")
+exports_dir = config_value(cfg, "paths", "exports", value_type=Path)
+reports_dir = config_value(cfg, "paths", "reports", value_type=Path)
 exports_dir.mkdir(parents=True, exist_ok=True)
 reports_dir.mkdir(parents=True, exist_ok=True)
 
@@ -111,7 +111,7 @@ observation_path = observations_dir / f"{object_id}.npy"
 gripper_point_cloud = np.load(observations_dir / "gripper.npy")
 object_point_cloud = np.load(observation_path)
 
-checkpoint_path = config_path(cfg, "flow", "checkpoint")
+checkpoint_path = config_value(cfg, "flow", "checkpoint", value_type=Path)
 exists = checkpoint_path.is_file()
 print("flow", {"path": str(checkpoint_path), "exists": exists})
 if not exists:
@@ -120,11 +120,11 @@ if not exists:
 close_default = config_get(cfg, "robot", "gripper", "close_command") or [0.0]
 gripper_close_command = np.asarray(close_default, dtype=np.float64)
 num_simulation_steps = int(config_get(cfg, "num_steps"))
-friction_coefficient = config_float(cfg, "metrics", "friction_coefficient", default=0.5)
-lift_height_threshold = config_float(cfg, "metrics", "lift_height_threshold", default=0.05)
-contact_clearance = config_float(cfg, "metrics", "collision_clearance", default=0.005)
-wrench_regularization = config_float(cfg, "metrics", "wrench_regularization", default=1.0)
-flow_filter_collisions = config_bool(cfg, "evaluation", "filter_collisions", default=False)
+friction_coefficient = config_value(cfg, "metrics", "friction_coefficient", value_type=float, default=0.5)
+lift_height_threshold = config_value(cfg, "metrics", "lift_height_threshold", value_type=float, default=0.05)
+contact_clearance = config_value(cfg, "metrics", "collision_clearance", value_type=float, default=0.005)
+wrench_regularization = config_value(cfg, "metrics", "wrench_regularization", value_type=float, default=1.0)
+flow_filter_collisions = config_value(cfg, "evaluation", "filter_collisions", value_type=bool, default=False)
 
 eval_common = {
     "object_id": object_id,

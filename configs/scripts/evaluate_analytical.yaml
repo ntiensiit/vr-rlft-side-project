@@ -1,0 +1,12 @@
+# @package _global_
+script:
+  grasps: ${model.exports.grasp_candidates}
+  report: ${evaluation.analytical_report}
+  filter_collisions: ${evaluation.filter_collisions}
+  observations_dir: ${paths.observations}
+  object_ids: ${objects.ids}
+  gripper_point_cloud: ${observations.gripper_point_cloud}
+  multi_object: false
+  object_point_cloud: null
+  experiment_log_dir: null
+  contact_path: null

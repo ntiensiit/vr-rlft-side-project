@@ -1,0 +1,11 @@
+defaults:
+  - base
+  - data: default
+  - artifacts: default
+  - gripper: default
+  - env: default
+  - object: default
+  - model: default
+  - rl: default
+  - notebook: default
+  - _self_

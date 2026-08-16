@@ -1,144 +1,17 @@
 target-version = "py312"
 line-length = 120
-src = ["src", "tests"]
+src = ["src", "tests", "scripts"]
 extend-exclude = [".venv", "build", "dist", "notebooks"]
 
 [lint]
-select = [
-    "A",
-    "ANN",
-    "ARG",
-    "ASYNC",
-    "B",
-    "BLE",
-    "C4",
-    "C90",
-    "COM",
-    "D",
-    "DTZ",
-    "E",
-    "EM",
-    "ERA",
-    "EXE",
-    "F",
-    "FA",
-    "FBT",
-    "FIX",
-    "FLY",
-    "FURB",
-    "G",
-    "I",
-    "ICN",
-    "INP",
-    "INT",
-    "ISC",
-    "LOG",
-    "N",
-    "NPY",
-    "PERF",
-    "PGH",
-    "PIE",
-    "PL",
-    "PT",
-    "PTH",
-    "Q",
-    "RET",
-    "RSE",
-    "RUF",
-    "S",
-    "SIM",
-    "SLF",
-    "SLOT",
-    "T10",
-    "T20",
-    "TC",
-    "TD",
-    "TID",
-    "TRY",
-    "UP",
-    "W",
-    "YTT",
-]
+select = ["ALL"]
 
 [lint.pydocstyle]
 convention = "google"
 
 [lint.isort]
+known-first-party = ["grasping_ai", "scripts"]
 force-to-top = ["open3d"]
-
-[lint.per-file-ignores]
-"tests/**/*.py" = [
-    "PLR2004",
-    "S101",
-    "S102",
-    "S603",
-    "ARG",
-    "FBT",
-    "PLC0415",
-    "PLR0915",
-    "PT011",
-    "PT012",
-    "E501",
-    "ANN",
-    "EM",
-    "SLF001",
-    "INP001",
-    "T201",
-    "BLE001",
-    "NPY002",
-    "PTH",
-]
-"scripts/**/*.py" = [
-    "PLR2004",
-    "PLR0912",
-    "PLR0913",
-    "PLR0917",
-    "PLC0415",
-    "TRY003",
-    "PLR0915",
-    "INP001",
-    "T201",
-    "ANN",
-    "EM",
-    "S603",
-    "S310",
-    "S202",
-    "PTH",
-    "FBT",
-    "C901",
-    "A001",
-    "A002",
-    "BLE001",
-]
-"src/grasping_ai/**/*.py" = [
-    "TRY003",
-    "TRY300",
-    "PLC0415",
-    "PLR0911",
-    "PLR0912",
-    "PLR0913",
-    "PLR0915",
-    "PLR0917",
-    "EM101",
-    "EM102",
-    "ANN001",
-    "ANN201",
-    "ANN202",
-    "ANN003",
-    "ANN401",
-    "FBT001",
-    "FBT002",
-    "FBT003",
-    "SIM108",
-    "C901",
-    "BLE001",
-    "PERF401",
-    "S311",
-    "S314",
-]
-"src/grasping_ai/training/checkpoint_io.py" = ["TRY004"]
-"src/grasping_ai/models/flow.py" = ["TRY004"]
-"src/grasping_ai/pipelines/visualize_robot.py" = ["E501", "S101", "T201"]
 
 [format]
 quote-style = "double"

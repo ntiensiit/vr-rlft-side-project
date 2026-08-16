@@ -1,0 +1,4 @@
+defaults:
+  - /scripts/base
+  - /scripts/workflow
+  - _self_

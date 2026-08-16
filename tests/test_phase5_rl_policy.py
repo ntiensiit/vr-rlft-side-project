@@ -856,7 +856,7 @@ def test_run_rl_training_pipeline_validation_errors(tmp_path: Path, panda_robot_
 
 def test_run_rl_training_pipeline_config_exception(tmp_path: Path, panda_robot_xml: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify train_rl pipeline fallback RewardConfig is loaded when yaml load fails."""
-    import grasping_ai.config.yaml_loader as loader_mod
+    import grasping_ai.config.config as loader_mod
     monkeypatch.setattr(loader_mod, "load_project_yaml_config", lambda *args, **kwargs: exec("raise(Exception('test'))"))
 
     valid_robot = panda_robot_xml

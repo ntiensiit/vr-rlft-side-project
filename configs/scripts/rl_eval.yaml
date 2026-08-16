@@ -1,0 +1,9 @@
+# @package _global_
+script:
+  policy_checkpoint: ${rl.checkpoint}
+  observation_dim: ${rl.observation_dim}
+  action_dim: ${rl.action_dim}
+  output: ${evaluation.rollout_report}
+  object_id: ${objects.ids.0}
+  observation_dim_from_env: false
+  action_dim_from_env: false

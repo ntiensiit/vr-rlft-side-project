@@ -2,7 +2,7 @@
 robot:
   description: deploy/robot.xml
   gripper:
-    description: deploy/robot.xml
+    description: ${robot.description}
     max_width: 0.08
     min_width_clamp: 0.003
     close_command:

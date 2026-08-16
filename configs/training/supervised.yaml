@@ -1,0 +1,14 @@
+# @package _global_
+supervised:
+  batch_size: 2
+  learning_rate: 0.001
+  num_epochs: 3
+  log_every: 50
+  min_grasp_score: 0.0
+  score_repeat_factor: 2
+  score_repeat_power: 1.0
+
+training:
+  pretrained_encoder: null
+  resume: null
+  augment: false

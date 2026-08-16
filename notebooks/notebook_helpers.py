@@ -10,13 +10,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from omegaconf import DictConfig
 
-from grasping_ai.config.yaml_loader import (
-    config_float,
+from grasping_ai.config.config import (
     config_get,
-    config_int,
-    config_path,
-    config_str_list,
+    config_value,
     load_project_yaml_config,
 )
 
@@ -297,7 +295,7 @@ def load_notebook_config(
     *,
     overrides: list[str] | None = None,
     force_remount: bool = False,
-) -> dict[str, object]:
+) -> DictConfig:
     """Load a named Hydra entrypoint for notebook workflows.
 
     When ``notebook.mount_drive`` is enabled, mounts Google Drive, configures
@@ -311,7 +309,7 @@ def load_notebook_config(
         force_remount: Forwarded to :func:`setup_notebook_drive_storage`.
 
     Returns:
-        Composed configuration mapping for the requested entrypoint.
+        Composed configuration for the requested entrypoint.
     """
     cfg = load_project_yaml_config(config_dir, config_name=config_name, overrides=overrides)
     if setup_notebook_drive_storage(cfg, force_remount=force_remount) is not None:
@@ -388,11 +386,11 @@ def dataset_paths(cfg: Mapping[str, object]) -> dict[str, Path]:
         Mapping of logical dataset path names to ``pathlib.Path`` objects.
     """
     return {
-        "ycb_root": config_path(cfg, "paths", "ycb_root"),
-        "dataset_root": config_path(cfg, "paths", "dataset_root"),
-        "mjcf_root": config_path(cfg, "paths", "ycb_mjcf"),
-        "observations_dir": config_path(cfg, "paths", "observations"),
-        "output_index": config_path(cfg, "paths", "output_index"),
+        "ycb_root": config_value(cfg, "paths", "ycb_root", value_type=Path),
+        "dataset_root": config_value(cfg, "paths", "dataset_root", value_type=Path),
+        "mjcf_root": config_value(cfg, "paths", "ycb_mjcf", value_type=Path),
+        "observations_dir": config_value(cfg, "paths", "observations", value_type=Path),
+        "output_index": config_value(cfg, "paths", "output_index", value_type=Path),
     }
 
 
@@ -506,9 +504,9 @@ def supervised_hyperparameters(cfg: Mapping[str, object]) -> tuple[float, int, i
     Returns:
         ``(learning_rate, num_epochs, batch_size)``.
     """
-    learning_rate = config_float(cfg, "supervised", "learning_rate", default=1e-3)
-    num_epochs = config_int(cfg, "supervised", "num_epochs", default=3)
-    batch_size = config_int(cfg, "supervised", "batch_size", default=2)
+    learning_rate = config_value(cfg, "supervised", "learning_rate", value_type=float, default=1e-3)
+    num_epochs = config_value(cfg, "supervised", "num_epochs", value_type=int, default=3)
+    batch_size = config_value(cfg, "supervised", "batch_size", value_type=int, default=2)
     return learning_rate, num_epochs, batch_size
 
 
@@ -552,7 +550,7 @@ def build_supervised_train_kwargs(
         "batch_size": batch_size,
         "device": device,
         "seed": seed,
-        "experiment_log_dir": config_path(cfg, model_key, "tensorboard"),
+        "experiment_log_dir": config_value(cfg, model_key, "tensorboard", value_type=Path),
         "pretrained_encoder_path": None,
         "resume_checkpoint_path": None,
         "augment": notebook_augment(cfg),
@@ -729,7 +727,7 @@ def run_generative_evaluation(
         contact_path=None,
         filter_collisions=filter_collisions,
     )
-    report_path = config_path(cfg, "evaluation", "analytical_report")
+    report_path = config_value(cfg, "evaluation", "analytical_report", value_type=Path)
     aggregated = aggregate_evaluation_results({object_id: results})
     write_evaluation_report(report_path, aggregated, None, per_object_results=None)
 
@@ -737,8 +735,8 @@ def run_generative_evaluation(
     sim_outcomes = run_simulation_sweep(
         grasp_poses=grasps,
         object_id=object_id,
-        ycb_root=config_path(cfg, "paths", "ycb_mjcf"),
-        robot_xml_path=config_path(cfg, "robot", "description"),
+        ycb_root=config_value(cfg, "paths", "ycb_mjcf", value_type=Path),
+        robot_xml_path=config_value(cfg, "robot", "description", value_type=Path),
         table_xml_path=None,
         num_simulation_steps=num_simulation_steps,
         gripper_close_command=gripper_close_command,
@@ -756,7 +754,7 @@ def object_ids_from_config(cfg: Mapping[str, object]) -> list[str]:
     Returns:
         Values from ``objects.ids``.
     """
-    return config_str_list(cfg, "objects", "ids")
+    return config_value(cfg, "objects", "ids", value_type=list[str])
 
 
 def notebook_experiment(cfg: Mapping[str, object]) -> str:

@@ -5,7 +5,7 @@ defaults:
 
 evaluation:
   method: rl
-  rollout_report: ${paths.reports}/rl_grasp_rollout_report.jsonl
+  rollout_report: ${rl.exports.rollout_report}
   episodes: 5
   max_steps: 100
   stochastic: false

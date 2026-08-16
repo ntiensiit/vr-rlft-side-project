@@ -1,0 +1,6 @@
+defaults:
+  - /scripts/base
+  - _self_
+
+script:
+  output: null

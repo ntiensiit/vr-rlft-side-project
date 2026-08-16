@@ -1,0 +1,4 @@
+defaults:
+  - /scripts/base
+  - /scripts/grasp_model
+  - _self_

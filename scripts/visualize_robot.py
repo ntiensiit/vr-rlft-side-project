@@ -4,25 +4,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from grasping_ai.config.yaml_loader import optional_cli_path
+import hydra
+from omegaconf import DictConfig
+
+from grasping_ai.config.config import SCRIPTS_CONFIG_PATH, config_value
 from grasping_ai.pipelines.visualize_robot import (
     load_visualization_scene,
     run_robot_viewer,
 )
 
-if __name__ == "__main__":
-    import argparse
 
-    parser = argparse.ArgumentParser(description="Visualize the robot in an interactive MuJoCo viewer")
-    parser.add_argument("--robot-xml", type=Path, default=Path("deploy/robot.xml"))
-    parser.add_argument("--object-id", type=str, default=None)
-    parser.add_argument("--ycb-root", type=Path, default=None)
-    parser.add_argument("--table-xml", type=optional_cli_path, default=Path("deploy/table.xml"))
-    args = parser.parse_args()
+@hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/visualize_robot")
+def main(cfg: DictConfig) -> None:
+    table_xml = config_value(cfg, "table_xml", "env", "table_xml", value_type=Path, script_or=True)
     mj_model, mj_data = load_visualization_scene(
-        args.robot_xml,
-        object_id=args.object_id,
-        ycb_root=args.ycb_root,
-        table_xml_path=args.table_xml,
+        config_value(cfg, "robot", "description", value_type=Path, required=True),
+        object_id=config_value(cfg, "object_id", value_type=object, default=None, script_or=True),
+        ycb_root=config_value(cfg, "paths", "ycb_root", value_type=Path),
+        table_xml_path=Path(table_xml) if table_xml is not None else None,
     )
     run_robot_viewer(mj_model, mj_data)
+
+
+if __name__ == "__main__":
+    main()

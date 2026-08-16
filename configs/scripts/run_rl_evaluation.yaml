@@ -1,0 +1,6 @@
+defaults:
+  - /scripts/base
+  - override /evaluation: rl
+  - /scripts/sim_env
+  - /scripts/rl_eval
+  - _self_

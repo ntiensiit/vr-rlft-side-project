@@ -10,13 +10,13 @@ architecture:
   num_grasps: 8
 diffusion:
   inference_steps: 5
-  checkpoint: ${paths.checkpoints}/diffusion_grasp_generator.pt
-  tensorboard: ${paths.tensorboard}/diffusion_train
+  checkpoint: ${artifacts.checkpoints}/diffusion_grasp_generator.pt
+  tensorboard: ${artifacts.tensorboard}/diffusion_train
   exports:
-    grasp_candidates: ${paths.exports}/diffusion_grasp_candidates_by_object.npy
-    grasp_poses: ${paths.exports}/diffusion_grasp_poses_${objects.ids.0}.npy
-    simulation_report: ${paths.reports}/diffusion_simulation_outcomes_${objects.ids.0}.jsonl
-    evaluation_report: ${paths.reports}/diffusion_analytical_evaluation_report.jsonl
+    grasp_candidates: ${artifacts.exports}/diffusion_grasp_candidates_by_object.npy
+    grasp_poses: ${artifacts.exports}/diffusion_grasp_poses_${objects.ids.0}.npy
+    simulation_report: ${artifacts.reports}/diffusion_simulation_outcomes_${objects.ids.0}.jsonl
+    evaluation_report: ${artifacts.reports}/diffusion_analytical_evaluation_report.jsonl
   beta_start: 1.0e-4
   beta_end: 0.02
   num_steps: 100
@@ -25,5 +25,8 @@ model:
   checkpoint: ${diffusion.checkpoint}
   inference_steps: ${diffusion.inference_steps}
   exports:
+    grasp_candidates: ${diffusion.exports.grasp_candidates}
+    grasp_poses: ${diffusion.exports.grasp_poses}
     simulation_report: ${diffusion.exports.simulation_report}
-
+    evaluation_report: ${diffusion.exports.evaluation_report}
+    inference_candidates: ${artifacts.exports}/grasp_candidates.npy

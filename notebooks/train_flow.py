@@ -55,7 +55,7 @@ root = bootstrap_notebook()
 # Hydra overrides select `model/flow.yaml`, `training/flow.yaml`, and `evaluation/flow.yaml`.
 
 # %%
-from grasping_ai.config.yaml_loader import config_path
+from grasping_ai.config.config import config_value
 from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
 from grasping_ai.utils.logging_utils import init_mlflow, setup_logging
 from notebook_helpers import (
@@ -115,7 +115,7 @@ print("records:", sorted(p.name for p in dataset_root.glob("*.npz")))
 # %%
 setup_logging(module_name="train_flow")
 use_mlflow = init_mlflow(cfg)
-checkpoint_path = config_path(cfg, "flow", "checkpoint")
+checkpoint_path = config_value(cfg, "flow", "checkpoint", value_type=Path)
 checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
 train_kwargs = build_supervised_train_kwargs(
@@ -148,4 +148,4 @@ run_with_optional_mlflow(
 # ## 5. Results
 
 # %%
-print_checkpoint_summary(checkpoint_path, config_path(cfg, "flow", "tensorboard"))
+print_checkpoint_summary(checkpoint_path, config_value(cfg, "flow", "tensorboard", value_type=Path))

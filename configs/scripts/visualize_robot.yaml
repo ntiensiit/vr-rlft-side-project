@@ -1,0 +1,7 @@
+defaults:
+  - /scripts/base
+  - /scripts/sim_env
+  - _self_
+
+script:
+  object_id: null

@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 
+import hydra
 import numpy as np
+from loguru import logger
+from omegaconf import DictConfig
 
-from grasping_ai.config.yaml_loader import (
-    config_get,
-    config_path,
-    load_project_yaml_config,
-    parse_config_dir_from_argv,
-)
+from grasping_ai.config.config import SCRIPTS_CONFIG_PATH, config_value
 from grasping_ai.data.pointcloud_dataset import iterate_grasp_dataset
 from grasping_ai.evaluation.collision import (
     build_collision_checker,
@@ -23,35 +20,29 @@ from grasping_ai.evaluation.collision import (
 from grasping_ai.evaluation.force_closure import compute_grasp_quality
 
 
-def audit_synthetic_labels(
-    dataset_root: Path,
-    friction_coefficient: float,
-    collision_clearance: float,
-    output_path: Path | None = None,
-) -> list[dict[str, object]]:
-    """Compute per-object synthetic label quality metrics for a processed dataset.
-
-    Args:
-        dataset_root: Root directory containing synthetic ``.npy`` records.
-        friction_coefficient: Friction coefficient for force-closure scoring.
-        collision_clearance: Clearance for collision and contact checks.
-        output_path: Optional JSON path to write the audit report.
-
-    Returns:
-        A list of per-object metric records.
-
-    Raises:
-        FileNotFoundError: If ``dataset_root`` does not exist.
-        ValueError: If no records are found under ``dataset_root``.
-    """
-    if not dataset_root.is_dir():
-        raise FileNotFoundError(f"Dataset root directory '{dataset_root}' does not exist.")
-
+def _default_gripper_point_cloud() -> np.ndarray:
     x = np.linspace(-0.03, 0.03, 4)
     y = np.linspace(-0.02, 0.02, 3)
     z = np.linspace(-0.04, 0.04, 5)
     gripper_point_cloud = np.stack(np.meshgrid(x, y, z, indexing="ij"), axis=-1).reshape(-1, 3)
-    gripper_point_cloud = gripper_point_cloud.astype(np.float32)
+    return gripper_point_cloud.astype(np.float32)
+
+
+def audit_synthetic_labels(
+    dataset_root: Path | str,
+    friction_coefficient: float,
+    collision_clearance: float,
+    output_path: Path | str | None = None,
+) -> list[dict[str, object]]:
+    """Compute per-object synthetic label quality metrics for a processed dataset."""
+    dataset_root = Path(dataset_root)
+    resolved_output_path = Path(output_path) if output_path is not None else None
+
+    if not dataset_root.is_dir():
+        msg = f"Dataset root directory '{dataset_root}' does not exist."
+        raise FileNotFoundError(msg)
+
+    gripper_point_cloud = _default_gripper_point_cloud()
 
     records: list[dict[str, object]] = []
     sample_count = 0
@@ -62,7 +53,8 @@ def audit_synthetic_labels(
         grasp_poses = sample["grasp_poses"]
         scores = sample.get("scores")
         if not isinstance(point_cloud, np.ndarray) or not isinstance(grasp_poses, np.ndarray):
-            raise TypeError(f"Record for {object_id} has invalid point cloud or grasp poses")
+            msg = f"Record for {object_id} has invalid point cloud or grasp poses"
+            raise TypeError(msg)
 
         num_grasps = int(grasp_poses.shape[0])
         recomputed_scores: list[float] = []
@@ -100,70 +92,39 @@ def audit_synthetic_labels(
         )
 
     if sample_count == 0:
-        raise ValueError(f"No records found under '{dataset_root}'")
+        msg = f"No records found under '{dataset_root}'"
+        raise ValueError(msg)
 
-    if output_path is not None:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(records, indent=2), encoding="utf-8")
+    if resolved_output_path is not None:
+        resolved_output_path.parent.mkdir(parents=True, exist_ok=True)
+        resolved_output_path.write_text(json.dumps(records, indent=2), encoding="utf-8")
 
     return records
 
 
-if __name__ == "__main__":
-    config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir)
-    pre_parser = argparse.ArgumentParser(add_help=False)
-    pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
-    parser = argparse.ArgumentParser(
-        description="Audit synthetic grasp label quality metrics",
-        parents=[pre_parser],
-    )
-    parser.add_argument(
-        "--dataset-root",
-        type=Path,
-        default=config_path(cfg, "paths", "dataset_root"),
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-        help="Optional JSON path for the audit report.",
-    )
-    parser.add_argument(
-        "--friction-coefficient",
-        type=float,
-        default=float(
-            config_get(
-                cfg,
-                "synthetic",
-                "friction_coefficient",
-                default=config_get(cfg, "metrics", "friction_coefficient", default=0.5),
-            ),
-        ),
-    )
-    parser.add_argument(
-        "--collision-clearance",
-        type=float,
-        default=float(
-            config_get(
-                cfg,
-                "synthetic",
-                "collision_clearance",
-                default=config_get(cfg, "metrics", "collision_clearance", default=0.005),
-            ),
-        ),
-    )
-    args = parser.parse_args()
-    if args.dataset_root is None:
-        parser.error(
-            "--dataset-root is required (set in configs/data/default.yaml paths.dataset_root or pass explicitly)",
-        )
-
+@hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/audit_synthetic_labels")
+def main(cfg: DictConfig) -> None:
     report = audit_synthetic_labels(
-        dataset_root=args.dataset_root,
-        friction_coefficient=args.friction_coefficient,
-        collision_clearance=args.collision_clearance,
-        output_path=args.output,
+        dataset_root=config_value(cfg, "paths", "dataset_root", value_type=Path, required=True),
+        friction_coefficient=config_value(
+            cfg,
+            "synthetic",
+            "friction_coefficient",
+            value_type=float,
+            default=config_value(cfg, "metrics", "friction_coefficient", value_type=float),
+        ),
+        collision_clearance=config_value(
+            cfg,
+            "synthetic",
+            "collision_clearance",
+            value_type=float,
+            default=config_value(cfg, "metrics", "collision_clearance", value_type=float),
+        ),
+        output_path=config_value(cfg, "output", value_type=Path, script_or=True),
     )
     for entry in report:
-        print(json.dumps(entry))
+        logger.info("{}", json.dumps(entry))
+
+
+if __name__ == "__main__":
+    main()

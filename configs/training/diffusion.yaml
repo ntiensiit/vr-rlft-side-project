@@ -1,18 +1,8 @@
 # @package _global_
 defaults:
-  - /base
-  - /evaluation: default
+  - entrypoint
+  - supervised
   - _self_
+
 notebook:
   experiment: diffusion_grasp_colab
-  augment: false
-  mount_drive: false
-
-supervised:
-  batch_size: 2
-  learning_rate: 0.001
-  num_epochs: 3
-  log_every: 50
-  min_grasp_score: 0.0
-  score_repeat_factor: 2
-  score_repeat_power: 1.0

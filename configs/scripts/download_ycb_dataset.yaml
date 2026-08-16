@@ -1,0 +1,10 @@
+defaults:
+  - /scripts/base
+  - _self_
+
+script:
+  output_directory: ${download.output_directory}
+  objects_to_download: ${download.objects}
+  files_to_download: ${download.files}
+  extract: ${download.extract}
+  objects_url: ${download.objects_url}

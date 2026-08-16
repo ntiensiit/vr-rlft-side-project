@@ -55,7 +55,7 @@ root = bootstrap_notebook()
 # RL hyperparameters and paths come from `configs/rl/default.yaml` and `configs/base.yaml`.
 
 # %%
-from grasping_ai.config.yaml_loader import config_float, config_get, config_int, config_path
+from grasping_ai.config.config import config_get, config_value
 from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
 from grasping_ai.utils.logging_utils import setup_logging
 from notebook_helpers import (
@@ -79,8 +79,8 @@ cfg = load_notebook_config(CONFIG_DIR, CONFIG_NAME)
 all_object_ids = object_ids_from_config(cfg)
 training_object_ids = [all_object_ids[notebook_object_index(cfg)]]
 seed, device = configure_seeds_and_device(cfg)
-learning_rate = config_float(cfg, "rl", "learning_rate", default=3e-4)
-num_updates = config_int(cfg, "rl", "num_updates", default=10)
+learning_rate = config_value(cfg, "rl", "learning_rate", value_type=float, default=3e-4)
+num_updates = config_value(cfg, "rl", "num_updates", value_type=int, default=10)
 experiment = notebook_experiment(cfg)
 
 print_runtime_banner(
@@ -105,7 +105,7 @@ paths = run_dataset_preparation(
     object_ids=all_object_ids,
     download_ycb=notebook_download_ycb(cfg),
 )
-robot_xml = config_path(cfg, "robot", "description")
+robot_xml = config_value(cfg, "robot", "description", value_type=Path)
 print("robot_xml:", robot_xml)
 print("ycb_mjcf:", paths["mjcf_root"])
 
@@ -114,7 +114,7 @@ print("ycb_mjcf:", paths["mjcf_root"])
 
 # %%
 setup_logging(module_name="train_rl")
-policy_checkpoint = config_path(cfg, "rl", "checkpoint")
+policy_checkpoint = config_value(cfg, "rl", "checkpoint", value_type=Path)
 policy_checkpoint.parent.mkdir(parents=True, exist_ok=True)
 
 run_rl_training_pipeline(
@@ -130,11 +130,11 @@ run_rl_training_pipeline(
     gamma=float(config_get(cfg, "rl", "gamma")),
     device=device,
     seed=seed,
-    experiment_log_dir=config_path(cfg, "rl", "tensorboard"),
+    experiment_log_dir=config_value(cfg, "rl", "tensorboard", value_type=Path),
 )
 
 # %% [markdown]
 # ## 5. Results
 
 # %%
-print_checkpoint_summary(policy_checkpoint, config_path(cfg, "rl", "tensorboard"))
+print_checkpoint_summary(policy_checkpoint, config_value(cfg, "rl", "tensorboard", value_type=Path))

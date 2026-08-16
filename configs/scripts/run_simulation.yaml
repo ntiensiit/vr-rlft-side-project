@@ -1,0 +1,10 @@
+defaults:
+  - /scripts/base
+  - /scripts/sim_env
+  - _self_
+
+script:
+  grasps: ${model.exports.grasp_poses}
+  object_id: ${objects.ids.0}
+  output: ${model.exports.simulation_report}
+  grasp_pose_format: world

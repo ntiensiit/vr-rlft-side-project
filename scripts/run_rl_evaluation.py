@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import hydra
 import numpy as np
+from omegaconf import DictConfig
 
+from grasping_ai.config.config import (
+    SCRIPTS_CONFIG_PATH,
+    config_get,
+    config_value,
+)
 from grasping_ai.inference.policy_runner import (
     build_rl_policy_runner,
     load_rl_policy_checkpoint,
@@ -35,50 +42,19 @@ def run_rl_evaluation_main(
     stochastic: bool = False,
     exploration_noise: float = 0.1,
 ) -> None:
-    """Run deterministic rollouts of the exported RL policy and write a JSON trace.
-
-    Builds the same Gymnasium-compatible ``MuJoCoGraspingEnv`` that
-    ``scripts/train_rl.py`` uses (composed robot + YCB object scene,
-    ``RewardConfig`` defaults, validated observation/action dims), then runs
-    ``episodes`` independent rollouts of up to ``max_steps`` each, clipping
-    policy outputs to the environment's actuator bounds.
-
-    ``ycb_root`` must point to a directory whose object entries ship MJCF
-    object files (e.g. ``data/processed/ycb_mjcf``). The raw
-    ``data/raw/ycb`` directory uses OpenRAVE KinBody XML and is not
-    directly consumable by ``build_scene_xml``.
-
-    Args:
-        policy_checkpoint_path: Path to the legacy MLP checkpoint produced by
-            ``scripts/train_rl.py``.
-        robot_xml_path: Path to the robot MJCF description used at training.
-        ycb_root: Root directory of the YCB object set (MJCF-wrapped).
-        object_id: YCB object identifier; matches the training object.
-        observation_dim: Policy observation dimension (must match the env).
-        action_dim: Policy action dimension (must match the env).
-        output_path: Destination JSON path.
-        episodes: Number of independent rollouts to run.
-        max_steps: Maximum steps per episode.
-        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
-        seed: Random seed for ``env.reset(seed=...)``.
-        table_xml_path: Optional path to a table/workbench MJCF description.
-        observation_dim_from_env: If True, ignore ``observation_dim`` and
-            read it from the env's ``observation_space.shape``.
-        action_dim_from_env: If True, ignore ``action_dim`` and read it from
-            the env's ``action_space.shape``.
-        stochastic: When True, sample actions with Gaussian exploration noise.
-        exploration_noise: Standard deviation used when ``stochastic`` is True.
-    """
+    """Run deterministic rollouts of the exported RL policy and write a JSON trace."""
     if episodes <= 0:
         raise ValueError("episodes must be positive")
     if max_steps <= 0:
         raise ValueError("max_steps must be positive")
 
     if not robot_xml_path.is_file():
-        raise FileNotFoundError(f"Robot XML file not found: {robot_xml_path}")
+        msg = f"Robot XML file not found: {robot_xml_path}"
+        raise FileNotFoundError(msg)
 
     if not ycb_root.is_dir():
-        raise FileNotFoundError(f"YCB root directory not found: {ycb_root}")
+        msg = f"YCB root directory not found: {ycb_root}"
+        raise FileNotFoundError(msg)
     object_xml_path = find_ycb_mjcf(resolve_ycb_object_directory(ycb_root, object_id))
     env_xml_path = build_scene_xml(robot_xml_path, object_xml_path, table_xml_path, object_id)
 
@@ -94,11 +70,13 @@ def run_rl_evaluation_main(
         action_dim = env_act_dim
 
     if observation_dim != env_obs_dim:
-        raise ValueError(
-            f"observation_dim ({observation_dim}) does not match environment observation dimension ({env_obs_dim})",
+        msg = (
+            f"observation_dim ({observation_dim}) does not match environment observation dimension ({env_obs_dim})"
         )
+        raise ValueError(msg)
     if action_dim != env_act_dim:
-        raise ValueError(f"action_dim ({action_dim}) does not match environment action dimension ({env_act_dim})")
+        msg = f"action_dim ({action_dim}) does not match environment action dimension ({env_act_dim})"
+        raise ValueError(msg)
 
     action_low = np.asarray(env.action_space.low, dtype=np.float64)
     action_high = np.asarray(env.action_space.high, dtype=np.float64)
@@ -175,92 +153,43 @@ def run_rl_evaluation_main(
     write_jsonl_records(output_path, records)
 
 
-if __name__ == "__main__":
-    import argparse
-
-    from grasping_ai.config.yaml_loader import (
-        config_get,
-        config_int,
-        config_path,
-        load_project_yaml_config,
-        optional_cli_path,
-        parse_config_dir_from_argv,
-        parse_config_overrides_from_argv,
-    )
-
-    config_dir = parse_config_dir_from_argv()
-    overrides = parse_config_overrides_from_argv()
-    if not any(item.startswith("evaluation=") for item in overrides):
-        overrides = ["evaluation=rl", *overrides]
-    cfg = load_project_yaml_config(config_dir, overrides=overrides)
-
-    parser = argparse.ArgumentParser(description="Run deterministic rollouts of the exported RL policy")
-    parser.add_argument("--policy-checkpoint", type=Path, required=True)
-    parser.add_argument("--robot-xml", type=Path, required=True)
-    parser.add_argument("--ycb-root", type=Path, required=True)
-    parser.add_argument("--object-id", type=str, required=True)
-    parser.add_argument("--observation-dim", type=int, required=True)
-    parser.add_argument("--action-dim", type=int, required=True)
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=config_path(cfg, "evaluation", "rollout_report"),
-    )
-    parser.add_argument(
-        "--episodes",
-        type=int,
-        default=config_int(cfg, "evaluation", "episodes", default=5),
-    )
-    parser.add_argument(
-        "--max-steps",
-        type=int,
-        default=config_int(cfg, "evaluation", "max_steps", default=100),
-    )
-    parser.add_argument("--device", type=str, required=True)
-    parser.add_argument("--seed", type=int, required=True)
-    parser.add_argument("--table-xml", type=optional_cli_path, default=None)
-    parser.add_argument(
-        "--observation-dim-from-env",
-        action="store_true",
-        help="Ignore --observation-dim and read it from env.observation_space",
-    )
-    parser.add_argument(
-        "--action-dim-from-env",
-        action="store_true",
-        help="Ignore --action-dim and read it from env.action_space",
-    )
-    parser.add_argument(
-        "--stochastic",
-        action="store_true",
-        default=bool(config_get(cfg, "evaluation", "stochastic", default=False)),
-        help="Sample actions with Gaussian exploration noise",
-    )
-    parser.add_argument(
-        "--exploration-noise",
-        type=float,
-        default=float(config_get(cfg, "evaluation", "exploration_noise", default=0.1)),
-        help="Exploration noise scale when --stochastic is set",
-    )
-    args = parser.parse_args()
-    if args.output is None:
-        parser.error(
-            "--output is required (set in configs/evaluation/rl.yaml evaluation.rollout_report or pass explicitly)",
-        )
+@hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/run_rl_evaluation")
+def main(cfg: DictConfig) -> None:
     run_rl_evaluation_main(
-        policy_checkpoint_path=args.policy_checkpoint,
-        robot_xml_path=args.robot_xml,
-        ycb_root=args.ycb_root,
-        object_id=args.object_id,
-        observation_dim=args.observation_dim,
-        action_dim=args.action_dim,
-        output_path=args.output,
-        episodes=args.episodes,
-        max_steps=args.max_steps,
-        device=args.device,
-        seed=args.seed,
-        table_xml_path=args.table_xml,
-        observation_dim_from_env=args.observation_dim_from_env,
-        action_dim_from_env=args.action_dim_from_env,
-        stochastic=args.stochastic,
-        exploration_noise=args.exploration_noise,
+        policy_checkpoint_path=config_value(
+            cfg, "policy_checkpoint", "rl", "checkpoint", value_type=Path, script_or=True, required=True
+        ),
+        robot_xml_path=config_value(
+            cfg, "robot_xml", "robot", "description", value_type=Path, script_or=True, required=True
+        ),
+        ycb_root=config_value(cfg, "ycb_root", "paths", "ycb_mjcf", value_type=Path, script_or=True, required=True),
+        object_id=str(
+            config_value(
+                cfg,
+                "object_id",
+                value_type=object,
+                default=config_value(cfg, "objects", "ids", value_type=list[str])[0],
+                script_or=True,
+            )
+        ),
+        observation_dim=int(config_value(cfg, "observation_dim", "rl", "observation_dim", value_type=object, script_or=True)),
+        action_dim=int(config_value(cfg, "action_dim", "rl", "action_dim", value_type=object, script_or=True)),
+        output_path=config_value(
+            cfg, "output", "evaluation", "rollout_report", value_type=Path, script_or=True, required=True
+        ),
+        episodes=config_value(cfg, "evaluation", "episodes", value_type=int),
+        max_steps=config_value(cfg, "evaluation", "max_steps", value_type=int),
+        device=str(config_get(cfg, "device")),
+        seed=config_value(cfg, "seed", value_type=int),
+        table_xml_path=config_value(cfg, "table_xml", "env", "table_xml", value_type=Path, script_or=True),
+        observation_dim_from_env=config_value(
+            cfg, "observation_dim_from_env", value_type=bool, default=False, script_or=True
+        ),
+        action_dim_from_env=config_value(cfg, "action_dim_from_env", value_type=bool, default=False, script_or=True),
+        stochastic=config_value(cfg, "evaluation", "stochastic", value_type=bool, default=False),
+        exploration_noise=config_value(cfg, "evaluation", "exploration_noise", value_type=float, default=0.1),
     )
+
+
+if __name__ == "__main__":
+    main()

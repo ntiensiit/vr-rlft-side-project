@@ -10,17 +10,18 @@ import gymnasium as gym
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
 
-from grasping_ai.config.yaml_loader import (
-    config_bool,
-    config_float,
+from grasping_ai.config.config import (
+    DEFAULT_CONFIG_DIR,
+    config_value,
     load_project_yaml_config,
-    parse_config_dir_from_argv,
 )
 from grasping_ai.perception.geometry import make_transform
 from grasping_ai.utils.path_validation import require_path
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from omegaconf import DictConfig
 
 SimulationStep = Callable[[float], None]
 ContactReporter = Callable[[], list[dict[str, np.ndarray]]]
@@ -54,8 +55,8 @@ class RewardConfig:
     terminate_on_non_finite: bool = True
 
     @classmethod
-    def load_from_config(cls, cfg: dict[str, object]) -> RewardConfig:
-        """Load RewardConfig parameters from a configuration dictionary.
+    def load_from_config(cls, cfg: DictConfig) -> RewardConfig:
+        """Load RewardConfig parameters from a composed Hydra config.
 
         Args:
             cfg: The project configuration mapping.
@@ -64,14 +65,26 @@ class RewardConfig:
             A RewardConfig instance populated with configured parameters.
         """
         return cls(
-            action_cost_weight=config_float(cfg, "rl", "reward", "action_cost_weight", default=0.01),
-            survival_bonus=config_float(cfg, "rl", "reward", "survival_bonus", default=1.0),
-            contact_reward=config_float(cfg, "rl", "reward", "contact_reward", default=0.0),
-            lift_reward_weight=config_float(cfg, "rl", "reward", "lift_reward_weight", default=0.0),
-            grasp_success_bonus=config_float(cfg, "rl", "reward", "grasp_success_bonus", default=0.0),
-            lift_height_threshold=config_float(cfg, "rl", "reward", "lift_height_threshold", default=0.05),
-            drop_height_threshold=config_float(cfg, "rl", "reward", "drop_height_threshold", default=0.1),
-            terminate_on_non_finite=config_bool(cfg, "rl", "reward", "terminate_on_non_finite", default=True),
+            action_cost_weight=config_value(
+                cfg, "rl", "reward", "action_cost_weight", value_type=float, default=0.01
+            ),
+            survival_bonus=config_value(cfg, "rl", "reward", "survival_bonus", value_type=float, default=1.0),
+            contact_reward=config_value(cfg, "rl", "reward", "contact_reward", value_type=float, default=0.0),
+            lift_reward_weight=config_value(
+                cfg, "rl", "reward", "lift_reward_weight", value_type=float, default=0.0
+            ),
+            grasp_success_bonus=config_value(
+                cfg, "rl", "reward", "grasp_success_bonus", value_type=float, default=0.0
+            ),
+            lift_height_threshold=config_value(
+                cfg, "rl", "reward", "lift_height_threshold", value_type=float, default=0.05
+            ),
+            drop_height_threshold=config_value(
+                cfg, "rl", "reward", "drop_height_threshold", value_type=float, default=0.1
+            ),
+            terminate_on_non_finite=config_value(
+                cfg, "rl", "reward", "terminate_on_non_finite", value_type=bool, default=True
+            ),
         )
 
 
@@ -334,7 +347,7 @@ class MuJoCoGraspingEnv(gym.Env):
         self._object_name = object_name
         if reward_config is None:
             try:
-                _cfg = load_project_yaml_config(parse_config_dir_from_argv())
+                _cfg = load_project_yaml_config(DEFAULT_CONFIG_DIR)
                 reward_config = RewardConfig.load_from_config(_cfg)
             except Exception:
                 reward_config = RewardConfig()

@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 from typing import cast
 
-import open3d as _open3d  # noqa: F401
+import hydra
 import numpy as np
+import open3d as _open3d  # noqa: F401
+from loguru import logger
+from omegaconf import DictConfig
 
+from grasping_ai.config.config import (
+    SCRIPTS_CONFIG_PATH,
+    config_get,
+    config_value,
+)
 from grasping_ai.data.pointcloud_dataset import (
     discover_dataset_files,
     generate_analytical_grasps,
@@ -19,12 +26,15 @@ from grasping_ai.data.pointcloud_dataset import (
 from grasping_ai.data.transforms import save_grasp_dataset_index
 from grasping_ai.evaluation.collision import generate_analytical_contacts
 from grasping_ai.evaluation.force_closure import compute_grasp_quality
+from grasping_ai.perception.geometry import make_transform
 from grasping_ai.perception.pointcloud import (
     estimate_point_cloud_normals,
     farthest_point_sampling,
     sample_point_cloud,
     voxel_downsample,
 )
+from grasping_ai.pipelines.simulate_grasp import simulate_grasp
+from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
 from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
 from grasping_ai.simulation.ycb import list_ycb_objects
 
@@ -39,6 +49,406 @@ def prepare_data_index(dataset_root: Path, output_index_path: Path) -> None:
     records = discover_dataset_files(dataset_root)
     entries = [{"path": str(record)} for record in records]
     save_grasp_dataset_index(output_index_path.parent, entries, output_index_path.name)
+
+
+def _default_gripper_point_cloud() -> np.ndarray:
+    x = np.linspace(-0.03, 0.03, 4)
+    y = np.linspace(-0.02, 0.02, 3)
+    z = np.linspace(-0.04, 0.04, 5)
+    gripper_point_cloud = np.stack(np.meshgrid(x, y, z, indexing="ij"), axis=-1).reshape(-1, 3)
+    return gripper_point_cloud.astype(np.float32)
+
+
+def _resolve_mesh_path(ycb_root: Path, name: str) -> Path | None:
+    mesh_path = resolve_ycb_object_id(ycb_root, name)
+    if mesh_path.is_file():
+        return mesh_path
+    candidates = list(mesh_path.rglob("*.obj")) + list(mesh_path.rglob("*.ply"))
+    if candidates:
+        return candidates[0]
+    return None
+
+
+def _sample_object_points(
+    mesh_path: Path,
+    num_samples: int,
+    oversample_factor: int,
+    oversample_extra: int,
+    voxel_size: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    oversample_count = max(
+        num_samples,
+        num_samples * oversample_factor,
+        num_samples + oversample_extra,
+    )
+    raw_points = sample_point_cloud_from_mesh(mesh_path, oversample_count, rng)
+    if raw_points.shape[0] >= num_samples:
+        fps_indices = farthest_point_sampling(raw_points, num_samples, rng)
+        points = raw_points[fps_indices]
+    else:
+        points = sample_point_cloud(raw_points, num_samples, rng)
+    points = voxel_downsample(points, voxel_size=voxel_size)
+    if points.shape[0] != num_samples:
+        points = sample_point_cloud(points, num_samples, rng)
+    return points
+
+
+def _generate_candidate_grasps(
+    points: np.ndarray,
+    normals: np.ndarray,
+    candidate_count: int,
+    gripper_width: float,
+    rng: np.random.Generator,
+    *,
+    strict_antipodal_dot: float,
+    strict_alignment_dot: float,
+    relaxed_antipodal_dot: float,
+    allow_relaxed: bool,
+    search_multiplier: int,
+) -> tuple[np.ndarray, str]:
+    grasp_kwargs = {
+        "strict_antipodal_dot": strict_antipodal_dot,
+        "strict_alignment_dot": strict_alignment_dot,
+        "search_multiplier": search_multiplier,
+    }
+    grasps = generate_analytical_grasps(
+        points,
+        normals,
+        candidate_count,
+        gripper_width,
+        rng,
+        **grasp_kwargs,
+    )
+    if grasps.shape[0] > 0:
+        return grasps, "strict"
+
+    if not allow_relaxed:
+        return grasps, "none"
+
+    grasps = generate_analytical_grasps(
+        points,
+        normals,
+        candidate_count,
+        gripper_width,
+        rng,
+        allow_relaxed=True,
+        relaxed_antipodal_dot=relaxed_antipodal_dot,
+        **grasp_kwargs,
+    )
+    if grasps.shape[0] > 0:
+        return grasps, "relaxed"
+    return grasps, "none"
+
+
+def _score_analytical_grasps(
+    grasps: np.ndarray,
+    points: np.ndarray,
+    gripper_point_cloud: np.ndarray,
+    friction_coefficient: float,
+    collision_clearance: float,
+    min_quality_score: float,
+) -> list[tuple[np.ndarray, float]]:
+    scored_grasps: list[tuple[np.ndarray, float]] = []
+    for pose in grasps:
+        contacts = generate_analytical_contacts(
+            points,
+            gripper_point_cloud,
+            pose,
+            contact_clearance=collision_clearance,
+        )
+        if len(contacts) < 2:
+            continue
+        score = compute_grasp_quality(contacts, friction_coefficient)
+        if score >= min_quality_score:
+            scored_grasps.append((pose, score))
+    scored_grasps.sort(key=lambda item: item[1], reverse=True)
+    return scored_grasps
+
+
+def _sim_validation_passes(
+    outcome: dict[str, object],
+    *,
+    sim_validate_require_ik: bool,
+    sim_validate_require_lift: bool,
+    sim_validate_min_contacts: float,
+    lift_height_threshold: float,
+) -> bool:
+    fk_error = float(outcome.get("fk_position_error", float("inf")))
+    contact_count = float(outcome.get("contact_count", 0.0))
+    ik_ok = np.isfinite(fk_error) if sim_validate_require_ik else True
+    contact_ok = contact_count >= sim_validate_min_contacts
+    lift_ok = True
+    if sim_validate_require_lift:
+        initial_height = float(outcome.get("initial_height", 0.0))
+        final_height = float(outcome.get("final_height", 0.0))
+        lift_ok = (final_height - initial_height) >= lift_height_threshold
+    return ik_ok and contact_ok and lift_ok
+
+
+def _apply_sim_validation(
+    analytical_scored: list[tuple[np.ndarray, float]],
+    *,
+    name: str,
+    grasp_source: str,
+    object_to_world: np.ndarray,
+    mjcf_root: Path,
+    robot_xml: Path,
+    table_xml: Path | None,
+    num_simulation_steps: int,
+    gripper_close_command: np.ndarray,
+    lift_height_threshold: float,
+    max_linear_velocity: float,
+    max_angular_velocity: float,
+    gripper_width: float,
+    sim_validate_require_ik: bool,
+    sim_validate_require_lift: bool,
+    sim_validate_min_contacts: float,
+    sim_validate_fallback_analytical: bool,
+) -> tuple[list[tuple[np.ndarray, float]], str, int]:
+    sim_filtered: list[tuple[np.ndarray, float]] = []
+    table_xml_path = table_xml if table_xml is not None and table_xml.is_file() else None
+    for pose, score in analytical_scored:
+        world_pose = convert_grasps_to_world_frame(pose.reshape(1, 4, 4), object_to_world)[0]
+        outcome = simulate_grasp(
+            world_pose,
+            name,
+            mjcf_root,
+            robot_xml,
+            table_xml_path=table_xml_path,
+            num_simulation_steps=num_simulation_steps,
+            gripper_close_command=gripper_close_command,
+            lift_height_threshold=lift_height_threshold,
+            max_linear_velocity=max_linear_velocity,
+            max_angular_velocity=max_angular_velocity,
+            grasp_width=gripper_width,
+            quiet=True,
+        )
+        if _sim_validation_passes(
+            outcome,
+            sim_validate_require_ik=sim_validate_require_ik,
+            sim_validate_require_lift=sim_validate_require_lift,
+            sim_validate_min_contacts=sim_validate_min_contacts,
+            lift_height_threshold=lift_height_threshold,
+        ):
+            sim_filtered.append((pose, score))
+
+    sim_pass_count = len(sim_filtered)
+    if sim_filtered:
+        return sim_filtered, f"{grasp_source}+sim", sim_pass_count
+    if sim_validate_fallback_analytical and analytical_scored:
+        logger.info(
+            "{}: no sim-validated grasps; keeping {} analytical labels.",
+            name,
+            len(analytical_scored),
+        )
+        return analytical_scored, f"{grasp_source}+sim_fallback", sim_pass_count
+    return [], f"{grasp_source}+sim_none", sim_pass_count
+
+
+def _select_diverse_grasps(
+    scored_grasps: list[tuple[np.ndarray, float]],
+    num_grasps: int,
+    min_grasp_translation: float,
+    min_grasp_rotation: float,
+) -> tuple[list[np.ndarray], list[float]]:
+    kept_poses: list[np.ndarray] = []
+    kept_scores: list[float] = []
+    for pose, score in scored_grasps:
+        if len(kept_poses) >= num_grasps:
+            break
+        translation = pose[:3, 3]
+        rotation = pose[:3, :3]
+        too_close = False
+        for kept_pose in kept_poses:
+            kept_translation = kept_pose[:3, 3]
+            if np.linalg.norm(translation - kept_translation) >= min_grasp_translation:
+                continue
+            kept_rotation = kept_pose[:3, :3]
+            trace_value = float(np.trace(kept_rotation.T @ rotation))
+            angle = float(np.arccos(np.clip((trace_value - 1.0) / 2.0, -1.0, 1.0)))
+            if angle < min_grasp_rotation:
+                too_close = True
+                break
+        if not too_close:
+            kept_poses.append(pose)
+            kept_scores.append(score)
+    return kept_poses, kept_scores
+
+
+def _quality_record(
+    object_id: str,
+    source: str,
+    *,
+    candidates: int = 0,
+    contact_scored: int = 0,
+    scored: int = 0,
+    kept: int = 0,
+    sim_pass: int = 0,
+    mean_score: float = 0.0,
+) -> dict[str, object]:
+    return {
+        "object_id": object_id,
+        "source": source,
+        "candidates": candidates,
+        "contact_scored": contact_scored,
+        "scored": scored,
+        "kept": kept,
+        "sim_pass": sim_pass,
+        "mean_score": mean_score,
+    }
+
+
+def _process_object_synthetic(
+    name: str,
+    *,
+    ycb_root: Path,
+    output_dir: Path,
+    num_samples: int,
+    num_grasps: int,
+    gripper_width: float,
+    rng: np.random.Generator,
+    gripper_point_cloud: np.ndarray,
+    object_to_world: np.ndarray,
+    oversample_factor: int,
+    oversample_extra: int,
+    neighborhood_size: int,
+    voxel_size: float,
+    strict_antipodal_dot: float,
+    strict_alignment_dot: float,
+    relaxed_antipodal_dot: float,
+    allow_relaxed: bool,
+    search_multiplier: int,
+    candidate_multiplier: int,
+    min_grasp_translation: float,
+    min_grasp_rotation: float,
+    min_quality_score: float,
+    friction_coefficient: float,
+    collision_clearance: float,
+    sim_validate: bool,
+    mjcf_root: Path | None,
+    robot_xml: Path | None,
+    num_simulation_steps: int,
+    gripper_close_command: np.ndarray | None,
+    lift_height_threshold: float,
+    max_linear_velocity: float,
+    max_angular_velocity: float,
+    sim_validate_require_lift: bool,
+    sim_validate_require_ik: bool,
+    sim_validate_min_contacts: float,
+    sim_validate_fallback_analytical: bool,
+    table_xml: Path | None,
+) -> dict[str, object] | None:
+    mesh_path = _resolve_mesh_path(ycb_root, name)
+    if mesh_path is None:
+        logger.info("Skipping {}: no mesh files found.", name)
+        return None
+
+    points = _sample_object_points(
+        mesh_path,
+        num_samples,
+        oversample_factor,
+        oversample_extra,
+        voxel_size,
+        rng,
+    )
+    normals = estimate_point_cloud_normals(points, neighborhood_size=neighborhood_size)
+    candidate_count = num_grasps * candidate_multiplier
+    grasps, grasp_source = _generate_candidate_grasps(
+        points,
+        normals,
+        candidate_count,
+        gripper_width,
+        rng,
+        strict_antipodal_dot=strict_antipodal_dot,
+        strict_alignment_dot=strict_alignment_dot,
+        relaxed_antipodal_dot=relaxed_antipodal_dot,
+        allow_relaxed=allow_relaxed,
+        search_multiplier=search_multiplier,
+    )
+    if grasps.shape[0] == 0:
+        logger.info("Skipping {}: no valid grasps found.", name)
+        return _quality_record(name, "none")
+
+    analytical_scored = _score_analytical_grasps(
+        grasps,
+        points,
+        gripper_point_cloud,
+        friction_coefficient,
+        collision_clearance,
+        min_quality_score,
+    )
+    contact_scored_count = len(analytical_scored)
+    scored_grasps = list(analytical_scored)
+    sim_pass_count = 0
+    label_source = grasp_source
+
+    if sim_validate and mjcf_root is not None and robot_xml is not None and gripper_close_command is not None:
+        scored_grasps, label_source, sim_pass_count = _apply_sim_validation(
+            analytical_scored,
+            name=name,
+            grasp_source=grasp_source,
+            object_to_world=object_to_world,
+            mjcf_root=mjcf_root,
+            robot_xml=robot_xml,
+            table_xml=table_xml,
+            num_simulation_steps=num_simulation_steps,
+            gripper_close_command=cast("np.ndarray", gripper_close_command),
+            lift_height_threshold=lift_height_threshold,
+            max_linear_velocity=max_linear_velocity,
+            max_angular_velocity=max_angular_velocity,
+            gripper_width=gripper_width,
+            sim_validate_require_ik=sim_validate_require_ik,
+            sim_validate_require_lift=sim_validate_require_lift,
+            sim_validate_min_contacts=sim_validate_min_contacts,
+            sim_validate_fallback_analytical=sim_validate_fallback_analytical,
+        )
+
+    kept_poses, kept_scores = _select_diverse_grasps(
+        scored_grasps,
+        num_grasps,
+        min_grasp_translation,
+        min_grasp_rotation,
+    )
+    if not kept_poses:
+        logger.info("Skipping {}: no grasps passed quality filters.", name)
+        return _quality_record(
+            name,
+            grasp_source,
+            candidates=int(grasps.shape[0]),
+            contact_scored=contact_scored_count,
+            scored=len(scored_grasps),
+            sim_pass=len(scored_grasps) if sim_validate else 0,
+        )
+
+    mean_score = float(np.mean(kept_scores))
+    logger.info(
+        "{}: source={}, kept={}/{}, mean_score={:.4f}, sim_pass={}",
+        name,
+        label_source,
+        len(kept_poses),
+        num_grasps,
+        mean_score,
+        sim_pass_count,
+    )
+    sample = {
+        "point_cloud": points.astype(np.float32),
+        "grasp_poses": np.stack(kept_poses, axis=0).astype(np.float32),
+        "scores": np.asarray(kept_scores, dtype=np.float32),
+        "object_id": name,
+    }
+    output_file = output_dir / f"{name}.npz"
+    save_grasp_sample(output_file, sample)
+    return _quality_record(
+        name,
+        label_source,
+        candidates=int(grasps.shape[0]),
+        contact_scored=contact_scored_count,
+        scored=len(scored_grasps),
+        kept=len(kept_poses),
+        sim_pass=sim_pass_count,
+        mean_score=mean_score,
+    )
 
 
 def generate_synthetic_dataset(
@@ -92,7 +502,7 @@ def generate_synthetic_dataset(
         required_objects: Optional list of object identifiers whose generation
             must succeed. If any listed object fails to produce a record (no
             strict or relaxed grasps, missing mesh, exception), the function
-            raises. Objects not in this list are still skipped with a printed
+            raises. Objects not in this list are still skipped with a logged
             message when they fail.
         oversample_factor: Multiplier applied to ``num_samples`` before FPS.
         oversample_extra: Additional mesh samples added before FPS refinement.
@@ -133,15 +543,20 @@ def generate_synthetic_dataset(
         ValueError: If sim validation is enabled without required sim paths.
     """
     if not ycb_root.is_dir():
-        raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist.")
+        msg = f"YCB root directory '{ycb_root}' does not exist."
+        raise FileNotFoundError(msg)
     if sim_validate and (mjcf_root is None or robot_xml is None):
-        raise ValueError("sim_validate requires mjcf_root and robot_xml")
+        msg = "sim_validate requires mjcf_root and robot_xml"
+        raise ValueError(msg)
     if sim_validate and gripper_close_command is None:
-        raise ValueError("sim_validate requires gripper_close_command")
+        msg = "sim_validate requires gripper_close_command"
+        raise ValueError(msg)
     if candidate_multiplier <= 0:
-        raise ValueError("candidate_multiplier must be positive")
+        msg = "candidate_multiplier must be positive"
+        raise ValueError(msg)
     if search_multiplier <= 0:
-        raise ValueError("search_multiplier must be positive")
+        msg = "search_multiplier must be positive"
+        raise ValueError(msg)
 
     required_set = set(required_objects or [])
     failures: list[str] = []
@@ -149,239 +564,77 @@ def generate_synthetic_dataset(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
-
-    from grasping_ai.perception.geometry import make_transform
-    from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
+    gripper_point_cloud = _default_gripper_point_cloud()
 
     object_position = (
         sim_object_position if sim_object_position is not None else np.array([0.5, 0.0, 0.3], dtype=np.float64)
     )
     if object_position.shape != (3,):
-        raise ValueError("sim_object_position must have shape (3,)")
+        msg = "sim_object_position must have shape (3,)"
+        raise ValueError(msg)
     object_to_world = make_transform(np.eye(3, dtype=np.float64), object_position)
 
-    x = np.linspace(-0.03, 0.03, 4)
-    y = np.linspace(-0.02, 0.02, 3)
-    z = np.linspace(-0.04, 0.04, 5)
-    gripper_point_cloud = np.stack(np.meshgrid(x, y, z, indexing="ij"), axis=-1).reshape(-1, 3)
-    gripper_point_cloud = gripper_point_cloud.astype(np.float32)
+    process_kwargs = {
+        "ycb_root": ycb_root,
+        "output_dir": output_dir,
+        "num_samples": num_samples,
+        "num_grasps": num_grasps,
+        "gripper_width": gripper_width,
+        "rng": rng,
+        "gripper_point_cloud": gripper_point_cloud,
+        "object_to_world": object_to_world,
+        "oversample_factor": oversample_factor,
+        "oversample_extra": oversample_extra,
+        "neighborhood_size": neighborhood_size,
+        "voxel_size": voxel_size,
+        "strict_antipodal_dot": strict_antipodal_dot,
+        "strict_alignment_dot": strict_alignment_dot,
+        "relaxed_antipodal_dot": relaxed_antipodal_dot,
+        "allow_relaxed": allow_relaxed,
+        "search_multiplier": search_multiplier,
+        "candidate_multiplier": candidate_multiplier,
+        "min_grasp_translation": min_grasp_translation,
+        "min_grasp_rotation": min_grasp_rotation,
+        "min_quality_score": min_quality_score,
+        "friction_coefficient": friction_coefficient,
+        "collision_clearance": collision_clearance,
+        "sim_validate": sim_validate,
+        "mjcf_root": mjcf_root,
+        "robot_xml": robot_xml,
+        "num_simulation_steps": num_simulation_steps,
+        "gripper_close_command": gripper_close_command,
+        "lift_height_threshold": lift_height_threshold,
+        "max_linear_velocity": max_linear_velocity,
+        "max_angular_velocity": max_angular_velocity,
+        "sim_validate_require_lift": sim_validate_require_lift,
+        "sim_validate_require_ik": sim_validate_require_ik,
+        "sim_validate_min_contacts": sim_validate_min_contacts,
+        "sim_validate_fallback_analytical": sim_validate_fallback_analytical,
+        "table_xml": table_xml,
+    }
 
-    object_names = list_ycb_objects(ycb_root)
-    for name in object_names:
+    for name in list_ycb_objects(ycb_root):
         try:
-            mesh_path = resolve_ycb_object_id(ycb_root, name)
-            if not mesh_path.is_file():
-                candidates = list(mesh_path.rglob("*.obj")) + list(mesh_path.rglob("*.ply"))
-                if candidates:
-                    mesh_path = candidates[0]
-                else:
-                    print(f"Skipping {name}: no mesh files found.")
-                    if name in required_set:
-                        failures.append(f"{name}: no mesh files found")
-                    continue
-
-            oversample_count = max(
-                num_samples,
-                num_samples * oversample_factor,
-                num_samples + oversample_extra,
-            )
-            raw_points = sample_point_cloud_from_mesh(mesh_path, oversample_count, rng)
-            if raw_points.shape[0] >= num_samples:
-                fps_indices = farthest_point_sampling(raw_points, num_samples, rng)
-                points = raw_points[fps_indices]
-            else:
-                points = sample_point_cloud(raw_points, num_samples, rng)
-            points = voxel_downsample(points, voxel_size=voxel_size)
-            if points.shape[0] != num_samples:
-                points = sample_point_cloud(points, num_samples, rng)
-
-            normals = estimate_point_cloud_normals(points, neighborhood_size=neighborhood_size)
-
-            candidate_count = num_grasps * candidate_multiplier
-            grasp_kwargs = {
-                "strict_antipodal_dot": strict_antipodal_dot,
-                "strict_alignment_dot": strict_alignment_dot,
-                "search_multiplier": search_multiplier,
-            }
-            grasps = generate_analytical_grasps(
-                points,
-                normals,
-                candidate_count,
-                gripper_width,
-                rng,
-                **grasp_kwargs,
-            )
-            grasp_source = "strict"
-            if grasps.shape[0] == 0 and allow_relaxed:
-                grasps = generate_analytical_grasps(
-                    points,
-                    normals,
-                    candidate_count,
-                    gripper_width,
-                    rng,
-                    allow_relaxed=True,
-                    relaxed_antipodal_dot=relaxed_antipodal_dot,
-                    **grasp_kwargs,
-                )
-                grasp_source = "relaxed"
-
-            if grasps.shape[0] == 0:
-                print(f"Skipping {name}: no valid grasps found.")
-                if name in required_set:
-                    failures.append(f"{name}: no valid grasps")
-                quality_records.append(
-                    {
-                        "object_id": name,
-                        "source": "none",
-                        "candidates": 0,
-                        "contact_scored": 0,
-                        "scored": 0,
-                        "kept": 0,
-                        "sim_pass": 0,
-                        "mean_score": 0.0,
-                    },
-                )
-                continue
-
-            scored_grasps: list[tuple[np.ndarray, float]] = []
-            for pose in grasps:
-                contacts = generate_analytical_contacts(
-                    points,
-                    gripper_point_cloud,
-                    pose,
-                    contact_clearance=collision_clearance,
-                )
-                if len(contacts) < 2:
-                    continue
-                score = compute_grasp_quality(contacts, friction_coefficient)
-                if score >= min_quality_score:
-                    scored_grasps.append((pose, score))
-            scored_grasps.sort(key=lambda item: item[1], reverse=True)
-            contact_scored_count = len(scored_grasps)
-            analytical_scored = list(scored_grasps)
-            sim_pass_count = 0
-            label_source = grasp_source
-
-            if sim_validate and mjcf_root is not None and robot_xml is not None:
-                from grasping_ai.pipelines.simulate_grasp import simulate_grasp
-
-                sim_filtered: list[tuple[np.ndarray, float]] = []
-                close_command = cast("np.ndarray", gripper_close_command)
-                table_xml_path = table_xml if table_xml is not None and table_xml.is_file() else None
-                for pose, score in analytical_scored:
-                    world_pose = convert_grasps_to_world_frame(
-                        pose.reshape(1, 4, 4),
-                        object_to_world,
-                    )[0]
-                    outcome = simulate_grasp(
-                        world_pose,
-                        name,
-                        mjcf_root,
-                        robot_xml,
-                        table_xml_path=table_xml_path,
-                        num_simulation_steps=num_simulation_steps,
-                        gripper_close_command=close_command,
-                        lift_height_threshold=lift_height_threshold,
-                        max_linear_velocity=max_linear_velocity,
-                        max_angular_velocity=max_angular_velocity,
-                        grasp_width=gripper_width,
-                        quiet=True,
-                    )
-                    fk_error = float(outcome.get("fk_position_error", float("inf")))
-                    contact_count = float(outcome.get("contact_count", 0.0))
-                    ik_ok = np.isfinite(fk_error) if sim_validate_require_ik else True
-                    contact_ok = contact_count >= sim_validate_min_contacts
-                    lift_ok = True
-                    if sim_validate_require_lift:
-                        initial_height = float(outcome.get("initial_height", 0.0))
-                        final_height = float(outcome.get("final_height", 0.0))
-                        lift_ok = (final_height - initial_height) >= lift_height_threshold
-                    if ik_ok and contact_ok and lift_ok:
-                        sim_filtered.append((pose, score))
-                sim_pass_count = len(sim_filtered)
-                if sim_filtered:
-                    scored_grasps = sim_filtered
-                    label_source = f"{grasp_source}+sim"
-                elif sim_validate_fallback_analytical and analytical_scored:
-                    print(f"{name}: no sim-validated grasps; keeping {len(analytical_scored)} analytical labels.")
-                    scored_grasps = analytical_scored
-                    label_source = f"{grasp_source}+sim_fallback"
-                else:
-                    scored_grasps = []
-                    label_source = f"{grasp_source}+sim_none"
-
-            kept_poses: list[np.ndarray] = []
-            kept_scores: list[float] = []
-            for pose, score in scored_grasps:
-                if len(kept_poses) >= num_grasps:
-                    break
-                translation = pose[:3, 3]
-                rotation = pose[:3, :3]
-                too_close = False
-                for kept_pose in kept_poses:
-                    kept_translation = kept_pose[:3, 3]
-                    if np.linalg.norm(translation - kept_translation) >= min_grasp_translation:
-                        continue
-                    kept_rotation = kept_pose[:3, :3]
-                    trace_value = float(np.trace(kept_rotation.T @ rotation))
-                    angle = float(np.arccos(np.clip((trace_value - 1.0) / 2.0, -1.0, 1.0)))
-                    if angle < min_grasp_rotation:
-                        too_close = True
-                        break
-                if not too_close:
-                    kept_poses.append(pose)
-                    kept_scores.append(score)
-
-            if not kept_poses:
-                print(f"Skipping {name}: no grasps passed quality filters.")
-                if name in required_set:
-                    failures.append(f"{name}: no grasps passed quality filters")
-                quality_records.append(
-                    {
-                        "object_id": name,
-                        "source": grasp_source,
-                        "candidates": int(grasps.shape[0]),
-                        "contact_scored": contact_scored_count,
-                        "scored": len(scored_grasps),
-                        "kept": 0,
-                        "sim_pass": len(scored_grasps) if sim_validate else 0,
-                        "mean_score": 0.0,
-                    },
-                )
-                continue
-
-            mean_score = float(np.mean(kept_scores))
-            print(
-                f"{name}: source={label_source}, kept={len(kept_poses)}/{num_grasps}, "
-                f"mean_score={mean_score:.4f}, sim_pass={sim_pass_count}",
-            )
-            quality_records.append(
-                {
-                    "object_id": name,
-                    "source": label_source,
-                    "candidates": int(grasps.shape[0]),
-                    "contact_scored": contact_scored_count,
-                    "scored": len(scored_grasps),
-                    "kept": len(kept_poses),
-                    "sim_pass": sim_pass_count,
-                    "mean_score": mean_score,
-                },
-            )
-
-            sample = {
-                "point_cloud": points.astype(np.float32),
-                "grasp_poses": np.stack(kept_poses, axis=0).astype(np.float32),
-                "scores": np.asarray(kept_scores, dtype=np.float32),
-                "object_id": name,
-            }
-
-            output_file = output_dir / f"{name}.npz"
-            save_grasp_sample(output_file, sample)
-
-        except Exception as e:
-            print(f"Failed to generate synthetic data for '{name}': {e}")
+            quality_record = _process_object_synthetic(name, **process_kwargs)
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            logger.error("Failed to generate synthetic data for '{}': {}", name, exc)
             if name in required_set:
-                failures.append(f"{name}: {e}")
+                failures.append(f"{name}: {exc}")
+            continue
+
+        if quality_record is None:
+            if name in required_set:
+                failures.append(f"{name}: no mesh files found")
+            continue
+
+        quality_records.append(quality_record)
+        kept = int(quality_record["kept"])
+        if kept == 0 and name in required_set:
+            source = str(quality_record["source"])
+            if source == "none":
+                failures.append(f"{name}: no valid grasps")
+            else:
+                failures.append(f"{name}: no grasps passed quality filters")
 
     if quality_report_path is not None:
         quality_report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -389,116 +642,36 @@ def generate_synthetic_dataset(
 
     if failures:
         joined = "; ".join(failures)
-        raise RuntimeError(f"Required YCB objects failed to generate synthetic data: {joined}")
+        msg = f"Required YCB objects failed to generate synthetic data: {joined}"
+        raise RuntimeError(msg)
 
 
-if __name__ == "__main__":
-    from grasping_ai.config.yaml_loader import (
-        config_float,
-        config_float_list,
-        config_get,
-        config_path,
-        config_str_list,
-        load_project_yaml_config,
-        parse_clean_argv,
-        parse_config_dir_from_argv,
-        parse_config_name_from_argv,
-        parse_config_overrides_from_argv,
-    )
+def _cfg_mapping_value(cfg: DictConfig, *keys: str, default: object) -> object:
+    return config_get(cfg, *keys, default=default)
 
-    config_dir = parse_config_dir_from_argv()
-    config_name = parse_config_name_from_argv()
-    overrides = parse_config_overrides_from_argv()
-    cfg = load_project_yaml_config(config_dir, config_name=config_name, overrides=overrides)
-    pre_parser = argparse.ArgumentParser(add_help=False)
-    pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
-    pre_parser.add_argument("--config-name", type=str, default=config_name)
-    parser = argparse.ArgumentParser(
-        description="Prepare grasp dataset or generate synthetic data",
-        parents=[pre_parser],
-    )
-    parser.add_argument("--mode", type=str, choices=["index", "synthetic"], default="index")
-    parser.add_argument(
-        "--dataset-root",
-        type=Path,
-        default=config_path(cfg, "paths", "dataset_root"),
-    )
-    parser.add_argument("--output-dir", type=Path, default=None)
-    parser.add_argument(
-        "--output-index",
-        type=Path,
-        default=config_path(cfg, "paths", "output_index"),
-    )
 
-    parser.add_argument(
-        "--ycb-root",
-        type=Path,
-        default=config_path(cfg, "paths", "ycb_root"),
-    )
-    parser.add_argument(
-        "--num-samples",
-        type=int,
-        default=int(config_get(cfg, "synthetic", "num_samples")),
-    )
-    parser.add_argument(
-        "--num-grasps",
-        type=int,
-        default=int(config_get(cfg, "synthetic", "num_grasps")),
-    )
-    parser.add_argument(
-        "--gripper-width",
-        type=float,
-        default=float(config_get(cfg, "synthetic", "gripper_width")),
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=int(config_get(cfg, "synthetic", "seed")),
-    )
-    parser.add_argument(
-        "--required-objects",
-        type=str,
-        nargs="+",
-        default=config_str_list(cfg, "objects", "ids"),
-        help=(
-            "Space-separated list of YCB object identifiers whose generation "
-            "must succeed; missing objects cause a non-zero exit code. "
-            "Objects not in this list are skipped with a printed warning."
-        ),
-    )
-    parser.add_argument(
-        "--quality-report",
-        type=Path,
-        default=None,
-        help="Optional JSON path for per-object synthetic label quality metrics.",
-    )
-    parser.add_argument(
-        "--sim-validate",
-        action="store_true",
-        default=bool(config_get(cfg, "synthetic", "sim_validate", default=False)),
-        help="Keep only MuJoCo lift-success grasps (slow; requires MJCF assets).",
-    )
+@hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/prepare_data")
+def main(cfg: DictConfig) -> None:
+    mode = str(config_value(cfg, "mode", "prepare", "mode", value_type=object, script_or=True))
+    dataset_root = config_value(cfg, "paths", "dataset_root", value_type=Path)
+    output_dir = config_value(cfg, "output_dir", "prepare", "output_dir", value_type=Path, script_or=True)
+    output_index = config_value(cfg, "paths", "output_index", value_type=Path, required=True)
+    target_dir = output_dir if output_dir is not None else dataset_root
 
-    args = parser.parse_args(parse_clean_argv())
-    if args.output_index is None:
-        parser.error(
-            "--output-index is required (set in configs/data/default.yaml paths.output_index or pass explicitly)",
-        )
-
-    target_dir = args.output_dir if args.output_dir is not None else args.dataset_root
-
-    if args.mode == "synthetic":
-        if args.ycb_root is None:
-            parser.error("--ycb-root is required when --mode is synthetic")
+    if mode == "synthetic":
+        if dataset_root is None and output_dir is None:
+            msg = "prepare.output_dir or paths.dataset_root is required when prepare.mode is synthetic"
+            raise ValueError(msg)
+        ycb_root = config_value(cfg, "paths", "ycb_root", value_type=Path, required=True)
         if target_dir is None:
-            parser.error("--output-dir or --dataset-root is required when --mode is synthetic")
+            msg = "prepare.output_dir or paths.dataset_root is required when prepare.mode is synthetic"
+            raise ValueError(msg)
 
         gripper_close = config_get(cfg, "robot", "gripper", "close_command")
         close_command = np.asarray(gripper_close, dtype=np.float64) if isinstance(gripper_close, list) else None
-        synthetic_cfg = cast("dict[str, object]", config_get(cfg, "synthetic", default={}) or {})
-        metrics_cfg = cast("dict[str, object]", config_get(cfg, "metrics", default={}) or {})
-        limits_cfg = cast("dict[str, object]", config_get(cfg, "limits", default={}) or {})
-        sim_position = config_float_list(cfg, "synthetic", "sim_object_position")
+        synthetic_cfg = config_get(cfg, "synthetic")
+        limits_cfg = config_get(cfg, "limits")
+        sim_position = config_value(cfg, "synthetic", "sim_object_position", value_type=list[float])
         sim_object_position = (
             np.asarray(sim_position, dtype=np.float64) if sim_position else np.array([0.5, 0.0, 0.1], dtype=np.float64)
         )
@@ -508,46 +681,57 @@ if __name__ == "__main__":
             table_xml = Path(__file__).resolve().parents[1] / table_xml
 
         generate_synthetic_dataset(
-            ycb_root=args.ycb_root,
+            ycb_root=ycb_root,
             output_dir=target_dir,
-            num_samples=args.num_samples,
-            num_grasps=args.num_grasps,
-            gripper_width=args.gripper_width,
-            seed=args.seed,
-            required_objects=args.required_objects,
-            oversample_factor=int(synthetic_cfg.get("oversample_factor", 2)),
-            oversample_extra=int(synthetic_cfg.get("oversample_extra", 256)),
-            neighborhood_size=int(synthetic_cfg.get("neighborhood_size", 30)),
-            voxel_size=float(synthetic_cfg.get("voxel_size", 1e-5)),
-            strict_antipodal_dot=float(synthetic_cfg.get("strict_antipodal_dot", 0.5)),
-            strict_alignment_dot=float(synthetic_cfg.get("strict_alignment_dot", 0.5)),
-            relaxed_antipodal_dot=float(synthetic_cfg.get("relaxed_antipodal_dot", 0.3)),
-            allow_relaxed=bool(synthetic_cfg.get("allow_relaxed", True)),
-            search_multiplier=int(synthetic_cfg.get("search_multiplier", 50)),
-            candidate_multiplier=int(synthetic_cfg.get("candidate_multiplier", 3)),
-            min_grasp_translation=float(synthetic_cfg.get("min_grasp_translation", 0.01)),
-            min_grasp_rotation=float(synthetic_cfg.get("min_grasp_rotation", 0.2)),
-            min_quality_score=float(synthetic_cfg.get("min_quality_score", 0.0)),
-            friction_coefficient=config_float(cfg, "synthetic", "friction_coefficient", default=0.5),
-            collision_clearance=config_float(cfg, "synthetic", "collision_clearance", default=0.005),
-            sim_validate=args.sim_validate,
-            mjcf_root=config_path(cfg, "paths", "ycb_mjcf"),
-            robot_xml=config_path(cfg, "robot", "description"),
-            num_simulation_steps=int(config_get(cfg, "num_steps", default=500)),
+            num_samples=config_value(cfg, "synthetic", "num_samples", value_type=int),
+            num_grasps=config_value(cfg, "synthetic", "num_grasps", value_type=int),
+            gripper_width=config_value(cfg, "synthetic", "gripper_width", value_type=float),
+            seed=config_value(cfg, "synthetic", "seed", value_type=int),
+            required_objects=config_value(cfg, "objects", "ids", value_type=list[str]),
+            oversample_factor=int(_cfg_mapping_value(cfg, "synthetic", "oversample_factor", default=2)),
+            oversample_extra=int(_cfg_mapping_value(cfg, "synthetic", "oversample_extra", default=256)),
+            neighborhood_size=int(_cfg_mapping_value(cfg, "synthetic", "neighborhood_size", default=30)),
+            voxel_size=float(_cfg_mapping_value(cfg, "synthetic", "voxel_size", default=1e-5)),
+            strict_antipodal_dot=float(_cfg_mapping_value(cfg, "synthetic", "strict_antipodal_dot", default=0.5)),
+            strict_alignment_dot=float(_cfg_mapping_value(cfg, "synthetic", "strict_alignment_dot", default=0.5)),
+            relaxed_antipodal_dot=float(_cfg_mapping_value(cfg, "synthetic", "relaxed_antipodal_dot", default=0.3)),
+            allow_relaxed=bool(_cfg_mapping_value(cfg, "synthetic", "allow_relaxed", default=True)),
+            search_multiplier=int(_cfg_mapping_value(cfg, "synthetic", "search_multiplier", default=50)),
+            candidate_multiplier=int(_cfg_mapping_value(cfg, "synthetic", "candidate_multiplier", default=3)),
+            min_grasp_translation=float(_cfg_mapping_value(cfg, "synthetic", "min_grasp_translation", default=0.01)),
+            min_grasp_rotation=float(_cfg_mapping_value(cfg, "synthetic", "min_grasp_rotation", default=0.2)),
+            min_quality_score=float(_cfg_mapping_value(cfg, "synthetic", "min_quality_score", default=0.0)),
+            friction_coefficient=config_value(cfg, "synthetic", "friction_coefficient", value_type=float, default=0.5),
+            collision_clearance=config_value(cfg, "synthetic", "collision_clearance", value_type=float, default=0.005),
+            sim_validate=config_value(cfg, "synthetic", "sim_validate", value_type=bool, default=False),
+            mjcf_root=config_value(cfg, "paths", "ycb_mjcf", value_type=Path),
+            robot_xml=config_value(cfg, "robot", "description", value_type=Path),
+            num_simulation_steps=config_value(cfg, "num_steps", value_type=int, default=500),
             gripper_close_command=close_command,
-            lift_height_threshold=config_float(cfg, "metrics", "lift_height_threshold", default=0.05),
-            max_linear_velocity=float(limits_cfg.get("max_linear_velocity", 0.05)),
-            max_angular_velocity=float(limits_cfg.get("max_angular_velocity", 0.1)),
-            quality_report_path=args.quality_report,
+            lift_height_threshold=config_value(cfg, "metrics", "lift_height_threshold", value_type=float, default=0.05),
+            max_linear_velocity=float(_cfg_mapping_value(cfg, "limits", "max_linear_velocity", default=0.05)),
+            max_angular_velocity=float(_cfg_mapping_value(cfg, "limits", "max_angular_velocity", default=0.1)),
+            quality_report_path=config_value(cfg, "quality_report", "prepare", "quality_report", value_type=Path, script_or=True),
             sim_object_position=sim_object_position,
-            sim_validate_require_lift=bool(synthetic_cfg.get("sim_validate_require_lift", False)),
-            sim_validate_require_ik=bool(synthetic_cfg.get("sim_validate_require_ik", True)),
-            sim_validate_min_contacts=float(synthetic_cfg.get("sim_validate_min_contacts", 1.0)),
-            sim_validate_fallback_analytical=bool(synthetic_cfg.get("sim_validate_fallback_analytical", True)),
+            sim_validate_require_lift=bool(
+                _cfg_mapping_value(cfg, "synthetic", "sim_validate_require_lift", default=False),
+            ),
+            sim_validate_require_ik=bool(_cfg_mapping_value(cfg, "synthetic", "sim_validate_require_ik", default=True)),
+            sim_validate_min_contacts=float(
+                _cfg_mapping_value(cfg, "synthetic", "sim_validate_min_contacts", default=1.0),
+            ),
+            sim_validate_fallback_analytical=bool(
+                _cfg_mapping_value(cfg, "synthetic", "sim_validate_fallback_analytical", default=True),
+            ),
             table_xml=table_xml,
         )
-        prepare_data_index(target_dir, args.output_index)
+        prepare_data_index(target_dir, output_index)
     else:
         if target_dir is None:
-            parser.error("--dataset-root or --output-dir is required when --mode is index")
-        prepare_data_index(target_dir, args.output_index)
+            msg = "paths.dataset_root or prepare.output_dir is required when prepare.mode is index"
+            raise ValueError(msg)
+        prepare_data_index(target_dir, output_index)
+
+
+if __name__ == "__main__":
+    main()

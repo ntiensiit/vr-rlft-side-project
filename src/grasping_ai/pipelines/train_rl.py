@@ -103,9 +103,9 @@ def run_rl_training_pipeline(
     from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
 
     try:
-        from grasping_ai.config.yaml_loader import load_project_yaml_config, parse_config_dir_from_argv
+        from grasping_ai.config.config import DEFAULT_CONFIG_DIR, load_project_yaml_config
 
-        _cfg = load_project_yaml_config(parse_config_dir_from_argv())
+        _cfg = load_project_yaml_config(DEFAULT_CONFIG_DIR)
         reward_config = RewardConfig.load_from_config(_cfg)
     except Exception:
         reward_config = RewardConfig(

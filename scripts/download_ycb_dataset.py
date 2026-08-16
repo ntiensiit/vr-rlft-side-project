@@ -2,65 +2,70 @@
 
 from __future__ import annotations
 
+import glob
 import json
-import os
+import shutil
+import tarfile
+import time
+from pathlib import Path
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+import hydra
+from loguru import logger
+from omegaconf import DictConfig
 
-def fetch_objects(url):
-    """Fetches the object information before download.
+from grasping_ai.config.config import (
+    SCRIPTS_CONFIG_PATH,
+    config_value,
+)
 
-    Args:
-        url: The URL to fetch the object list from.
-
-    Returns:
-        list: A list of object IDs.
-    """
-    response = urlopen(url)
-    html = response.read()
-    objects = json.loads(html)
-    return objects["objects"]
+YCB_BASE_URL = "http://ycb-benchmarks.s3-website-us-east-1.amazonaws.com/data/"
+USER_AGENT = "Mozilla/5.0"
+DOWNLOAD_BLOCK_SIZE = 65536
 
 
-def download_file(url, filename, max_retries=5):
-    """Downloads files from a given URL with retries.
+def fetch_objects(url: str) -> list[str]:
+    """Fetch the object list from the YCB benchmark index URL."""
+    with urlopen(url) as response:
+        payload = json.loads(response.read())
+    objects = payload["objects"]
+    if not isinstance(objects, list):
+        msg = "YCB object index did not contain a list of objects"
+        raise TypeError(msg)
+    return [str(object_id) for object_id in objects]
 
-    Args:
-        url: The URL of the file to download.
-        filename: The output filename path.
-        max_retries: The maximum number of download attempts.
 
-    Raises:
-        Exception: If download fails after max_retries.
-    """
-    import time
-
+def download_file(url: str, filename: Path, max_retries: int = 5) -> None:
+    """Download a file from ``url`` with retries."""
     for attempt in range(max_retries):
         try:
-            req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urlopen(req, timeout=30) as u:
-                file_size_header = u.getheader("Content-Length")
+            request = Request(url, headers={"User-Agent": USER_AGENT})
+            with urlopen(request, timeout=30) as remote_file:
+                file_size_header = remote_file.getheader("Content-Length")
                 file_size = int(file_size_header) if file_size_header else 0
-                print(f"Downloading: {filename} ({file_size / 1000000.0} MB)")
+                logger.info("Downloading: {} ({:.2f} MB)", filename, file_size / 1_000_000.0)
 
-                with open(filename, "wb") as f:
-                    file_size_dl = 0
-                    block_sz = 65536
+                file_size_dl = 0
+                with filename.open("wb") as local_file:
                     while True:
-                        buffer = u.read(block_sz)
+                        buffer = remote_file.read(DOWNLOAD_BLOCK_SIZE)
                         if not buffer:
                             break
 
                         file_size_dl += len(buffer)
-                        f.write(buffer)
+                        local_file.write(buffer)
                         if file_size > 0:
-                            status = f"{int(file_size_dl / 1000000.0):10d}  [{file_size_dl * 100.0 / file_size:3.2f}%]"
+                            status = (
+                                f"{int(file_size_dl / 1_000_000.0):10d}  "
+                                f"[{file_size_dl * 100.0 / file_size:3.2f}%]"
+                            )
                         else:
-                            status = f"{int(file_size_dl / 1000000.0):10d}"
+                            status = f"{int(file_size_dl / 1_000_000.0):10d}"
                         status = status + chr(8) * (len(status) + 1)
-                        print(status)
-        except Exception as e:
-            print(f"Error downloading (attempt {attempt + 1}/{max_retries}): {e}")
+                        logger.info("{}", status)
+        except (OSError, URLError) as exc:
+            logger.warning("Error downloading (attempt {}/{}): {}", attempt + 1, max_retries, exc)
             if attempt < max_retries - 1:
                 time.sleep(2)
             else:
@@ -69,137 +74,118 @@ def download_file(url, filename, max_retries=5):
             return
 
 
-def tgz_url(object, type):
-    """Get the TGZ file URL for a particular object and dataset type.
-
-    Args:
-        object: The name of the object.
-        type: The type of dataset file.
-
-    Returns:
-        str: The URL of the TGZ file.
-    """
-    base_url = "http://ycb-benchmarks.s3-website-us-east-1.amazonaws.com/data/"
-    if type in ["berkeley_rgbd", "berkeley_rgb_highres"]:
-        return f"{base_url}berkeley/{object}/{object}_{type}.tgz"
-    if type == "berkeley_processed":
-        return f"{base_url}berkeley/{object}/{object}_berkeley_meshes.tgz"
-    return f"{base_url}google/{object}_{type}.tgz"
+def tgz_url(ycb_object: str, file_type: str) -> str:
+    """Return the TGZ file URL for a YCB object and dataset type."""
+    if file_type in {"berkeley_rgbd", "berkeley_rgb_highres"}:
+        return f"{YCB_BASE_URL}berkeley/{ycb_object}/{ycb_object}_{file_type}.tgz"
+    if file_type == "berkeley_processed":
+        return f"{YCB_BASE_URL}berkeley/{ycb_object}/{ycb_object}_berkeley_meshes.tgz"
+    return f"{YCB_BASE_URL}google/{ycb_object}_{file_type}.tgz"
 
 
-def extract_tgz(filename, dir):
-    """Extract a TGZ file using built-in tarfile.
-
-    Args:
-        filename: The TGZ file path to extract.
-        dir: The output directory path.
-    """
-    import tarfile
-    import time
-
-    with tarfile.open(filename, "r:gz") as tar:
+def extract_tgz(filename: Path, output_dir: Path) -> None:
+    """Extract a TGZ archive into ``output_dir``."""
+    with tarfile.open(filename, "r:gz") as archive:
         if hasattr(tarfile, "data_filter"):
-            tar.extractall(path=dir, filter="data")
+            archive.extractall(path=output_dir, filter="data")
         else:
-            tar.extractall(path=dir)
+            archive.extractall(path=output_dir)
 
-    # Retry removing the file in case of Windows antivirus locks (WinError 32)
     for _ in range(10):
         try:
-            os.remove(filename)
+            filename.unlink()
             break
         except OSError:
             time.sleep(1)
 
 
-def check_url(url):
-    """Check the validity of a URL.
-
-    Args:
-        url: The URL to check.
-
-    Returns:
-        bool: True if the URL is valid, False otherwise.
-    """
+def check_url(url: str) -> bool:
+    """Return whether ``url`` responds to a HEAD request."""
     try:
         request = Request(url)
         request.get_method = lambda: "HEAD"
         with urlopen(request):
             pass
-    except Exception:
+    except (OSError, URLError):
         return False
     else:
         return True
 
 
-if __name__ == "__main__":
-    import shutil
+def _is_already_extracted(object_dir: Path, file_type: str) -> bool:
+    if file_type == "google_16k":
+        return (object_dir / "google_16k").exists()
+    if file_type == "berkeley_processed":
+        return (object_dir / "clouds").exists()
+    return False
 
-    output_directory = os.path.join("data", "raw", "ycb")
-    objects_to_download = [
-        "003_cracker_box",
-        "004_sugar_box",
-        "006_mustard_bottle",
-    ]
-    files_to_download = ["berkeley_processed", "google_16k"]
-    extract = True
-    objects_url = "https://ycb-benchmarks.s3.amazonaws.com/data/objects.json"
 
-    if not os.path.exists(output_directory):
-        os.makedirs(output_directory)
+def _cleanup_failed_object(output_directory: Path, object_id: str) -> None:
+    object_dir = output_directory / object_id
+    if object_dir.exists():
+        shutil.rmtree(object_dir, ignore_errors=True)
 
-    # Grab all the object information
+    tgz_pattern = output_directory / f"{object_id}_*.tgz"
+    for file_name in glob.glob(str(tgz_pattern)):
+        for _ in range(5):
+            try:
+                Path(file_name).unlink()
+                break
+            except OSError:
+                time.sleep(1)
+
+
+def _process_object(
+    object_id: str,
+    output_directory: Path,
+    files_to_download: list[str],
+    extract: bool,
+) -> None:
+    object_dir = output_directory / object_id
+    for file_type in files_to_download:
+        if extract:
+            if _is_already_extracted(object_dir, file_type):
+                logger.info("Skipping {} {}: already extracted.", object_id, file_type)
+                continue
+        else:
+            filename = output_directory / f"{object_id}_{file_type}.tgz"
+            if filename.is_file():
+                logger.info("Skipping {} {}: already downloaded.", object_id, file_type)
+                continue
+
+        url = tgz_url(object_id, file_type)
+        if not check_url(url):
+            continue
+
+        filename = output_directory / f"{object_id}_{file_type}.tgz"
+        download_file(url, filename)
+        if extract:
+            extract_tgz(filename, output_directory)
+
+
+@hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/download_ycb_dataset")
+def main(cfg: DictConfig) -> None:
+    output_directory = config_value(
+        cfg, "output_directory", "download", "output_directory", value_type=Path, script_or=True
+    )
+    objects_to_download = config_value(cfg, "objects_to_download", "download", "objects", value_type=list[str], script_or=True)
+    files_to_download = config_value(cfg, "files_to_download", "download", "files", value_type=list[str], script_or=True)
+    extract = config_value(cfg, "extract", "download", "extract", value_type=bool, default=True, script_or=True)
+    objects_url = str(config_value(cfg, "objects_url", "download", "objects_url", value_type=object, script_or=True))
+
+    output_directory.mkdir(parents=True, exist_ok=True)
     objects = fetch_objects(objects_url)
 
-    # Download each object for all objects and types specified
-    for object in objects:
-        if objects_to_download == "all" or object in objects_to_download:
-            object_dir = os.path.join(output_directory, object)
+    for object_id in objects:
+        if object_id not in objects_to_download:
+            continue
 
-            try:
-                for file_type in files_to_download:
-                    # Check if already downloaded/extracted
-                    if extract:
-                        is_google_extracted = file_type == "google_16k" and os.path.exists(
-                            os.path.join(object_dir, "google_16k"),
-                        )
-                        is_berkeley_extracted = file_type == "berkeley_processed" and os.path.exists(
-                            os.path.join(object_dir, "clouds"),
-                        )
-                        if is_google_extracted or is_berkeley_extracted:
-                            print(f"Skipping {object} {file_type}: already extracted.")
-                            continue
-                    else:
-                        filename = f"{output_directory}/{object}_{file_type}.tgz"
-                        if os.path.exists(filename):
-                            print(f"Skipping {object} {file_type}: already downloaded.")
-                            continue
+        try:
+            _process_object(object_id, output_directory, files_to_download, extract)
+        except (OSError, URLError) as exc:
+            logger.error("Failed to process {}: {}. Cleaning up...", object_id, exc)
+            _cleanup_failed_object(output_directory, object_id)
 
-                    url = tgz_url(object, file_type)
-                    if not check_url(url):
-                        continue
 
-                    filename = f"{output_directory}/{object}_{file_type}.tgz"
-
-                    download_file(url, filename)
-                    if extract:
-                        extract_tgz(filename, output_directory)
-
-            except Exception as e:
-                import glob
-                import time
-
-                print(f"Failed to process {object}: {e}. Cleaning up...")
-                if os.path.exists(object_dir):
-                    shutil.rmtree(object_dir, ignore_errors=True)
-
-                # Remove any leftover .tgz files related to this object
-                tgz_pattern = os.path.join(output_directory, object + "_*.tgz")
-                for f in glob.glob(tgz_pattern):
-                    for _ in range(5):
-                        try:
-                            os.remove(f)
-                            break
-                        except OSError:
-                            time.sleep(1)
-                continue
+if __name__ == "__main__":
+    main()

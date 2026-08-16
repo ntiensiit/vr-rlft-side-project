@@ -1,11 +1,11 @@
 # @package _global_
 paths:
+  input_dir: ${oc.env:MGS_INPUT_DIR,"data"}
+  ycb_mjcf: ${paths.input_dir}/processed/ycb_mjcf
+  observations: ${paths.input_dir}/observations
   dataset_root: ${paths.input_dir}/processed
   ycb_root: ${paths.input_dir}/raw/ycb
   output_index: ${paths.input_dir}/processed/index.json
-  checkpoints: ${paths.output_dir}/checkpoints
-  exports: ${paths.output_dir}/exports
-  reports: ${paths.output_dir}/reports
 
 splits:
   train: train
@@ -36,7 +36,7 @@ synthetic:
   sim_validate_require_ik: true
   sim_validate_min_contacts: 1.0
   sim_validate_fallback_analytical: true
-  sim_table_xml: deploy/table.xml
+  sim_table_xml: ${env.table_xml}
   sim_object_position:
     - 0.5
     - 0.0
@@ -44,3 +44,26 @@ synthetic:
 observations:
   num_samples: 256
   seed: 7
+  gripper_point_cloud: ${paths.observations}/gripper.npy
+  files:
+    - ${paths.observations}/${objects.ids.0}.npy
+    - ${paths.observations}/${objects.ids.1}.npy
+    - ${paths.observations}/${objects.ids.2}.npy
+
+download:
+  output_directory: ${paths.ycb_root}
+  objects: ${objects.ids}
+  files:
+    - berkeley_processed
+    - google_16k
+  extract: true
+  objects_url: https://ycb-benchmarks.s3.amazonaws.com/data/objects.json
+
+prepare:
+  mode: index
+  output_dir: null
+  quality_report: null
+
+artifact_chain:
+  prepare_data_mode: synthetic
+  evaluate_multi_object: true

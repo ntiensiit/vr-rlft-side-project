@@ -4,117 +4,66 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import hydra
 import numpy as np
+from omegaconf import DictConfig
 
-from grasping_ai.config.yaml_loader import (
-    config_float_list,
-    config_get,
-    config_path,
-    load_project_yaml_config,
-    optional_cli_path,
-    parse_clean_argv,
-    parse_config_dir_from_argv,
-)
+from grasping_ai.config.config import SCRIPTS_CONFIG_PATH, config_value
+from grasping_ai.perception.geometry import identity_transform
 from grasping_ai.pipelines.evaluate import write_jsonl_records
 from grasping_ai.pipelines.simulate_grasp import run_simulation_sweep
+from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
+from grasping_ai.utils.logging_utils import setup_logging
 
-if __name__ == "__main__":
-    import argparse
 
-    config_dir = parse_config_dir_from_argv()
-    cfg = load_project_yaml_config(config_dir)
-    pre_parser = argparse.ArgumentParser(add_help=False)
-    pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
-    parser = argparse.ArgumentParser(
-        description="Run grasps in MuJoCo simulation",
-        parents=[pre_parser],
-    )
-    parser.add_argument("--grasps", type=Path, required=True)
-    parser.add_argument("--object-id", type=str, required=True)
-    parser.add_argument(
-        "--ycb-root",
-        type=Path,
-        default=config_path(cfg, "paths", "ycb_mjcf"),
-    )
-    parser.add_argument(
-        "--robot-xml",
-        type=Path,
-        default=config_path(cfg, "robot", "description"),
-    )
-    parser.add_argument("--table-xml", type=optional_cli_path, default=None)
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=config_path(cfg, "model", "exports", "simulation_report")
-        or config_path(cfg, "diffusion", "exports", "simulation_report")
-        or config_path(cfg, "flow", "exports", "simulation_report"),
-    )
-    parser.add_argument(
-        "--num-simulation-steps",
-        type=int,
-        default=int(config_get(cfg, "num_steps")),
-    )
-    close_default = config_float_list(cfg, "robot", "gripper", "close_command") or [0.0]
-    parser.add_argument(
-        "--gripper-close-command",
-        type=float,
-        nargs="+",
-        default=close_default,
-    )
-    parser.add_argument(
-        "--grasp-pose-format",
-        type=str,
-        choices=["world", "object"],
-        default="world",
-        help="Coordinate frame of the input grasps ('world' or 'object')",
-    )
-    args = parser.parse_args(parse_clean_argv())
-    if args.ycb_root is None:
-        parser.error("--ycb-root is required (set in configs/base.yaml paths.ycb_mjcf or pass explicitly)")
-    if args.robot_xml is None:
-        parser.error(
-            "--robot-xml is required (set in configs/gripper/franka_emika_panda.yaml "
-            "robot.description or pass explicitly)",
-        )
-    if args.output is None:
-        parser.error(
-            "--output is required (set in configs/model/diffusion.yaml or flow.yaml "
-            "model.exports.simulation_report or pass explicitly)",
-        )
-
-    from grasping_ai.utils.logging_utils import setup_logging
+@hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/run_simulation")
+def main(cfg: DictConfig) -> None:
     setup_logging(module_name="simulation")
 
-    grasp_poses = np.load(args.grasps)
-    if args.grasp_pose_format == "object":
-        from grasping_ai.perception.geometry import identity_transform
-        from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
-
+    grasp_pose_format = str(config_value(cfg, "grasp_pose_format", value_type=object, default="world", script_or=True))
+    grasp_poses = np.load(
+        config_value(cfg, "grasps", "model", "exports", "grasp_poses", value_type=Path, script_or=True, required=True)
+    )
+    if grasp_pose_format == "object":
         grasp_poses = convert_grasps_to_world_frame(grasp_poses, identity_transform())
-    elif args.grasp_pose_format != "world":
-        raise ValueError(
-            f"Unsupported grasp pose format '{args.grasp_pose_format}'; supported values are 'world' and 'object'",
-        )
+    elif grasp_pose_format != "world":
+        msg = f"Unsupported grasp pose format '{grasp_pose_format}'; supported values are 'world' and 'object'"
+        raise ValueError(msg)
 
+    close_default = config_value(cfg, "robot", "gripper", "close_command", value_type=list[float]) or [0.0]
+    object_id_value = config_value(cfg, "object_id", value_type=object, default=None, script_or=True)
+    if object_id_value is None:
+        object_ids = config_value(cfg, "objects", "ids", value_type=list[str])
+        object_id_value = object_ids[0]
+    object_id = str(object_id_value)
     outcomes = run_simulation_sweep(
         grasp_poses=grasp_poses,
-        object_id=args.object_id,
-        ycb_root=args.ycb_root,
-        robot_xml_path=args.robot_xml,
-        table_xml_path=args.table_xml,
-        num_simulation_steps=args.num_simulation_steps,
-        gripper_close_command=np.asarray(args.gripper_close_command, dtype=np.float64),
+        object_id=object_id,
+        ycb_root=config_value(cfg, "ycb_root", "paths", "ycb_mjcf", value_type=Path, script_or=True, required=True),
+        robot_xml_path=config_value(
+            cfg, "robot_xml", "robot", "description", value_type=Path, script_or=True, required=True
+        ),
+        table_xml_path=config_value(cfg, "table_xml", "env", "table_xml", value_type=Path, script_or=True),
+        num_simulation_steps=config_value(cfg, "num_steps", value_type=int),
+        gripper_close_command=np.asarray(close_default, dtype=np.float64),
     )
 
+    output_path = config_value(
+        cfg, "output", "model", "exports", "simulation_report", value_type=Path, script_or=True, required=True
+    )
     serialized: list[dict[str, object]] = []
     for grasp_index, outcome in enumerate(outcomes):
         converted: dict[str, object] = {
             "record_type": "grasp_outcome",
-            "object_id": args.object_id,
+            "object_id": object_id,
             "grasp_index": grasp_index,
         }
         for key, value in outcome.items():
             converted[key] = value.tolist() if hasattr(value, "tolist") else value
         serialized.append(converted)
 
-    write_jsonl_records(args.output, serialized)
+    write_jsonl_records(output_path, serialized)
+
+
+if __name__ == "__main__":
+    main()

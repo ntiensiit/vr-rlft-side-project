@@ -1,12 +1,4 @@
-defaults:
-  - data: default
-  - gripper: default
-  - env: default
-  - object: default
-  - model: default
-  - rl: default
-  - notebook: default
-
+# @package _global_
 seed: 42
 device: cpu
 experiment_name: default
@@ -18,10 +10,3 @@ tracking:
   mlflow:
     tracking_uri: ${oc.env:MLFLOW_TRACKING_URI,"./mlruns"}
     experiment_name: ${experiment_name}
-paths:
-  input_dir: ${oc.env:MGS_INPUT_DIR,"data"}
-  output_dir: ${oc.env:MGS_OUTPUT_DIR,"artifacts"}
-  ycb_mjcf: ${oc.env:MGS_INPUT_DIR,"data"}/processed/ycb_mjcf
-  observations: ${oc.env:MGS_INPUT_DIR,"data"}/observations
-  tensorboard: ${oc.env:MGS_OUTPUT_DIR,"artifacts"}/exports/tensorboard
-

@@ -1,0 +1,8 @@
+defaults:
+  - /scripts/base
+  - _self_
+
+script:
+  mode: ${prepare.mode}
+  output_dir: ${prepare.output_dir}
+  quality_report: ${prepare.quality_report}

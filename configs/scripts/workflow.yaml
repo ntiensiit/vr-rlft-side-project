@@ -1,0 +1,17 @@
+# @package _global_
+script:
+  method: ${evaluation.method}
+  checkpoint: ${model.checkpoint}
+  output_dir: ${artifacts.root}
+  observation: null
+  ycb_root: ${paths.ycb_root}
+  ycb_mjcf: ${paths.ycb_mjcf}
+  object_id: null
+  robot_xml: ${robot.description}
+  observation_dim: null
+  action_dim: null
+  rl_policy_checkpoint: null
+  rl_episodes: null
+  rl_max_steps: null
+  table_xml: null
+  grasp_pose_format: object

@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - /project
+  - /evaluation: default
+  - _self_
+
+notebook:
+  augment: false
+  mount_drive: false

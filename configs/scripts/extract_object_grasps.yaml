@@ -1,0 +1,8 @@
+defaults:
+  - /scripts/base
+  - _self_
+
+script:
+  input: ${model.exports.grasp_candidates}
+  output: ${model.exports.grasp_poses}
+  key: object_0

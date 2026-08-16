@@ -1,0 +1,7 @@
+defaults:
+  - /scripts/base
+  - /scripts/evaluate_analytical
+  - _self_
+
+script:
+  object_id: object_0

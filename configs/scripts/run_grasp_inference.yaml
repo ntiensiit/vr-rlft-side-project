@@ -1,0 +1,11 @@
+defaults:
+  - /scripts/base
+  - /scripts/grasp_model
+  - _self_
+
+script:
+  output: ${model.exports.inference_candidates}
+  method: ${default_method}
+  observation: null
+  ycb_root: ${paths.ycb_root}
+  object_id: null

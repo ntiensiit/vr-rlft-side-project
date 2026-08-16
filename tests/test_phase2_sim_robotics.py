@@ -222,7 +222,7 @@ def test_deploy_robot_fingertip_friction() -> None:
 
 def test_gripper_config_documents_panda_contact_offset() -> None:
     """Gripper config group records Panda base-to-contact constants."""
-    from grasping_ai.config.yaml_loader import config_get, load_project_yaml_config
+    from grasping_ai.config.config import config_get, load_project_yaml_config
 
     cfg = load_project_yaml_config(Path("configs"))
     position = config_get(cfg, "robot", "gripper", "base_to_contact", "position")

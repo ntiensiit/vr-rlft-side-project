@@ -7,37 +7,29 @@ import subprocess
 import sys
 from pathlib import Path
 
-from grasping_ai.config.yaml_loader import (
-    config_float_list,
+import hydra
+import wandb
+from loguru import logger
+from omegaconf import DictConfig
+
+from grasping_ai.config.config import (
+    SCRIPTS_CONFIG_PATH,
     config_get,
-    config_str_list,
-    load_project_yaml_config,
-    parse_config_dir_from_argv,
+    config_value,
+    hydra_cfg_to_dict,
 )
 from grasping_ai.pipelines.evaluate import write_jsonl_records
 
 
-def main() -> None:
-    """Run reproducible supervised and RL artifact chains and write a manifest.
-
-    Executes the full pipeline from YCB MJCF preparation through diffusion
-    training, grasp generation, simulation, evaluation, and RL training.
-    Records repo-relative commands in ``artifacts/manifest.jsonl``. When
-    ``tracking.backend`` is ``wandb``, also publishes retained outputs to W&B
-    and appends a ``wandb_tracking`` manifest record.
-    """
+@hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/run_artifacts")
+def main(cfg: DictConfig) -> None:
+    """Run reproducible supervised and RL artifact chains and write a manifest."""
+    cfg_dict = hydra_cfg_to_dict(cfg)
     root = Path(__file__).resolve().parents[1]
-    config_dir = parse_config_dir_from_argv()
-    if not config_dir.is_absolute():
-        config_dir = root / config_dir
-    cfg = load_project_yaml_config(config_dir)
-    artifacts = root / str(config_get(cfg, "paths", "output_dir"))
-    data_processed = root / str(config_get(cfg, "paths", "dataset_root"))
-    ycb_root = root / str(config_get(cfg, "paths", "ycb_root"))
-    mjcf_root = root / str(config_get(cfg, "paths", "ycb_mjcf"))
-    observations = root / str(config_get(cfg, "paths", "observations"))
-    object_ids = config_str_list(cfg, "objects", "ids") or []
-    gripper_close = config_float_list(cfg, "robot", "gripper", "close_command") or [0.0]
+    artifacts = config_value(cfg, "output_dir", "artifacts", "root", value_type=Path, script_or=True, required=True)
+    if not artifacts.is_absolute():
+        artifacts = root / artifacts
+
     env_vars = {
         **os.environ,
         "PYTHONPATH": str(root / "src"),
@@ -45,175 +37,48 @@ def main() -> None:
     }
     log: list[dict[str, object]] = []
 
-    mjcf_root.mkdir(parents=True, exist_ok=True)
-    observations.mkdir(parents=True, exist_ok=True)
-
-    diffusion_checkpoint = root / str(config_get(cfg, "diffusion", "checkpoint"))
-    rl_checkpoint = root / str(config_get(cfg, "rl", "checkpoint"))
-    grasp_candidates = root / str(config_get(cfg, "diffusion", "exports", "grasp_candidates"))
-    grasp_poses = root / str(config_get(cfg, "diffusion", "exports", "grasp_poses"))
-    simulation_report = root / str(config_get(cfg, "diffusion", "exports", "simulation_report"))
-    evaluation_report = root / str(config_get(cfg, "diffusion", "exports", "evaluation_report"))
-    robot_xml = root / str(config_get(cfg, "robot", "description"))
-    diffusion_tb = root / str(config_get(cfg, "diffusion", "tensorboard"))
-    rl_tb = root / str(config_get(cfg, "rl", "tensorboard"))
-    output_index = root / str(config_get(cfg, "paths", "output_index"))
-
-    root_resolved = root.resolve()
-    config_dir_arg = config_dir.resolve().relative_to(root_resolved).as_posix()
-    ycb_root_arg = ycb_root.resolve().relative_to(root_resolved).as_posix()
-    mjcf_root_arg = mjcf_root.resolve().relative_to(root_resolved).as_posix()
-    observations_arg = observations.resolve().relative_to(root_resolved).as_posix()
-    data_processed_arg = data_processed.resolve().relative_to(root_resolved).as_posix()
-    output_index_arg = output_index.resolve().relative_to(root_resolved).as_posix()
-    diffusion_checkpoint_arg = diffusion_checkpoint.resolve().relative_to(root_resolved).as_posix()
-    grasp_candidates_arg = grasp_candidates.resolve().relative_to(root_resolved).as_posix()
-    grasp_poses_arg = grasp_poses.resolve().relative_to(root_resolved).as_posix()
-    simulation_report_arg = simulation_report.resolve().relative_to(root_resolved).as_posix()
-    evaluation_report_arg = evaluation_report.resolve().relative_to(root_resolved).as_posix()
-    robot_xml_arg = robot_xml.resolve().relative_to(root_resolved).as_posix()
-    diffusion_tb_arg = diffusion_tb.resolve().relative_to(root_resolved).as_posix()
-    rl_checkpoint_arg = rl_checkpoint.resolve().relative_to(root_resolved).as_posix()
-    rl_tb_arg = rl_tb.resolve().relative_to(root_resolved).as_posix()
-    observation_files = [
-        (observations / f"{object_id}.npy").resolve().relative_to(root_resolved).as_posix() for object_id in object_ids
-    ]
+    prepare_data_mode = str(
+        config_value(cfg, "prepare_data_mode", "artifact_chain", "prepare_data_mode", value_type=object, script_or=True)
+    )
+    evaluate_multi_object = config_value(
+        cfg,
+        "evaluate_multi_object",
+        "artifact_chain",
+        "evaluate_multi_object",
+        value_type=bool,
+        default=True,
+        script_or=True,
+    )
 
     commands: list[list[str]] = [
-        [
-            sys.executable,
-            "scripts/prepare_ycb_mjcf.py",
-            "--ycb-root",
-            ycb_root_arg,
-            "--output-root",
-            mjcf_root_arg,
-        ],
-        [
-            sys.executable,
-            "scripts/prepare_data.py",
-            "--config-dir",
-            config_dir_arg,
-            "--mode",
-            "synthetic",
-            "--ycb-root",
-            ycb_root_arg,
-            "--dataset-root",
-            data_processed_arg,
-            "--output-index",
-            output_index_arg,
-            "--num-samples",
-            str(config_get(cfg, "synthetic", "num_samples")),
-            "--num-grasps",
-            str(config_get(cfg, "synthetic", "num_grasps")),
-            "--gripper-width",
-            str(config_get(cfg, "synthetic", "gripper_width")),
-            "--seed",
-            str(config_get(cfg, "synthetic", "seed")),
-            "--required-objects",
-            *object_ids,
-        ],
-        [
-            sys.executable,
-            "scripts/prepare_observations.py",
-            "--ycb-root",
-            ycb_root_arg,
-            "--output-dir",
-            observations_arg,
-            "--num-samples",
-            str(config_get(cfg, "observations", "num_samples")),
-            "--seed",
-            str(config_get(cfg, "observations", "seed")),
-        ],
-        [
-            sys.executable,
-            "scripts/train_diffusion.py",
-            "--config-dir",
-            config_dir_arg,
-            "--dataset-root",
-            data_processed_arg,
-            "--checkpoint",
-            diffusion_checkpoint_arg,
-            "--experiment-log-dir",
-            diffusion_tb_arg,
-        ],
-        [
-            sys.executable,
-            "scripts/generate_grasps.py",
-            "--config-dir",
-            config_dir_arg,
-            "--checkpoint",
-            diffusion_checkpoint_arg,
-            "--observations",
-            *observation_files,
-            "--output",
-            grasp_candidates_arg,
-        ],
-        [
-            sys.executable,
-            "scripts/extract_object_grasps.py",
-            "--input",
-            grasp_candidates_arg,
-            "--output",
-            grasp_poses_arg,
-            "--key",
-            "object_0",
-        ],
-        [
-            sys.executable,
-            "scripts/run_simulation.py",
-            "--config-dir",
-            config_dir_arg,
-            "--grasps",
-            grasp_poses_arg,
-            "--object-id",
-            object_ids[0],
-            "--ycb-root",
-            mjcf_root_arg,
-            "--robot-xml",
-            robot_xml_arg,
-            "--output",
-            simulation_report_arg,
-            "--gripper-close-command",
-            *[str(value) for value in gripper_close],
-        ],
+        [sys.executable, "scripts/prepare_ycb_mjcf.py"],
+        [sys.executable, "scripts/prepare_data.py", f"prepare.mode={prepare_data_mode}"],
+        [sys.executable, "scripts/prepare_observations.py"],
+        [sys.executable, "scripts/train_diffusion.py"],
+        [sys.executable, "scripts/generate_grasps.py"],
+        [sys.executable, "scripts/extract_object_grasps.py"],
+        [sys.executable, "scripts/run_simulation.py"],
         [
             sys.executable,
             "scripts/evaluate.py",
-            "--config-dir",
-            config_dir_arg,
-            "--multi-object",
-            "--grasps",
-            grasp_candidates_arg,
-            "--observations-dir",
-            observations_arg,
-            "--gripper-point-cloud",
-            f"{observations_arg}/gripper.npy",
-            "--report",
-            evaluation_report_arg,
+            f"script.multi_object={'true' if evaluate_multi_object else 'false'}",
         ],
-        [
-            sys.executable,
-            "scripts/train_rl.py",
-            "--config-dir",
-            config_dir_arg,
-            "--robot-xml",
-            robot_xml_arg,
-            "--ycb-root",
-            mjcf_root_arg,
-            "--object-ids",
-            object_ids[0],
-            "--policy-checkpoint",
-            rl_checkpoint_arg,
-            "--experiment-log-dir",
-            rl_tb_arg,
-        ],
+        [sys.executable, "scripts/train_rl.py"],
     ]
 
     for cmd in commands:
-        print(">>>", " ".join(cmd))
+        logger.info(">>> {}", " ".join(cmd))
         subprocess.run(cmd, cwd=root, env=env_vars, check=True, capture_output=False)
         log.append({"command": "python " + " ".join(cmd[1:]), "cwd": "."})
 
+    data_processed = config_value(cfg, "paths", "dataset_root", value_type=Path, required=True)
+    mjcf_root = config_value(cfg, "paths", "ycb_mjcf", value_type=Path, required=True)
+    if not data_processed.is_absolute():
+        data_processed = root / data_processed
+    if not mjcf_root.is_absolute():
+        mjcf_root = root / mjcf_root
+
+    root_resolved = root.resolve()
     retained_artifacts = sorted(
         p.resolve().relative_to(root_resolved).as_posix()
         for p in (
@@ -226,6 +91,7 @@ def main() -> None:
         )
     )
     manifest_path = artifacts / "manifest.jsonl"
+    config_dir_arg = "configs"
     manifest_records: list[dict[str, object]] = [
         {
             "record_type": "manifest",
@@ -243,8 +109,6 @@ def main() -> None:
 
     tracking_backend = str(config_get(cfg, "tracking", "backend", default="none")).lower()
     if tracking_backend == "wandb":
-        import wandb
-
         wandb_project = str(config_get(cfg, "tracking", "project", default="vr-rlft-side-project"))
         wandb_entity = config_get(cfg, "tracking", "entity", default=None)
         wandb_mode = str(config_get(cfg, "tracking", "mode", default="offline"))
@@ -289,16 +153,20 @@ def main() -> None:
                 },
             )
             write_jsonl_records(manifest_path, manifest_records)
-            print(
-                "W&B artifact chain published:",
-                f"run_id={wandb_run.id}",
-                f"version={artifact_version}",
+            logger.info(
+                "W&B artifact chain published: run_id={} version={}",
+                wandb_run.id,
+                artifact_version,
             )
         finally:
             wandb_run.finish()
 
-    observation_dim = int(config_get(cfg, "rl", "observation_dim"))
-    action_dim = int(config_get(cfg, "rl", "action_dim"))
+    observation_dim = config_value(cfg, "rl", "observation_dim", value_type=int)
+    action_dim = config_value(cfg, "rl", "action_dim", value_type=int)
+    rl_checkpoint = config_value(cfg, "rl", "checkpoint", value_type=Path, required=True)
+    if not rl_checkpoint.is_absolute():
+        rl_checkpoint = root / rl_checkpoint
+    rl_checkpoint_arg = rl_checkpoint.resolve().relative_to(root_resolved).as_posix()
     infer_path_arg = (artifacts / "rl_inference_smoke.py").resolve().relative_to(root_resolved).as_posix()
     infer_script = (
         "from pathlib import Path\n"
@@ -315,12 +183,12 @@ def main() -> None:
     )
     infer_path = artifacts / "rl_inference_smoke.py"
     infer_path.write_text(infer_script, encoding="utf-8")
-    print(">>>", sys.executable, str(infer_path))
+    logger.info(">>> {} {}", sys.executable, infer_path)
     subprocess.run([sys.executable, str(infer_path)], cwd=root, env=env_vars, check=True)
     log.append({"command": f"python {infer_path_arg}", "cwd": "."})
 
-    print("All artifact-chain steps completed.")
-    print("Manifest written to artifacts/manifest.jsonl")
+    logger.info("All artifact-chain steps completed.")
+    logger.info("Manifest written to artifacts/manifest.jsonl")
 
 
 if __name__ == "__main__":

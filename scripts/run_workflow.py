@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
-import argparse
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+import hydra
+import numpy as np
+from loguru import logger
+from omegaconf import DictConfig
+
+from grasping_ai.config.config import (
+    SCRIPTS_CONFIG_PATH,
+    config_get,
+    config_value,
+)
+from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
 from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
 from grasping_ai.pipelines.evaluate import read_jsonl_records
+from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
 
 
 def run_workflow_main(
@@ -134,7 +145,7 @@ def run_workflow_main(
             "--object-id",
             object_id,
         ]
-    print(">>>", " ".join(grasp_inference_cmd))
+    logger.info(">>> {}", " ".join(grasp_inference_cmd))
     subprocess.run(grasp_inference_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
 
     if robot_xml_path is not None and ycb_root_mjcf is not None and object_id is not None:
@@ -160,23 +171,18 @@ def run_workflow_main(
         ]
         if table_xml_path is not None:
             sim_cmd += ["--table-xml", str(table_xml_path)]
-        print(">>>", " ".join(sim_cmd))
+        logger.info(">>> {}", " ".join(sim_cmd))
         subprocess.run(sim_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
     else:
-        print("skipping MuJoCo simulation stage: robot-xml / ycb-mjcf / object-id not fully provided")
+        logger.info("skipping MuJoCo simulation stage: robot-xml / ycb-mjcf / object-id not fully provided")
 
     # Stage 3: analytical evaluation.
     if observation_path is not None:
         object_pc_path = observation_path
     elif ycb_root_raw is not None and object_id is not None:
         object_pc_path = output_dir / "object_point_cloud.npy"
-        import numpy as np
-
-        from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
-        from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
-
-        mesh_path = resolve_ycb_object_id(ycb_root_raw, object_id)
         rng = np.random.default_rng(seed)
+        mesh_path = resolve_ycb_object_id(ycb_root_raw, object_id)
         object_pc = sample_point_cloud_from_mesh(mesh_path, num_grasps * 8, rng)
         np.save(object_pc_path, object_pc.astype(np.float32))
     else:
@@ -184,9 +190,10 @@ def run_workflow_main(
 
     gripper_pc_path = Path("data/observations/gripper.npy")
     if not gripper_pc_path.is_file():
-        raise FileNotFoundError(
-            f"Gripper point cloud not found at {gripper_pc_path}; run scripts/prepare_observations.py first",
+        msg = (
+            f"Gripper point cloud not found at {gripper_pc_path}; run scripts/prepare_observations.py first"
         )
+        raise FileNotFoundError(msg)
 
     eval_cmd: list[str] = [
         sys.executable,
@@ -210,7 +217,7 @@ def run_workflow_main(
         "--wrench-regularization",
         str(wrench_regularization),
     ]
-    print(">>>", " ".join(eval_cmd))
+    logger.info(">>> {}", " ".join(eval_cmd))
     subprocess.run(eval_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
 
     rl_path = reports_dir / "rl_grasp_rollout_report.jsonl"
@@ -257,7 +264,7 @@ def run_workflow_main(
         ]
         if table_xml_path is not None:
             rl_cmd += ["--table-xml", str(table_xml_path)]
-        print(">>>", " ".join(rl_cmd))
+        logger.info(">>> {}", " ".join(rl_cmd))
         subprocess.run(rl_cmd, cwd=root, env=workflow_env, check=True, capture_output=False)
 
     summary: dict[str, float] = {}
@@ -297,182 +304,50 @@ def run_workflow_main(
         except (OSError, ValueError, KeyError, TypeError):
             pass
 
-    print("workflow summary:")
+    logger.info("workflow summary:")
     for key, value in summary.items():
-        print(f"  {key} = {value:.4f}")
+        logger.info("  {} = {:.4f}", key, value)
+
+
+@hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/run_workflow")
+def main(cfg: DictConfig) -> None:
+    method = str(config_value(cfg, "method", "evaluation", "method", value_type=object, script_or=True))
+    checkpoint = config_value(cfg, "checkpoint", "model", "checkpoint", value_type=Path, script_or=True)
+    if checkpoint is None:
+        raise ValueError("model.checkpoint path is required")
+
+    output_dir = config_value(cfg, "output_dir", "artifacts", "root", value_type=Path, script_or=True, required=True)
+    close_default = config_value(cfg, "robot", "gripper", "close_command", value_type=list[float]) or [0.0]
+
+    run_workflow_main(
+        checkpoint_path=checkpoint,
+        output_dir=output_dir,
+        method=method,
+        feature_dim=config_value(cfg, "architecture", "feature_dim", value_type=int),
+        num_steps=config_value(cfg, "model", "inference_steps", value_type=int, default=5),
+        num_grasps=config_value(cfg, "architecture", "num_grasps", value_type=int),
+        device=str(config_get(cfg, "device")),
+        seed=config_value(cfg, "seed", value_type=int),
+        observation_path=config_value(cfg, "observation", value_type=Path, script_or=True),
+        ycb_root_raw=config_value(cfg, "ycb_root", "paths", "ycb_root", value_type=Path, script_or=True),
+        ycb_root_mjcf=config_value(cfg, "ycb_mjcf", "paths", "ycb_mjcf", value_type=Path, script_or=True),
+        object_id=config_value(cfg, "object_id", value_type=object, script_or=True),
+        robot_xml_path=config_value(cfg, "robot_xml", "robot", "description", value_type=Path, script_or=True),
+        observation_dim=config_value(cfg, "observation_dim", value_type=object, script_or=True),
+        action_dim=config_value(cfg, "action_dim", value_type=object, script_or=True),
+        rl_policy_checkpoint_path=config_value(cfg, "rl_policy_checkpoint", value_type=Path, script_or=True),
+        rl_episodes=config_value(cfg, "rl_episodes", value_type=object, script_or=True),
+        rl_max_steps=config_value(cfg, "rl_max_steps", value_type=object, script_or=True),
+        table_xml_path=config_value(cfg, "table_xml", "env", "table_xml", value_type=Path, script_or=True),
+        num_simulation_steps=config_value(cfg, "num_steps", value_type=int),
+        gripper_close_command=close_default[0],
+        friction_coefficient=config_value(cfg, "metrics", "friction_coefficient", value_type=float),
+        lift_height_threshold=config_value(cfg, "metrics", "lift_height_threshold", value_type=float),
+        contact_clearance=config_value(cfg, "metrics", "collision_clearance", value_type=float),
+        wrench_regularization=config_value(cfg, "metrics", "wrench_regularization", value_type=float),
+        grasp_pose_format=str(config_value(cfg, "grasp_pose_format", value_type=object, default="object", script_or=True)),
+    )
 
 
 if __name__ == "__main__":
-    from grasping_ai.config.yaml_loader import (
-        config_float_list,
-        config_get,
-        config_int,
-        config_path,
-        load_project_yaml_config,
-        optional_cli_path,
-        parse_clean_argv,
-        parse_config_dir_from_argv,
-        parse_config_overrides_from_argv,
-    )
-
-    config_dir = parse_config_dir_from_argv()
-    pre_parser = argparse.ArgumentParser(add_help=False)
-    pre_parser.add_argument("--config-dir", type=Path, default=config_dir)
-    pre_parser.add_argument(
-        "--method",
-        type=str,
-        choices=["diffusion", "flow"],
-        default=None,
-    )
-    pre_args, _ = pre_parser.parse_known_args()
-    overrides = parse_config_overrides_from_argv()
-    method = pre_args.method or (
-        "flow" if any(item == "model=flow" for item in overrides) else "diffusion"
-    )
-    if pre_args.method is not None:
-        overrides = [item for item in overrides if not item.startswith("model=")]
-        overrides = [item for item in overrides if not item.startswith("evaluation=")]
-        eval_choice = "default" if method == "diffusion" else method
-        overrides = [f"model={method}", f"evaluation={eval_choice}", *overrides]
-    elif not any(item.startswith("evaluation=") for item in overrides):
-        eval_method = "flow" if any(item == "model=flow" for item in overrides) else "default"
-        overrides = [f"evaluation={eval_method}", *overrides]
-    cfg = load_project_yaml_config(config_dir, overrides=overrides)
-    parser = argparse.ArgumentParser(
-        description="Run the end-to-end runtime workflow on a single object",
-        parents=[pre_parser],
-    )
-    parser.set_defaults(
-        method=str(config_get(cfg, "evaluation", "method") or config_get(cfg, "default_method")),
-    )
-    parser.add_argument(
-        "--checkpoint",
-        type=Path,
-        default=config_path(cfg, "model", "checkpoint")
-        or config_path(cfg, "diffusion", "checkpoint")
-        or config_path(cfg, "flow", "checkpoint"),
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=config_path(cfg, "paths", "output_dir"),
-    )
-    parser.add_argument(
-        "--feature-dim",
-        type=int,
-        default=int(config_get(cfg, "architecture", "feature_dim")),
-    )
-    parser.add_argument(
-        "--num-steps",
-        type=int,
-        default=config_int(cfg, "model", "inference_steps", default=0)
-        or config_int(cfg, "diffusion", "inference_steps", default=0)
-        or config_int(cfg, "flow", "inference_steps", default=0)
-        or 5,
-    )
-    parser.add_argument(
-        "--num-grasps",
-        type=int,
-        default=int(config_get(cfg, "architecture", "num_grasps")),
-    )
-    parser.add_argument("--device", type=str, default=str(config_get(cfg, "device")))
-    parser.add_argument("--seed", type=int, default=int(config_get(cfg, "seed")))
-    parser.add_argument("--observation", type=Path, default=None)
-    parser.add_argument(
-        "--ycb-root",
-        type=Path,
-        default=config_path(cfg, "paths", "ycb_root"),
-    )
-    parser.add_argument(
-        "--ycb-mjcf",
-        type=Path,
-        default=config_path(cfg, "paths", "ycb_mjcf"),
-    )
-    parser.add_argument("--object-id", type=str, default=None)
-    parser.add_argument(
-        "--robot-xml",
-        type=Path,
-        default=config_path(cfg, "robot", "description"),
-    )
-    parser.add_argument("--observation-dim", type=int, default=None)
-    parser.add_argument("--action-dim", type=int, default=None)
-    parser.add_argument("--rl-policy-checkpoint", type=Path, default=None)
-    parser.add_argument("--rl-episodes", type=int, default=None)
-    parser.add_argument("--rl-max-steps", type=int, default=None)
-    parser.add_argument("--table-xml", type=optional_cli_path, default=None)
-    parser.add_argument(
-        "--num-simulation-steps",
-        type=int,
-        default=int(config_get(cfg, "num_steps")),
-    )
-    close_default = config_float_list(cfg, "robot", "gripper", "close_command") or [0.0]
-    parser.add_argument(
-        "--gripper-close-command",
-        type=float,
-        default=close_default[0],
-    )
-    parser.add_argument(
-        "--friction-coefficient",
-        type=float,
-        default=float(config_get(cfg, "metrics", "friction_coefficient")),
-    )
-    parser.add_argument(
-        "--lift-height-threshold",
-        type=float,
-        default=float(config_get(cfg, "metrics", "lift_height_threshold")),
-    )
-    parser.add_argument(
-        "--contact-clearance",
-        type=float,
-        default=float(config_get(cfg, "metrics", "collision_clearance")),
-    )
-    parser.add_argument(
-        "--wrench-regularization",
-        type=float,
-        default=float(config_get(cfg, "metrics", "wrench_regularization")),
-    )
-    parser.add_argument(
-        "--grasp-pose-format",
-        type=str,
-        choices=["world", "object"],
-        default="object",
-    )
-    args = parser.parse_args(parse_clean_argv())
-    if args.checkpoint is None:
-        parser.error(
-            "--checkpoint is required (set in configs/model/diffusion.yaml or "
-            "configs/model/flow.yaml or pass explicitly)",
-        )
-    if args.output_dir is None:
-        parser.error(
-            "--output-dir is required (set in configs/base.yaml paths.output_dir "
-            "or pass explicitly)",
-        )
-    run_workflow_main(
-        checkpoint_path=args.checkpoint,
-        output_dir=args.output_dir,
-        method=args.method,
-        feature_dim=args.feature_dim,
-        num_steps=args.num_steps,
-        num_grasps=args.num_grasps,
-        device=args.device,
-        seed=args.seed,
-        observation_path=args.observation,
-        ycb_root_raw=args.ycb_root,
-        ycb_root_mjcf=args.ycb_mjcf,
-        object_id=args.object_id,
-        robot_xml_path=args.robot_xml,
-        observation_dim=args.observation_dim,
-        action_dim=args.action_dim,
-        rl_policy_checkpoint_path=args.rl_policy_checkpoint,
-        rl_episodes=args.rl_episodes,
-        rl_max_steps=args.rl_max_steps,
-        table_xml_path=args.table_xml,
-        num_simulation_steps=args.num_simulation_steps,
-        gripper_close_command=args.gripper_close_command,
-        friction_coefficient=args.friction_coefficient,
-        lift_height_threshold=args.lift_height_threshold,
-        contact_clearance=args.contact_clearance,
-        wrench_regularization=args.wrench_regularization,
-        grasp_pose_format=args.grasp_pose_format,
-    )
+    main()

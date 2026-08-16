@@ -1,0 +1,5 @@
+defaults:
+  - /scripts/base
+  - override /model: flow
+  - override /training: flow
+  - _self_

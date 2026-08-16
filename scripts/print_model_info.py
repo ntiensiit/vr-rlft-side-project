@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
 
+import hydra
+from loguru import logger
+from omegaconf import DictConfig
+
+from grasping_ai.config.config import SCRIPTS_CONFIG_PATH, config_get, config_value
 from grasping_ai.training.checkpoint_io import read_model_checkpoint_metadata
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Print architecture metadata from a model checkpoint")
-    parser.add_argument("--checkpoint", type=Path, required=True)
-    parser.add_argument(
-        "--device",
-        type=str,
-        default="cpu",
-        help="Device used when loading the checkpoint (default: cpu)",
+
+@hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/print_model_info")
+def main(cfg: DictConfig) -> None:
+    metadata = read_model_checkpoint_metadata(
+        config_value(cfg, "checkpoint", "model", "checkpoint", value_type=Path, script_or=True, required=True),
+        str(config_get(cfg, "device")),
     )
-    args = parser.parse_args()
-    metadata = read_model_checkpoint_metadata(args.checkpoint, args.device)
     for key in (
         "checkpoint_path",
         "kind",
@@ -32,4 +32,8 @@ if __name__ == "__main__":
         "seed",
     ):
         if key in metadata and metadata[key] is not None:
-            print(f"{key}: {metadata[key]}")
+            logger.info("{}: {}", key, metadata[key])
+
+
+if __name__ == "__main__":
+    main()

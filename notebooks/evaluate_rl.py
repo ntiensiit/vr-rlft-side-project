@@ -56,7 +56,7 @@ root = bootstrap_notebook()
 import json
 import numpy as np
 
-from grasping_ai.config.yaml_loader import config_bool, config_float, config_get, config_int, config_path
+from grasping_ai.config.config import config_get, config_value
 from notebook_helpers import (
     config_dir_relative,
     load_notebook_config,
@@ -77,8 +77,8 @@ object_id = selected_object_id(cfg)
 seed, device = configure_seeds_and_device(cfg)
 experiment = notebook_experiment(cfg)
 
-exports_dir = config_path(cfg, "paths", "exports")
-reports_dir = config_path(cfg, "paths", "reports")
+exports_dir = config_value(cfg, "paths", "exports", value_type=Path)
+reports_dir = config_value(cfg, "paths", "reports", value_type=Path)
 exports_dir.mkdir(parents=True, exist_ok=True)
 reports_dir.mkdir(parents=True, exist_ok=True)
 
@@ -94,16 +94,16 @@ print_runtime_banner(
 # ## 3. Checkpoint validation
 
 # %%
-checkpoint_path = config_path(cfg, "rl", "checkpoint")
+checkpoint_path = config_value(cfg, "rl", "checkpoint", value_type=Path)
 exists = checkpoint_path.is_file()
 print("rl", {"path": str(checkpoint_path), "exists": exists})
 if not exists:
     raise FileNotFoundError(f"Missing RL checkpoint: {checkpoint_path}")
 
-rl_episodes = config_int(cfg, "evaluation", "episodes", default=5)
-rl_max_steps = config_int(cfg, "evaluation", "max_steps", default=100)
-rl_stochastic = config_bool(cfg, "evaluation", "stochastic", default=False)
-rl_exploration_noise = config_float(cfg, "evaluation", "exploration_noise", default=0.1)
+rl_episodes = config_value(cfg, "evaluation", "episodes", value_type=int, default=5)
+rl_max_steps = config_value(cfg, "evaluation", "max_steps", value_type=int, default=100)
+rl_stochastic = config_value(cfg, "evaluation", "stochastic", value_type=bool, default=False)
+rl_exploration_noise = config_value(cfg, "evaluation", "exploration_noise", value_type=float, default=0.1)
 
 # %% [markdown]
 # ## 4. RL policy rollouts
@@ -111,11 +111,11 @@ rl_exploration_noise = config_float(cfg, "evaluation", "exploration_noise", defa
 # %%
 from run_rl_evaluation import run_rl_evaluation_main
 
-rl_output_path = config_path(cfg, "evaluation", "rollout_report")
+rl_output_path = config_value(cfg, "evaluation", "rollout_report", value_type=Path)
 run_rl_evaluation_main(
     policy_checkpoint_path=checkpoint_path,
-    robot_xml_path=config_path(cfg, "robot", "description"),
-    ycb_root=config_path(cfg, "paths", "ycb_mjcf"),
+    robot_xml_path=config_value(cfg, "robot", "description", value_type=Path),
+    ycb_root=config_value(cfg, "paths", "ycb_mjcf", value_type=Path),
     object_id=object_id,
     observation_dim=int(config_get(cfg, "rl", "observation_dim")),
     action_dim=int(config_get(cfg, "rl", "action_dim")),
