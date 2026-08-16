@@ -229,5 +229,3 @@ def _grasp_repeat_count(
         return 1
     normalized = float(score_values[grasp_index]) / max_score
     return max(1, round(normalized**score_repeat_power * score_repeat_factor))
-
-

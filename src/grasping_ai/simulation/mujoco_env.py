@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 import gymnasium as gym
@@ -12,7 +11,6 @@ import numpy as np
 
 from grasping_ai.config.flattened_yaml_config import (
     FLATTENED_YAML_CONFIG,
-    FlattenedYAMLConfig,
 )
 from grasping_ai.perception.geometry import make_transform
 from grasping_ai.utils.path_validation import require_path
@@ -20,129 +18,19 @@ from grasping_ai.utils.path_validation import require_path
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from omegaconf import DictConfig
-
 REWARD_CLIP_MIN = float(FLATTENED_YAML_CONFIG.get("rl.reward.clip_min", -10.0))
 REWARD_CLIP_MAX = float(FLATTENED_YAML_CONFIG.get("rl.reward.clip_max", 10.0))
+ACTION_COST_WEIGHT = float(FLATTENED_YAML_CONFIG.get("rl.reward.action_cost_weight", 0.01))
+SURVIVAL_BONUS = float(FLATTENED_YAML_CONFIG.get("rl.reward.survival_bonus", 1.0))
+CONTACT_REWARD = float(FLATTENED_YAML_CONFIG.get("rl.reward.contact_reward", 0.0))
+LIFT_REWARD_WEIGHT = float(FLATTENED_YAML_CONFIG.get("rl.reward.lift_reward_weight", 0.0))
+GRASP_SUCCESS_BONUS = float(FLATTENED_YAML_CONFIG.get("rl.reward.grasp_success_bonus", 0.0))
+LIFT_HEIGHT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("rl.reward.lift_height_threshold", 0.05))
+DROP_HEIGHT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("rl.reward.drop_height_threshold", 0.1))
+TERMINATE_ON_NON_FINITE = bool(FLATTENED_YAML_CONFIG.get("rl.reward.terminate_on_non_finite", True))
 
 SimulationStep = Callable[[float], None]
 ContactReporter = Callable[[], list[dict[str, np.ndarray]]]
-
-
-@dataclass(frozen=True)
-class RewardConfig:
-    """Reward scaling and terminal-condition parameters for the RL environment.
-
-    The reward is composed of task-terms whose weights are all configurable:
-
-    * a negative quadratic action cost scaled by ``action_cost_weight``;
-    * a ``survival_bonus`` granted while the observation stays finite;
-    * a per-step ``contact_reward`` when the tracked object is in contact;
-    * a ``lift_reward_weight``-scaled positive term for object height gain;
-    * a one-time ``grasp_success_bonus`` when the object is first lifted past
-      ``lift_height_threshold``.
-
-    The episode terminates on non-finite observations (when
-    ``terminate_on_non_finite``) or when the object drops more than
-    ``drop_height_threshold`` below its height at reset.
-    """
-
-    action_cost_weight: float = 0.01
-    survival_bonus: float = 1.0
-    contact_reward: float = 0.0
-    lift_reward_weight: float = 0.0
-    grasp_success_bonus: float = 0.0
-    lift_height_threshold: float = 0.05
-    drop_height_threshold: float = 0.1
-    terminate_on_non_finite: bool = True
-    clip_min: float = REWARD_CLIP_MIN
-    clip_max: float = REWARD_CLIP_MAX
-
-    @classmethod
-    def load_from_config(cls, cfg: DictConfig | None = None) -> RewardConfig:
-        """Load RewardConfig parameters from a composed Hydra config.
-
-        Args:
-            cfg: The project configuration mapping. When ``None``, the global
-                flattened YAML config is used.
-
-        Returns:
-            A RewardConfig instance populated with configured parameters.
-        """
-        resolved_cfg = FLATTENED_YAML_CONFIG.cfg if cfg is None else cfg
-        yaml_config = FlattenedYAMLConfig(resolved_cfg)
-        return cls(
-            action_cost_weight=yaml_config.value(
-                "rl",
-                "reward",
-                "action_cost_weight",
-                value_type=float,
-                default=0.01,
-            ),
-            survival_bonus=yaml_config.value(
-                "rl",
-                "reward",
-                "survival_bonus",
-                value_type=float,
-                default=1.0,
-            ),
-            contact_reward=yaml_config.value(
-                "rl",
-                "reward",
-                "contact_reward",
-                value_type=float,
-                default=0.0,
-            ),
-            lift_reward_weight=yaml_config.value(
-                "rl",
-                "reward",
-                "lift_reward_weight",
-                value_type=float,
-                default=0.0,
-            ),
-            grasp_success_bonus=yaml_config.value(
-                "rl",
-                "reward",
-                "grasp_success_bonus",
-                value_type=float,
-                default=0.0,
-            ),
-            lift_height_threshold=yaml_config.value(
-                "rl",
-                "reward",
-                "lift_height_threshold",
-                value_type=float,
-                default=0.05,
-            ),
-            drop_height_threshold=yaml_config.value(
-                "rl",
-                "reward",
-                "drop_height_threshold",
-                value_type=float,
-                default=0.1,
-            ),
-            terminate_on_non_finite=yaml_config.value(
-                "rl",
-                "reward",
-                "terminate_on_non_finite",
-                value_type=bool,
-                default=True,
-            ),
-            clip_min=yaml_config.value(
-                "rl",
-                "reward",
-                "clip_min",
-                value_type=float,
-                default=REWARD_CLIP_MIN,
-            ),
-            clip_max=yaml_config.value(
-                "rl",
-                "reward",
-                "clip_max",
-                value_type=float,
-                default=REWARD_CLIP_MAX,
-            ),
-        )
 
 
 def load_mujoco_model(model_xml_path: Path) -> object:
@@ -389,15 +277,12 @@ class MuJoCoGraspingEnv(gym.Env):
         object_name: Optional name of the object body to track for contact,
             lift, and drop rewards. When ``None`` those reward terms are
             disabled.
-        reward_config: Reward scaling and terminal-condition parameters. When
-            ``None`` the legacy reward behavior is preserved exactly.
     """
 
     def __init__(
         self,
         robot_xml_path: Path,
         object_name: str | None = None,
-        reward_config: RewardConfig | None = None,
     ) -> None:
         """Initialize the environment from a robot MJCF file.
 
@@ -405,7 +290,6 @@ class MuJoCoGraspingEnv(gym.Env):
             robot_xml_path: Path to the robot MJCF XML description.
             object_name: Optional name of the object body to track for
                 contact, lift, and drop rewards.
-            reward_config: Reward scaling and terminal-condition parameters.
 
         Raises:
             FileNotFoundError: If the robot XML file does not exist.
@@ -417,18 +301,7 @@ class MuJoCoGraspingEnv(gym.Env):
         if object_name is not None and not isinstance(object_name, str):
             msg = "object_name must be a string or None"
             raise TypeError(msg)
-        if reward_config is not None and not isinstance(reward_config, RewardConfig):
-            msg = "reward_config must be a RewardConfig or None"
-            raise TypeError(msg)
-
         self._object_name = object_name
-        if reward_config is None:
-            try:
-                reward_config = RewardConfig.load_from_config()
-            # Deliberate fallback: any config-loading failure uses default rewards.
-            except Exception:  # noqa: BLE001
-                reward_config = RewardConfig()
-        self._reward_config = reward_config
         self._initial_object_height: float | None = None
         self._grasp_success_granted = False
 
@@ -534,31 +407,30 @@ class MuJoCoGraspingEnv(gym.Env):
 
         obs = self._get_observation()
 
-        config = self._reward_config
-        reward = config.action_cost_weight * -float(np.sum(action**2))
-        terminated = bool(config.terminate_on_non_finite and not np.isfinite(obs).all())
+        reward = ACTION_COST_WEIGHT * -float(np.sum(action**2))
+        terminated = bool(TERMINATE_ON_NON_FINITE and not np.isfinite(obs).all())
 
         if np.isfinite(obs).all():
-            reward += config.survival_bonus
+            reward += SURVIVAL_BONUS
             if self._object_name is not None and self._initial_object_height is not None:
                 current_height = self._get_object_height()
                 height_gain = current_height - self._initial_object_height
 
                 if self._has_object_contact():
-                    reward += config.contact_reward
-                if config.lift_reward_weight > 0.0 and height_gain > 0.0:
-                    reward += config.lift_reward_weight * height_gain
+                    reward += CONTACT_REWARD
+                if LIFT_REWARD_WEIGHT > 0.0 and height_gain > 0.0:
+                    reward += LIFT_REWARD_WEIGHT * height_gain
                 if (
-                    config.grasp_success_bonus > 0.0
+                    GRASP_SUCCESS_BONUS > 0.0
                     and not self._grasp_success_granted
-                    and height_gain > config.lift_height_threshold
+                    and height_gain > LIFT_HEIGHT_THRESHOLD
                 ):
-                    reward += config.grasp_success_bonus
+                    reward += GRASP_SUCCESS_BONUS
                     self._grasp_success_granted = True
-                if height_gain < -config.drop_height_threshold:
+                if height_gain < -DROP_HEIGHT_THRESHOLD:
                     terminated = True
 
-        reward = float(np.clip(reward, config.clip_min, config.clip_max))
+        reward = float(np.clip(reward, REWARD_CLIP_MIN, REWARD_CLIP_MAX))
         truncated = False
 
         return obs, reward, terminated, truncated, {}

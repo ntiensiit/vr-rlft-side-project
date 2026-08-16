@@ -12,7 +12,7 @@ The phase must deliver only the following capabilities:
 4. A stable checkpoint contract that later evaluation or inference phases can consume.
 5. Tests that prove dependency availability, pipeline initialization, dimension validation, minimal training execution, reward finiteness, and checkpoint creation without requiring GPUs, external datasets, or real robot hardware.
 
-This phase is intentionally conservative. The repository is a skeleton, and most source files inside `src/grasping_ai/training/`, `src/grasping_ai/models/`, and `src/grasping_ai/simulation/` were not fully verifiable in the available snapshot. However, `scripts/train_rl.py` was verified and imports `run_rl_training_pipeline` from `grasping_ai.pipelines.train_rl`. That import establishes a concrete implementation target.
+This phase is intentionally conservative. The repository is a skeleton, and most source files inside `src/grasping_ai/training/`, `src/grasping_ai/models/`, and `src/grasping_ai/simulation/` were not fully verifiable in the available snapshot. However, `scripts/train_rl.py` was verified as the executable training entrypoint.
 
 Where an exact file path or symbol cannot be verified, it is marked `Unverified`.
 
@@ -29,7 +29,7 @@ The following facts were verified from the repository snapshot available during 
 - `scripts/train_rl.py` exists.
 - `scripts/train_rl.py` imports:
 
-  `from grasping_ai.pipelines.train_rl import run_rl_training_pipeline`
+  `python scripts/train_rl.py`
 
 - `scripts/train_rl.py` defines a thin CLI entry point that parses arguments and calls `run_rl_training_pipeline`.
 - The verified CLI arguments are:

@@ -173,18 +173,3 @@ def apply_transform(points: np.ndarray, transform: Transform4x4) -> np.ndarray:
     return transformed_hom[:, :3]
 
 
-def grasp_pose_to_transform(rotation: RotationMatrix, translation: Translation) -> Transform4x4:
-    """Convert an SE(3) grasp pose into a 4x4 transformation matrix.
-
-    Args:
-        rotation: Gripper orientation as a ``(3, 3)`` rotation matrix.
-        translation: Gripper position as a ``(3,)`` translation vector.
-
-    Returns:
-        A ``(4, 4)`` homogeneous transformation representing the grasp pose.
-
-    Raises:
-        TypeError: If inputs have incorrect types.
-        ValueError: If inputs have incorrect shapes.
-    """
-    return make_transform(rotation, translation)

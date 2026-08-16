@@ -3,7 +3,6 @@ branch = false
 source = ["src"]
 omit = [
     "tests/*",
-    "src/grasping_ai/pipelines/visualize_robot.py",
 ]
 
 [report]

@@ -126,22 +126,25 @@ def read_model_checkpoint_metadata(
         "checkpoint_path": str(checkpoint_path),
         "kind": kind,
     }
-
     for key in ("feature_dim", "hidden_dim", "num_layers", "epoch", "seed"):
         if key in checkpoint:
             metadata[key] = checkpoint_scalar_int(checkpoint[key])
 
     if rl_metadata is not None:
         obs_dim, action_dim, hidden_dim, num_layers = rl_metadata
-        metadata["observation_dim"] = obs_dim
-        metadata["action_dim"] = action_dim
-        metadata["hidden_dim"] = hidden_dim
-        metadata["num_layers"] = num_layers
-
-    if "architecture" in checkpoint and isinstance(checkpoint["architecture"], str):
-        metadata["architecture"] = checkpoint["architecture"]
-
-    if "pipeline" in checkpoint and isinstance(checkpoint["pipeline"], str):
-        metadata["pipeline"] = checkpoint["pipeline"]
+        metadata.update(
+            {
+                "observation_dim": obs_dim,
+                "action_dim": action_dim,
+                "hidden_dim": hidden_dim,
+                "num_layers": num_layers,
+            },
+        )
+    architecture = checkpoint.get("architecture")
+    pipeline = checkpoint.get("pipeline")
+    if isinstance(architecture, str):
+        metadata["architecture"] = architecture
+    if isinstance(pipeline, str):
+        metadata["pipeline"] = pipeline
 
     return metadata

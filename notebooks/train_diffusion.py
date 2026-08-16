@@ -1,9 +1,5 @@
-from grasping_ai import (
-    FlattenedYAMLConfig,
-    init_mlflow,
-    run_diffusion_training_pipeline,
-    setup_logging,
-)
+from grasping_ai import FlattenedYAMLConfig, init_mlflow, setup_logging
+from grasping_ai.pipelines.train_diffusion import run_diffusion_training_pipeline
 
 # %% [markdown]
 # # Diffusion Grasp Training

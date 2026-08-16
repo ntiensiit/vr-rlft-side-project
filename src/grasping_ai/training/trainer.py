@@ -236,9 +236,8 @@ def save_training_checkpoint(
         "feature_dim": feature_dim,
         "hidden_dim": hidden_dim,
         "num_layers": num_layers,
+        **({"seed": seed} if seed is not None else {}),
     }
-    if seed is not None:
-        checkpoint["seed"] = seed
 
     try:
         torch.save(checkpoint, checkpoint_path)

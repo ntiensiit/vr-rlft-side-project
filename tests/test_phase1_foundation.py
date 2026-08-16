@@ -16,7 +16,6 @@ from hypothesis.extra.numpy import arrays
 import grasping_ai
 from grasping_ai.perception.geometry import (
     apply_transform,
-    grasp_pose_to_transform,
     identity_transform,
     invert_transform,
     make_transform,
@@ -102,7 +101,7 @@ def test_se3_primitive_invalid_shape() -> None:
     with pytest.raises(TypeError, match="numpy array"):
         rotation_matrix_to_axis_angle("invalid")
 
-    # make_transform / grasp_pose_to_transform
+    # make_transform
     with pytest.raises(ValueError, match="shape"):
         make_transform(np.eye(3), np.zeros(2))
     with pytest.raises(TypeError, match="numpy array"):
@@ -164,7 +163,7 @@ def test_geometry_rotation_matrix_axis_angle() -> None:
 
 
 def test_geometry_make_and_invert_transform() -> None:
-    """Test make_transform, invert_transform and grasp_pose_to_transform."""
+    """Test make_transform and invert_transform."""
     rotation = np.eye(3)
     translation = np.array([1.0, 2.0, 3.0])
     t = make_transform(rotation, translation)
@@ -175,10 +174,6 @@ def test_geometry_make_and_invert_transform() -> None:
     if not (np.allclose(t[:3, :3], rotation)):
         raise AssertionError
     if not (np.allclose(t[3, :], [0, 0, 0, 1])):
-        raise AssertionError
-
-    t_grasp = grasp_pose_to_transform(rotation, translation)
-    if not (np.allclose(t, t_grasp)):
         raise AssertionError
 
     t_inv = invert_transform(t)
@@ -291,7 +286,7 @@ def test_property_make_and_invert_transform(
     rotation: npt.NDArray[np.float64],
     translation: npt.NDArray[np.float64],
 ) -> None:
-    """Property: make_transform and invert_transform roundtrip and grasp pose consistency."""
+    """Property: make_transform and invert_transform form a roundtrip."""
     t = make_transform(rotation, translation)
     if not (t.shape == (4, 4)):
         raise AssertionError
@@ -300,10 +295,6 @@ def test_property_make_and_invert_transform(
     if not (np.allclose(t[:3, 3], translation)):
         raise AssertionError
     if not (np.allclose(t[3, :], [0.0, 0.0, 0.0, 1.0])):
-        raise AssertionError
-
-    t_grasp = grasp_pose_to_transform(rotation, translation)
-    if not (np.allclose(t, t_grasp)):
         raise AssertionError
 
     t_inv = invert_transform(t)
@@ -390,6 +381,3 @@ def test_geometry_additional_validation_branches() -> None:
     with pytest.raises(ValueError, match="Transform must have shape"):
         apply_transform(np.zeros((5, 3)), np.eye(3))
 
-    # grasp_pose_to_transform
-    if not (np.allclose(grasp_pose_to_transform(np.eye(3), np.zeros(3)), np.eye(4))):
-        raise AssertionError

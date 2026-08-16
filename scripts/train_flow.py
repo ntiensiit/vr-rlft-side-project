@@ -9,11 +9,7 @@ import hydra
 from omegaconf import OmegaConf
 
 from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
-
-try:
-    from scripts._supervised_training import run_supervised_training_script
-except ModuleNotFoundError:
-    from _supervised_training import run_supervised_training_script
+from grasping_ai.pipelines.supervised_training_script import run_supervised_training_script
 from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
 
 _LEGACY_OVERRIDES: dict[str, object] = {}

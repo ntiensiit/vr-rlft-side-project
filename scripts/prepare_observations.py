@@ -9,11 +9,7 @@ import open3d as _open3d  # noqa: F401
 import hydra
 
 from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
-
-try:
-    from scripts._prepare_observations import make_observations
-except ModuleNotFoundError:
-    from _prepare_observations import make_observations
+from grasping_ai.pipelines.prepare_observations import make_observations
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig

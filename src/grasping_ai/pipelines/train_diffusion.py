@@ -13,15 +13,13 @@ from grasping_ai.data.training_pairs import (
 )
 from grasping_ai.models.diffusion import GraspGeneratorModel
 from grasping_ai.pipelines.supervised_training import build_conditioned_dataloader
-from grasping_ai.training import (
-    trainer as training_trainer,
-)
 from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 from grasping_ai.training.losses import build_diffusion_score_loss
 from grasping_ai.training.trainer import (
     build_adam_optimizer,
     build_training_step,
     load_training_checkpoint,
+    run_training_loop,
 )
 from grasping_ai.utils.path_validation import require_path
 
@@ -44,25 +42,14 @@ SCORE_REPEAT_FACTOR = int(FLATTENED_YAML_CONFIG.get("supervised.score_repeat_fac
 SCORE_REPEAT_POWER = float(FLATTENED_YAML_CONFIG.get("supervised.score_repeat_power", 1.0))
 
 
-def run_diffusion_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tests pass options as keywords
+def run_diffusion_training_pipeline(
     dataset_root: Path = DATASET_ROOT,
     checkpoint_path: Path = CHECKPOINT_PATH,
-    feature_dim: int = FEATURE_DIM,
-    hidden_dim: int = HIDDEN_DIM,
-    num_layers: int = NUM_LAYERS,
     *,
-    learning_rate: float = LEARNING_RATE,
-    num_epochs: int = NUM_EPOCHS,
-    batch_size: int = BATCH_SIZE,
-    device: str = DEVICE,
-    seed: int | None = SEED,
     experiment_log_dir: Path | None = None,
     pretrained_encoder_path: Path | None = None,
     resume_checkpoint_path: Path | None = None,
-    augment: bool = AUGMENT,
-    min_grasp_score: float = MIN_GRASP_SCORE,
-    score_repeat_factor: int = SCORE_REPEAT_FACTOR,
-    score_repeat_power: float = SCORE_REPEAT_POWER,
+    **options: object,
 ) -> None:
     """Run the end-to-end diffusion training pipeline for grasp generation.
 
@@ -84,12 +71,30 @@ def run_diffusion_training_pipeline(  # noqa: PLR0913  # public pipeline API; CL
         min_grasp_score: Drop grasps below this score when dataset records include scores.
         score_repeat_factor: Duplicate higher-scoring grasps when positive.
         score_repeat_power: Exponent for score-based pair repetition.
+        options: Optional training overrides keyed by configuration name.
 
     Raises:
         TypeError: If ``dataset_root`` is not a ``pathlib.Path`` instance.
         FileNotFoundError: If ``dataset_root`` or required checkpoints are missing.
         ValueError: If the dataset cannot be converted into training pairs.
     """
+    feature_dim = int(options.pop("feature_dim", FEATURE_DIM))
+    hidden_dim = int(options.pop("hidden_dim", HIDDEN_DIM))
+    num_layers = int(options.pop("num_layers", NUM_LAYERS))
+    learning_rate = float(options.pop("learning_rate", LEARNING_RATE))
+    num_epochs = int(options.pop("num_epochs", NUM_EPOCHS))
+    batch_size = int(options.pop("batch_size", BATCH_SIZE))
+    device = str(options.pop("device", DEVICE))
+    seed = options.pop("seed", SEED)
+    augment = bool(options.pop("augment", AUGMENT))
+    min_grasp_score = float(options.pop("min_grasp_score", MIN_GRASP_SCORE))
+    score_repeat_factor = int(options.pop("score_repeat_factor", SCORE_REPEAT_FACTOR))
+    score_repeat_power = float(options.pop("score_repeat_power", SCORE_REPEAT_POWER))
+    if options:
+        unexpected = ", ".join(sorted(options))
+        msg = f"Unexpected diffusion training options: {unexpected}"
+        raise TypeError(msg)
+
     require_path(dataset_root, "dataset_root")
     if not dataset_root.exists():
         msg = f"Dataset root does not exist: {dataset_root}"
@@ -97,21 +102,17 @@ def run_diffusion_training_pipeline(  # noqa: PLR0913  # public pipeline API; CL
 
     validate_grasp_dataset(dataset_root)
 
-    if seed is not None:
-        torch.manual_seed(seed)
+    torch.manual_seed(seed) if seed is not None else None
 
     model = GraspGeneratorModel(feature_dim, hidden_dim, num_layers)
     model.to(device)
     optimizer = build_adam_optimizer(model.parameters(), learning_rate)
 
-    resume_epoch = 0
-    if resume_checkpoint_path is not None:
-        resume_epoch = load_training_checkpoint(
-            resume_checkpoint_path,
-            model,
-            optimizer,
-            device,
-        )
+    resume_epoch = (
+        load_training_checkpoint(resume_checkpoint_path, model, optimizer, device)
+        if resume_checkpoint_path is not None
+        else 0
+    )
 
     if pretrained_encoder_path is not None:
         require_path(pretrained_encoder_path, "pretrained_encoder_path")
@@ -167,13 +168,11 @@ def run_diffusion_training_pipeline(  # noqa: PLR0913  # public pipeline API; CL
         "batch_size": batch_size,
         "device": device,
         "augment": augment,
+        **({"seed": seed} if seed is not None else {}),
+        **({"resume_from_epoch": resume_epoch} if resume_epoch > 0 else {}),
     }
-    if seed is not None:
-        metadata["seed"] = seed
-    if resume_epoch > 0:
-        metadata["resume_from_epoch"] = resume_epoch
 
-    training_trainer.run_training_loop(
+    run_training_loop(
         training_step,
         dataloader,
         num_epochs,

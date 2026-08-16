@@ -8,11 +8,7 @@ from typing import TYPE_CHECKING
 import hydra
 
 from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
-
-try:
-    from scripts._supervised_training import run_supervised_training_script
-except ModuleNotFoundError:
-    from _supervised_training import run_supervised_training_script
+from grasping_ai.pipelines.supervised_training_script import run_supervised_training_script
 from grasping_ai.pipelines.train_diffusion import run_diffusion_training_pipeline
 
 if TYPE_CHECKING:

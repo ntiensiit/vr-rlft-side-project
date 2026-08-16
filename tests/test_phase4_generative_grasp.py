@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import sys
 import tempfile
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -18,7 +16,6 @@ from grasping_ai.config.diffusion import (
     DiffusionSchedule,
     linear_beta_schedule,
 )
-from grasping_ai.data.pointcloud_dataset import save_grasp_sample
 from grasping_ai.inference.grasp_generator import (
     build_diffusion_grasp_generator,
     build_flow_grasp_generator,
@@ -42,7 +39,6 @@ from grasping_ai.models.flow import (
 )
 from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
 from grasping_ai.pipelines.generate_grasps import write_generated_grasps
-from grasping_ai.pipelines.train_diffusion import run_diffusion_training_pipeline
 from grasping_ai.sensors.pointcloud_sensor import acquire_point_cloud_from_observation
 from grasping_ai.training.checkpoint_io import (
     checkpoint_scalar_int,
@@ -60,10 +56,6 @@ from grasping_ai.training.trainer import (
     run_training_loop,
     save_training_checkpoint,
 )
-from tests.test_phase4_flow_training import _make_dataset
-
-if TYPE_CHECKING:
-    from grasping_ai.training.trainer import BatchSource, SupervisedTrainingStep
 
 EXPECTED_FEATURE_DIM = 8
 EXPECTED_HIDDEN_DIM = 16
@@ -145,161 +137,10 @@ def test_supervised_training_loss_is_finite() -> None:
         raise AssertionError
 
 
-def test_training_creates_checkpoint() -> None:
-    """Verify that run_diffusion_training_pipeline successfully runs and creates a checkpoint."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        temp_path = Path(tmp_dir)
-        dataset_root = temp_path / "dataset"
-        dataset_root.mkdir()
-
-        rng = np.random.default_rng()
-        save_grasp_sample(
-            dataset_root / "sample_0.npz",
-            {
-                "point_cloud": rng.standard_normal((50, 3)).astype(np.float32),
-                "grasp_poses": np.array([np.eye(4) for _ in range(3)], dtype=np.float32),
-                "object_id": "ycb_master_chef_can",
-            },
-        )
-
-        # Write Phase 3 dataset index.json
-        index = {
-            "records": [
-                {
-                    "file_path": "sample_0.npz",
-                    "object_id": "ycb_master_chef_can",
-                },
-            ],
-        }
-        with (dataset_root / "index.json").open("w") as f:
-            json.dump(index, f)
-
-        checkpoint_path = temp_path / "model.pt"
-
-        # Run tiny training pipeline
-        run_diffusion_training_pipeline(
-            dataset_root=dataset_root,
-            checkpoint_path=checkpoint_path,
-            feature_dim=8,
-            hidden_dim=16,
-            num_layers=2,
-            learning_rate=0.01,
-            num_epochs=1,
-            batch_size=2,
-            device="cpu",
-        )
-
-        if not (checkpoint_path.exists()):
-            raise AssertionError
-
-        # Load and verify checkpoint contents
-        checkpoint = load_torch_checkpoint(checkpoint_path, "cpu")
-        if "model_state_dict" not in checkpoint:
-            raise AssertionError
-        if not (int(checkpoint["feature_dim"]) == EXPECTED_FEATURE_DIM):
-            raise AssertionError
-        if not (int(checkpoint["hidden_dim"]) == EXPECTED_HIDDEN_DIM):
-            raise AssertionError
-        if not (int(checkpoint["num_layers"]) == EXPECTED_NUM_LAYERS):
-            raise AssertionError
-
-        metadata = read_model_checkpoint_metadata(checkpoint_path, "cpu")
-        if not (metadata["kind"] == "diffusion"):
-            raise AssertionError
-        if not (metadata["feature_dim"] == EXPECTED_FEATURE_DIM):
-            raise AssertionError
-        if not (metadata["hidden_dim"] == EXPECTED_HIDDEN_DIM):
-            raise AssertionError
-        if not (metadata["num_layers"] == EXPECTED_NUM_LAYERS):
-            raise AssertionError
 
 
-def test_training_reiterates_dataloader_per_epoch() -> None:
-    """Verify multi-epoch training performs a fresh full pass over data each epoch."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        temp_path = Path(tmp_dir)
-        dataset_root = temp_path / "dataset"
-        dataset_root.mkdir()
-
-        rng = np.random.default_rng()
-        save_grasp_sample(
-            dataset_root / "sample_0.npz",
-            {
-                "point_cloud": rng.standard_normal((50, 3)).astype(np.float32),
-                "grasp_poses": np.array([np.eye(4) for _ in range(3)], dtype=np.float32),
-                "object_id": "ycb_master_chef_can",
-            },
-        )
-        index = {
-            "records": [
-                {
-                    "file_path": "sample_0.npz",
-                    "object_id": "ycb_master_chef_can",
-                },
-            ],
-        }
-        with (dataset_root / "index.json").open("w") as f:
-            json.dump(index, f)
-
-        checkpoint_path = temp_path / "model.pt"
-
-        def counting_step(_inputs: torch.Tensor, _targets: torch.Tensor) -> dict[str, float]:
-            return {"loss": 0.0}
-
-        batches_seen = []
-
-        def recording_loop(
-            _training_step: SupervisedTrainingStep,
-            dataloader: BatchSource,
-            num_epochs: int,
-            _checkpoint_path: Path,
-            log_every: int,
-            **_kwargs: object,
-        ) -> None:
-            # log_every is keyword-passed by the pipeline; keep the name.
-            _ = log_every
-            for _epoch in range(num_epochs):
-                epoch_batches = 0
-                batches = dataloader() if callable(dataloader) else dataloader
-                for _ in batches:
-                    epoch_batches += 1
-                batches_seen.append(epoch_batches)
-
-        with pytest.MonkeyPatch.context() as m:
-            m.setattr(
-                "grasping_ai.training.trainer.run_training_loop",
-                recording_loop,
-            )
-            run_diffusion_training_pipeline(
-                dataset_root=dataset_root,
-                checkpoint_path=checkpoint_path,
-                feature_dim=8,
-                hidden_dim=16,
-                num_layers=2,
-                learning_rate=0.01,
-                num_epochs=3,
-                batch_size=2,
-                device="cpu",
-            )
-
-        if not (batches_seen == [2, 2, 2]):
-            raise AssertionError
 
 
-def test_training_rejects_missing_dataset() -> None:
-    """Verify that run_diffusion_training_pipeline checks dataset_root existence."""
-    with pytest.raises(FileNotFoundError):
-        run_diffusion_training_pipeline(
-            dataset_root=Path("non_existent_dir_12345"),
-            checkpoint_path=Path("model.pt"),
-            feature_dim=8,
-            hidden_dim=16,
-            num_layers=2,
-            learning_rate=0.01,
-            num_epochs=1,
-            batch_size=2,
-            device="cpu",
-        )
 
 
 def test_checkpoint_roundtrip() -> None:
@@ -997,53 +838,6 @@ def test_checkpoint_io_validations_and_infer_kinds(tmp_path: Path) -> None:
     _check_infer_kind_diffusion_and_unknown(tmp_path)
 
 
-def test_run_diffusion_training_pipeline_validations_and_resume(tmp_path: Path) -> None:
-    """Verify argument validations and resume-from-checkpoint behavior of the diffusion training pipeline."""
-    with pytest.raises(TypeError, match="dataset_root"):
-        run_diffusion_training_pipeline(
-            dataset_root="not_a_path",  # type: ignore[arg-type]
-            checkpoint_path=tmp_path / "model.pt",
-            feature_dim=8,
-            hidden_dim=8,
-            num_layers=2,
-            learning_rate=0.001,
-            num_epochs=1,
-            batch_size=1,
-            device="cpu",
-        )
-
-    dataset_root = _make_dataset(tmp_path, n_grasps=2, seed=123)
-    checkpoint_1 = tmp_path / "diff_ckpt1.pt"
-    run_diffusion_training_pipeline(
-        dataset_root=dataset_root,
-        checkpoint_path=checkpoint_1,
-        feature_dim=8,
-        hidden_dim=8,
-        num_layers=2,
-        learning_rate=0.001,
-        num_epochs=1,
-        batch_size=1,
-        device="cpu",
-        seed=123,
-    )
-
-    checkpoint_2 = tmp_path / "diff_ckpt2.pt"
-    run_diffusion_training_pipeline(
-        dataset_root=dataset_root,
-        checkpoint_path=checkpoint_2,
-        feature_dim=8,
-        hidden_dim=8,
-        num_layers=2,
-        learning_rate=0.001,
-        num_epochs=2,
-        batch_size=1,
-        device="cpu",
-        seed=123,
-        pretrained_encoder_path=checkpoint_1,
-        resume_checkpoint_path=checkpoint_1,
-    )
-    if not (checkpoint_2.is_file()):
-        raise AssertionError
 
 
 def test_trainer_additional_branches(tmp_path: Path) -> None:

@@ -74,7 +74,6 @@ def load_visualization_scene(
         table_xml_path,
         object_name=object_id,
     )
-    apply_home_keyframe(scene.model, scene.data)
     if object_id is not None and table_xml_path is not None:
         _place_object_on_table(scene.model, scene.data, object_id)
     return scene.model, scene.data
@@ -119,34 +118,6 @@ def _place_object_on_table(mj_model: mujoco.MjModel, mj_data: mujoco.MjData, obj
         logger.info("Placed object '{}' on table surface at z={:.4f}", object_name, table_z)
         break
 
-    mujoco.mj_forward(mj_model, mj_data)
-
-
-def apply_home_keyframe(mj_model: mujoco.MjModel, mj_data: mujoco.MjData) -> None:
-    """Reset robot joints to keyframe 0 without wiping extra scene DOFs.
-
-    Assembled scenes add object freejoints after the robot. Applying the
-    robot-only home keyframe with ``mj_resetDataKeyframe`` would zero those
-    extra coordinates and drop the object at the origin.
-    """
-    if int(mj_model.nkey) <= 0:
-        mujoco.mj_resetData(mj_model, mj_data)
-        mujoco.mj_forward(mj_model, mj_data)
-        return
-
-    key_qpos = np.asarray(mj_model.key_qpos[0], dtype=np.float64)
-    for joint_id in range(int(mj_model.njnt)):
-        if mj_model.jnt_type[joint_id] == mujoco.mjtJoint.mjJNT_FREE:
-            continue
-        qadr = int(mj_model.jnt_qposadr[joint_id])
-        width = 4 if mj_model.jnt_type[joint_id] == mujoco.mjtJoint.mjJNT_BALL else 1
-        if qadr + width > key_qpos.shape[0] or qadr + width > mj_data.qpos.shape[0]:
-            continue
-        mj_data.qpos[qadr : qadr + width] = key_qpos[qadr : qadr + width]
-    key_ctrl = np.asarray(mj_model.key_ctrl[0], dtype=np.float64)
-    nctrl = min(int(key_ctrl.shape[0]), int(mj_data.ctrl.shape[0]))
-    mj_data.ctrl[:nctrl] = key_ctrl[:nctrl]
-    mj_data.qvel[:] = 0.0
     mujoco.mj_forward(mj_model, mj_data)
 
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from grasping_ai.perception.geometry import (
     apply_transform,
-    grasp_pose_to_transform,
     identity_transform,
     invert_transform,
     make_transform,
@@ -25,7 +24,6 @@ __all__ = [
     "build_kdtree",
     "estimate_point_cloud_normals",
     "farthest_point_sampling",
-    "grasp_pose_to_transform",
     "identity_transform",
     "invert_transform",
     "make_transform",

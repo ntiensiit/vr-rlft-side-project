@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -64,30 +63,18 @@ PRE_GRASP_STEPS = int(FLATTENED_YAML_CONFIG.get("pre_grasp_steps"))
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
 
-@dataclass(frozen=True)
-class _GraspSimParams:
-    """Tunable thresholds for one grasp simulation."""
-
-    num_simulation_steps: int
-    lift_height_threshold: float
-    max_linear_velocity: float
-    max_angular_velocity: float
-    grasp_width: float | None
-
-
-def _fallback_timestep(default: float = FALLBACK_TIMESTEP) -> float:
-    return default
-
-
-def _validate_simulate_grasp_args(
+def _validate_simulate_grasp_args(  # noqa: PLR0913, PLR0917  # validation keeps related simulation inputs together
     grasp_pose: np.ndarray,
     robot_xml_path: Path,
     ycb_root: Path,
-    params: _GraspSimParams,
+    num_simulation_steps: int,
+    lift_height_threshold: float,
+    max_linear_velocity: float,
+    max_angular_velocity: float,
+    grasp_width: float | None,
 ) -> None:
     """Validate grasp pose shape, asset paths, and simulation thresholds."""
-    se3_matrix_shape = SE3_MATRIX_SHAPE
-    if grasp_pose.shape != se3_matrix_shape:
+    if grasp_pose.shape != SE3_MATRIX_SHAPE:
         msg = f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}"
         raise ValueError(msg)
     if not isinstance(robot_xml_path, Path) or not robot_xml_path.is_file():
@@ -96,19 +83,19 @@ def _validate_simulate_grasp_args(
     if not isinstance(ycb_root, Path) or not ycb_root.is_dir():
         msg = f"ycb_root not found: {ycb_root}"
         raise FileNotFoundError(msg)
-    if params.num_simulation_steps <= 0:
+    if num_simulation_steps <= 0:
         msg = "num_simulation_steps must be positive"
         raise ValueError(msg)
-    if params.lift_height_threshold < 0:
+    if lift_height_threshold < 0:
         msg = "lift_height_threshold must be non-negative"
         raise ValueError(msg)
-    if params.max_linear_velocity < 0:
+    if max_linear_velocity < 0:
         msg = "max_linear_velocity must be non-negative"
         raise ValueError(msg)
-    if params.max_angular_velocity < 0:
+    if max_angular_velocity < 0:
         msg = "max_angular_velocity must be non-negative"
         raise ValueError(msg)
-    if params.grasp_width is not None and params.grasp_width < 0:
+    if grasp_width is not None and grasp_width < 0:
         msg = "grasp_width must be non-negative when provided"
         raise ValueError(msg)
 
@@ -297,11 +284,13 @@ def _model_gripper_commands(
     return open_cmd, close_cmd
 
 
-def _evaluate_sim_state(
+def _evaluate_sim_state(  # noqa: PLR0913, PLR0917  # evaluation consumes the configured outcome thresholds
     scene: MuJoCoScene,
     object_id: str,
     initial_height: float,
-    params: _GraspSimParams,
+    lift_height_threshold: float,
+    max_linear_velocity: float,
+    max_angular_velocity: float,
 ) -> tuple[float, np.ndarray, float, bool]:
     """Compute final height, velocity, contact count, and success from the sim state."""
     mj_model = scene.model
@@ -317,15 +306,15 @@ def _evaluate_sim_state(
 
     contact_count = float(len(collect_contacts(scene.contacts, {object_id})))
 
-    lift_judge = build_lift_outcome_judge(params.lift_height_threshold)
-    stability_judge = build_stability_judge(params.max_linear_velocity, params.max_angular_velocity)
+    lift_judge = build_lift_outcome_judge(lift_height_threshold)
+    stability_judge = build_stability_judge(max_linear_velocity, max_angular_velocity)
     lifted = evaluate_lift_success(lift_judge, initial_height, final_height)
     stable = evaluate_stability(stability_judge, object_velocity)
     success = bool(contact_count >= 1 and lifted and stable)
     return final_height, object_velocity, contact_count, success
 
 
-def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests call it positionally
+def simulate_grasp(  # noqa: PLR0913, PLR0915, PLR0917  # public simulation API
     grasp_pose: np.ndarray,
     object_id: str,
     ycb_root: Path,
@@ -333,12 +322,7 @@ def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests ca
     table_xml_path: Path | None,
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
-    *,
-    lift_height_threshold: float = LIFT_HEIGHT_THRESHOLD,
-    max_linear_velocity: float = MAX_LINEAR_VELOCITY,
-    max_angular_velocity: float = MAX_ANGULAR_VELOCITY,
-    grasp_width: float | None = None,
-    quiet: bool = False,
+    **options: object,
 ) -> dict[str, np.ndarray | bool | float]:
     """Execute a single grasp in a MuJoCo simulation and report its outcome.
 
@@ -360,6 +344,7 @@ def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests ca
             count the grasp as a successful lift.
         max_linear_velocity: Maximum acceptable linear velocity of the object.
         max_angular_velocity: Maximum acceptable angular velocity of the object.
+        options: Optional simulation overrides such as lift thresholds and grasp width.
 
     Returns:
         A dictionary describing the simulation outcome, including the success
@@ -369,20 +354,25 @@ def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests ca
         ValueError: If inputs or simulation state are invalid.
         FileNotFoundError: If required robot or YCB assets are missing.
     """
-    params = _GraspSimParams(
-        num_simulation_steps=num_simulation_steps,
-        lift_height_threshold=(
-            lift_height_threshold
-        ),
-        max_linear_velocity=(
-            max_linear_velocity
-        ),
-        max_angular_velocity=(
-            max_angular_velocity
-        ),
-        grasp_width=grasp_width,
+    lift_height_threshold = float(options.pop("lift_height_threshold", LIFT_HEIGHT_THRESHOLD))
+    max_linear_velocity = float(options.pop("max_linear_velocity", MAX_LINEAR_VELOCITY))
+    max_angular_velocity = float(options.pop("max_angular_velocity", MAX_ANGULAR_VELOCITY))
+    grasp_width = options.pop("grasp_width", None)
+    quiet = bool(options.pop("quiet", False))
+    if options:
+        unexpected = ", ".join(sorted(options))
+        raise TypeError(f"Unexpected grasp simulation options: {unexpected}")
+
+    _validate_simulate_grasp_args(
+        grasp_pose,
+        robot_xml_path,
+        ycb_root,
+        num_simulation_steps,
+        lift_height_threshold,
+        max_linear_velocity,
+        max_angular_velocity,
+        grasp_width,
     )
-    _validate_simulate_grasp_args(grasp_pose, robot_xml_path, ycb_root, params)
 
     hand_to_contact = panda_hand_to_contact_transform()
     hand_pose = transform_grasp_pose(grasp_pose, invert_transform(hand_to_contact))
@@ -428,7 +418,7 @@ def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests ca
 
     dt = mj_model.opt.timestep
     if dt <= 0 or not np.isfinite(dt):
-        dt = _fallback_timestep()
+        dt = FALLBACK_TIMESTEP
 
     gripper_model = load_gripper_model(str(robot_xml_path))
     gripper_model["model"] = mj_model
@@ -441,16 +431,16 @@ def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests ca
             gripper_ids,
             q_target,
             gripper_close_command,
-            params.grasp_width,
+            grasp_width,
         )
     else:
         open_cmd, close_cmd = _model_gripper_commands(mj_model, gripper_model, gripper_close_command)
 
     pre_grasp_steps = min(
         PRE_GRASP_STEPS,
-        max(1, params.num_simulation_steps // 4),
+        max(1, num_simulation_steps // 4),
     )
-    close_steps = max(1, params.num_simulation_steps - pre_grasp_steps)
+    close_steps = max(1, num_simulation_steps - pre_grasp_steps)
 
     step_scene(lambda step_dt: scene.step(open_cmd, step_dt), dt, pre_grasp_steps)
     step_scene(lambda step_dt: scene.step(close_cmd, step_dt), dt, close_steps)
@@ -465,7 +455,9 @@ def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests ca
         scene,
         object_id,
         initial_height,
-        params,
+        lift_height_threshold,
+        max_linear_velocity,
+        max_angular_velocity,
     )
 
     return {
@@ -479,7 +471,7 @@ def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests ca
     }
 
 
-def run_simulation_sweep(  # noqa: PLR0913  # public sweep API; callers pass per-grasp options as keywords
+def run_simulation_sweep(  # noqa: PLR0913  # public sweep API
     grasp_poses: np.ndarray,
     *,
     object_id: str,
@@ -488,9 +480,7 @@ def run_simulation_sweep(  # noqa: PLR0913  # public sweep API; callers pass per
     table_xml_path: Path | None,
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
-    lift_height_threshold: float = LIFT_HEIGHT_THRESHOLD,
-    max_linear_velocity: float = MAX_LINEAR_VELOCITY,
-    max_angular_velocity: float = MAX_ANGULAR_VELOCITY,
+    **options: object,
 ) -> list[dict[str, np.ndarray | bool | float]]:
     """Execute a batch of grasps and aggregate the simulation outcomes.
 
@@ -506,6 +496,7 @@ def run_simulation_sweep(  # noqa: PLR0913  # public sweep API; callers pass per
             count the grasp as a successful lift.
         max_linear_velocity: Maximum acceptable linear velocity of the object.
         max_angular_velocity: Maximum acceptable angular velocity of the object.
+        options: Optional simulation overrides keyed by configuration name.
 
     Returns:
         A list of per-grasp simulation outcomes.
@@ -513,6 +504,14 @@ def run_simulation_sweep(  # noqa: PLR0913  # public sweep API; callers pass per
     Raises:
         ValueError: If ``grasp_poses`` shape is invalid.
     """
+    lift_height_threshold = float(options.pop("lift_height_threshold", LIFT_HEIGHT_THRESHOLD))
+    max_linear_velocity = float(options.pop("max_linear_velocity", MAX_LINEAR_VELOCITY))
+    max_angular_velocity = float(options.pop("max_angular_velocity", MAX_ANGULAR_VELOCITY))
+    if options:
+        unexpected = ", ".join(sorted(options))
+        msg = f"Unexpected simulation sweep options: {unexpected}"
+        raise TypeError(msg)
+
     if grasp_poses.ndim == POINT_CLOUD_NDIM:
         if grasp_poses.shape == SE3_MATRIX_SHAPE:
             grasp_poses = grasp_poses.reshape(1, *SE3_MATRIX_SHAPE)

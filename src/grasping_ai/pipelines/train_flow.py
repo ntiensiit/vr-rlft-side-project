@@ -14,17 +14,15 @@ from grasping_ai.data.training_pairs import (
 )
 from grasping_ai.models.flow import (
     FlowGeneratorModel,
-    load_flow_model_checkpoint,
 )
 from grasping_ai.pipelines.supervised_training import build_supervised_dataloader
-from grasping_ai.training import (
-    trainer as training_trainer,
-)
 from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 from grasping_ai.training.losses import build_flow_matching_loss
 from grasping_ai.training.trainer import (
     SupervisedTrainingStep,
     build_adam_optimizer,
+    load_training_checkpoint,
+    run_training_loop,
 )
 from grasping_ai.utils.path_validation import require_path
 
@@ -48,31 +46,6 @@ MIN_GRASP_SCORE = float(FLATTENED_YAML_CONFIG.get("supervised.min_grasp_score", 
 SCORE_REPEAT_FACTOR = int(FLATTENED_YAML_CONFIG.get("supervised.score_repeat_factor", 0))
 SCORE_REPEAT_POWER = float(FLATTENED_YAML_CONFIG.get("supervised.score_repeat_power", 1.0))
 LOG_EVERY = int(FLATTENED_YAML_CONFIG.get("training.log_every", 10))
-
-
-def build_flow_training_components(
-    feature_dim: int,
-    hidden_dim: int,
-    num_layers: int,
-    learning_rate: float,
-    device: str,
-) -> tuple[FlowGeneratorModel, torch.optim.Optimizer]:
-    """Construct the flow model and a single joint optimizer for it.
-
-    Args:
-        feature_dim: Conditioning feature dimension from the encoder.
-        hidden_dim: Width of the flow-field hidden layers.
-        num_layers: Number of hidden layers in the flow field.
-        learning_rate: Learning rate for the Adam optimizer.
-        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
-
-    Returns:
-        A tuple of the combined ``FlowGeneratorModel`` and its Adam optimizer.
-    """
-    model = FlowGeneratorModel(feature_dim, hidden_dim, num_layers)
-    model.to(device)
-    optimizer = build_adam_optimizer(model.parameters(), learning_rate)
-    return model, optimizer
 
 
 def build_flow_training_step(
@@ -114,25 +87,14 @@ def build_flow_training_step(
     return SupervisedTrainingStep(model, optimizer, device, flow_forward)
 
 
-def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tests pass options as keywords
+def run_flow_training_pipeline(
     dataset_root: Path = DATASET_ROOT,
     checkpoint_path: Path = CHECKPOINT_PATH,
-    feature_dim: int = FEATURE_DIM,
-    hidden_dim: int = HIDDEN_DIM,
-    num_layers: int = NUM_LAYERS,
     *,
-    learning_rate: float = LEARNING_RATE,
-    num_epochs: int = NUM_EPOCHS,
-    batch_size: int = BATCH_SIZE,
-    device: str = DEVICE,
-    seed: int | None = SEED,
     experiment_log_dir: Path | None = None,
     pretrained_encoder_path: Path | None = None,
     resume_checkpoint_path: Path | None = None,
-    augment: bool = AUGMENT,
-    min_grasp_score: float = MIN_GRASP_SCORE,
-    score_repeat_factor: int = SCORE_REPEAT_FACTOR,
-    score_repeat_power: float = SCORE_REPEAT_POWER,
+    **options: object,
 ) -> None:
     """Run the end-to-end flow-matching training pipeline for grasp generation.
 
@@ -143,8 +105,7 @@ def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tes
     The encoder and flow field are trained jointly on a single
     ``FlowGeneratorModel`` and saved together by the checkpoint writer, so
     the train/inference model contract is explicit: ``state_dict()``
-    contains both ``encoder.*`` and ``flow_field.*`` keys, and
-    ``load_flow_model_checkpoint`` reconstructs the same model architecture.
+    contains both ``encoder.*`` and ``flow_field.*`` keys.
 
     Args:
         dataset_root: Root directory of the grasp-pose dataset.
@@ -165,7 +126,25 @@ def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tes
         min_grasp_score: Minimum grasp score threshold for training samples.
         score_repeat_factor: Number of times to repeat samples based on score.
         score_repeat_power: Power scaling factor for score-based repetition.
+        options: Optional training overrides keyed by configuration name.
     """
+    feature_dim = int(options.pop("feature_dim", FEATURE_DIM))
+    hidden_dim = int(options.pop("hidden_dim", HIDDEN_DIM))
+    num_layers = int(options.pop("num_layers", NUM_LAYERS))
+    learning_rate = float(options.pop("learning_rate", LEARNING_RATE))
+    num_epochs = int(options.pop("num_epochs", NUM_EPOCHS))
+    batch_size = int(options.pop("batch_size", BATCH_SIZE))
+    device = str(options.pop("device", DEVICE))
+    seed = options.pop("seed", SEED)
+    augment = bool(options.pop("augment", AUGMENT))
+    min_grasp_score = float(options.pop("min_grasp_score", MIN_GRASP_SCORE))
+    score_repeat_factor = int(options.pop("score_repeat_factor", SCORE_REPEAT_FACTOR))
+    score_repeat_power = float(options.pop("score_repeat_power", SCORE_REPEAT_POWER))
+    if options:
+        unexpected = ", ".join(sorted(options))
+        msg = f"Unexpected flow training options: {unexpected}"
+        raise TypeError(msg)
+
     require_path(dataset_root, "dataset_root")
     if not dataset_root.exists():
         msg = f"Dataset root does not exist: {dataset_root}"
@@ -176,11 +155,12 @@ def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tes
     if seed is not None:
         torch.manual_seed(seed)
 
-    model, optimizer = build_flow_training_components(feature_dim, hidden_dim, num_layers, learning_rate, device)
+    model = FlowGeneratorModel(feature_dim, hidden_dim, num_layers).to(device)
+    optimizer = build_adam_optimizer(model.parameters(), learning_rate)
 
     resume_epoch = 0
     if resume_checkpoint_path is not None:
-        resume_epoch = training_trainer.load_training_checkpoint(
+        resume_epoch = load_training_checkpoint(
             resume_checkpoint_path,
             model,
             optimizer,
@@ -231,13 +211,11 @@ def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tes
         "batch_size": batch_size,
         "device": device,
         "augment": augment,
+        **({"seed": seed} if seed is not None else {}),
+        **({"resume_from_epoch": resume_epoch} if resume_epoch > 0 else {}),
     }
-    if seed is not None:
-        metadata["seed"] = seed
-    if resume_epoch > 0:
-        metadata["resume_from_epoch"] = resume_epoch
 
-    training_trainer.run_training_loop(
+    run_training_loop(
         training_step,
         dataloader,
         num_epochs,
@@ -247,11 +225,3 @@ def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tes
         metadata=metadata,
         seed=seed,
     )
-
-
-__all__ = [
-    "build_flow_training_components",
-    "build_flow_training_step",
-    "load_flow_model_checkpoint",
-    "run_flow_training_pipeline",
-]

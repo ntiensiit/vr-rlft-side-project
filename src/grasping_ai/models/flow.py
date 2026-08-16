@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import torch
 
@@ -14,10 +14,6 @@ from grasping_ai.models.equivariant_encoder import (
 )
 from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
 from grasping_ai.models.mlp import build_mish_mlp
-from grasping_ai.training.checkpoint_io import load_torch_checkpoint
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 FlowField = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 FlowIntegrator = Callable[[FlowField, torch.Tensor, torch.Tensor], torch.Tensor]
@@ -160,26 +156,3 @@ def load_flow_model_from_state(
     model.to(torch.device(device))
     model.eval()
     return model
-
-
-def load_flow_model_checkpoint(
-    checkpoint_path: Path,
-    feature_dim: int,
-    hidden_dim: int,
-    num_layers: int,
-    device: str,
-) -> FlowGeneratorModel:
-    """Reconstruct a ``FlowGeneratorModel`` from a joint train/inference checkpoint.
-
-    Args:
-        checkpoint_path: Path to the flow checkpoint written by flow training.
-        feature_dim: Conditioning feature dimension used at training time.
-        hidden_dim: Hidden width used at training time.
-        num_layers: Number of hidden layers used at training time.
-        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
-
-    Returns:
-        A ``FlowGeneratorModel`` in evaluation mode on the requested device.
-    """
-    checkpoint = load_torch_checkpoint(checkpoint_path, device)
-    return load_flow_model_from_state(checkpoint, feature_dim, hidden_dim, num_layers, device)

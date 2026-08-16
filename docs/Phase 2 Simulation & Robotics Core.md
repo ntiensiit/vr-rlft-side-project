@@ -63,7 +63,7 @@ It also states that training and pipeline modules orchestrate lower-level compon
 
 - `scripts/train_rl.py` exists and imports:
 
-  `from grasping_ai.pipelines.train_rl import run_rl_training_pipeline`
+  `python scripts/train_rl.py`
 
 - The CLI signature of `scripts/train_rl.py` includes:
   - `--robot-xml`
@@ -931,7 +931,7 @@ Phase 2 affects step 2 and step 3, but it does not implement full pipeline orche
 
 ### Verified downstream entry path
 
-`scripts/train_rl.py -> grasping_ai.pipelines.train_rl.run_rl_training_pipeline`
+`scripts/train_rl.py`
 
 Phase 2 does not implement `run_rl_training_pipeline`. It provides the simulation and robotics behavior that such a pipeline will need.
 

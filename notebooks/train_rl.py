@@ -1,8 +1,5 @@
-from grasping_ai import (
-    FlattenedYAMLConfig,
-    run_rl_training_pipeline,
-    setup_logging,
-)
+from grasping_ai import FlattenedYAMLConfig, setup_logging
+from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
 
 # %% [markdown]
 # # RL Grasp Policy Training

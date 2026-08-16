@@ -8,10 +8,8 @@ from typing import TYPE_CHECKING
 import hydra
 
 from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
-from grasping_ai.pipelines.visualize_robot import (
-    load_visualization_scene,
-    run_robot_viewer,
-)
+
+from grasping_ai.pipelines.visualize_robot import load_visualization_scene, run_robot_viewer
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig

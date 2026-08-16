@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import hydra
@@ -14,6 +14,7 @@ import numpy as np
 from loguru import logger
 
 from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
 from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
 from grasping_ai.pipelines.evaluate import read_jsonl_records
@@ -23,59 +24,48 @@ if TYPE_CHECKING:
     from omegaconf import DictConfig
 
 
-@dataclass(frozen=True)
-class _WorkflowOptions:
-    """Flat bundle of the hydra-driven workflow settings."""
-
-    checkpoint_path: Path
-    output_dir: Path
-    method: str
-    feature_dim: int
-    num_steps: int
-    num_grasps: int
-    device: str
-    seed: int
-    gripper_point_cloud_path: Path
-    eval_object_key: str
-    rl_rollout_report_name: str
-    grasp_candidates_name: str
-    simulation_outcomes_name: str
-    analytical_evaluation_name: str
-    object_point_cloud_name: str
-    point_cloud_sample_multiplier: int
-    pycache_dir: str
-    observation_path: Path | None = None
-    ycb_root_raw: Path | None = None
-    ycb_root_mjcf: Path | None = None
-    object_id: str | None = None
-    robot_xml_path: Path | None = None
-    observation_dim: int | None = None
-    action_dim: int | None = None
-    rl_policy_checkpoint_path: Path | None = None
-    rl_episodes: int | None = None
-    rl_max_steps: int | None = None
-    table_xml_path: Path | None = None
-    num_simulation_steps: int | None = None
-    gripper_close_command: float | None = None
-    friction_coefficient: float | None = None
-    lift_height_threshold: float | None = None
-    contact_clearance: float | None = None
-    wrench_regularization: float | None = None
-    grasp_pose_format: str | None = None
-
-
-@dataclass(frozen=True)
-class _WorkflowPaths:
-    """Derived repo, stage-artifact, and report paths shared by the stages."""
-
-    root: Path
-    grasps: Path
-    simulation: Path
-    evaluation: Path
-    rl_rollout: Path
+CHECKPOINT_PATH = Path(FLATTENED_YAML_CONFIG.get("model.checkpoint", ""))
+OUTPUT_DIR = Path(FLATTENED_YAML_CONFIG.get("artifacts.root", "artifacts"))
+METHOD = str(FLATTENED_YAML_CONFIG.get("evaluation.method", "diffusion"))
+FEATURE_DIM = int(FLATTENED_YAML_CONFIG.get("architecture.feature_dim", 32))
+NUM_STEPS = int(FLATTENED_YAML_CONFIG.get("model.inference_steps", 10))
+NUM_GRASPS = int(FLATTENED_YAML_CONFIG.get("architecture.num_grasps", 32))
+DEVICE = str(FLATTENED_YAML_CONFIG.get("device", "cpu"))
+SEED = int(FLATTENED_YAML_CONFIG.get("seed", 42))
+GRIPPER_POINT_CLOUD_PATH = Path(FLATTENED_YAML_CONFIG.get("workflow.gripper_point_cloud", ""))
+EVAL_OBJECT_KEY = str(FLATTENED_YAML_CONFIG.get("workflow.eval_object_key", "object"))
+RL_ROLLOUT_REPORT_NAME = str(FLATTENED_YAML_CONFIG.get("workflow.rl_rollout_report", "rl_rollout.jsonl"))
+GRASP_CANDIDATES_NAME = str(FLATTENED_YAML_CONFIG.get("workflow.intermediate.grasp_candidates", "grasps_{method}.npz"))
+SIMULATION_OUTCOMES_NAME = str(
+    FLATTENED_YAML_CONFIG.get("workflow.intermediate.simulation_outcomes", "simulation_{method}.jsonl"),
+)
+ANALYTICAL_EVALUATION_NAME = str(
+    FLATTENED_YAML_CONFIG.get("workflow.intermediate.analytical_evaluation", "evaluation_{method}.json"),
+)
+OBJECT_POINT_CLOUD_NAME = str(FLATTENED_YAML_CONFIG.get("workflow.object_point_cloud", "object.npy"))
+POINT_CLOUD_SAMPLE_MULTIPLIER = int(FLATTENED_YAML_CONFIG.get("workflow.point_cloud_sample_multiplier", 4))
+PYCACHE_DIR = str(FLATTENED_YAML_CONFIG.get("workflow.pycache_dir", ".pycache"))
+OBSERVATION_PATH = FLATTENED_YAML_CONFIG.get("observation")
+YCB_ROOT_RAW = FLATTENED_YAML_CONFIG.get("paths.ycb_root")
+YCB_ROOT_MJCF = FLATTENED_YAML_CONFIG.get("paths.ycb_mjcf")
+OBJECT_ID = FLATTENED_YAML_CONFIG.get("object_id")
+ROBOT_XML_PATH = FLATTENED_YAML_CONFIG.get("robot.description")
+OBSERVATION_DIM = FLATTENED_YAML_CONFIG.get("observation_dim")
+ACTION_DIM = FLATTENED_YAML_CONFIG.get("action_dim")
+RL_POLICY_CHECKPOINT_PATH = FLATTENED_YAML_CONFIG.get("rl_policy_checkpoint")
+RL_EPISODES = FLATTENED_YAML_CONFIG.get("rl_episodes")
+RL_MAX_STEPS = FLATTENED_YAML_CONFIG.get("rl_max_steps")
+TABLE_XML_PATH = FLATTENED_YAML_CONFIG.get("env.table_xml")
+NUM_SIMULATION_STEPS = int(FLATTENED_YAML_CONFIG.get("num_steps", 100))
+GRIPPER_CLOSE_COMMAND = float(FLATTENED_YAML_CONFIG.get("robot.gripper.close_command", [0.0])[0])
+FRICTION_COEFFICIENT = float(FLATTENED_YAML_CONFIG.get("metrics.friction_coefficient", 0.5))
+LIFT_HEIGHT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("metrics.lift_height_threshold", 0.02))
+CONTACT_CLEARANCE = float(FLATTENED_YAML_CONFIG.get("metrics.collision_clearance", 0.01))
+WRENCH_REGULARIZATION = float(FLATTENED_YAML_CONFIG.get("metrics.wrench_regularization", 0.001))
+GRASP_POSE_FORMAT = str(FLATTENED_YAML_CONFIG.get("workflow.grasp_pose_format", "object"))
 
 
-def _validate_workflow_options(options: _WorkflowOptions) -> None:
+def _validate_workflow(options: SimpleNamespace) -> None:
     """Raise ``ValueError`` when a required scalar workflow setting is missing."""
     for name in (
         "num_simulation_steps",
@@ -100,13 +90,13 @@ def _build_workflow_env(root: Path, pycache_dir: str) -> dict[str, str]:
     }
 
 
-def _create_output_paths(options: _WorkflowOptions, root: Path) -> _WorkflowPaths:
+def _create_output_paths(options: SimpleNamespace, root: Path) -> SimpleNamespace:
     """Create the export/report directories and derive the stage artifact paths."""
     exports_dir = options.output_dir / "exports"
     reports_dir = options.output_dir / "reports"
     exports_dir.mkdir(parents=True, exist_ok=True)
     reports_dir.mkdir(parents=True, exist_ok=True)
-    return _WorkflowPaths(
+    return SimpleNamespace(
         root=root,
         grasps=exports_dir / options.grasp_candidates_name.format(method=options.method),
         simulation=reports_dir / options.simulation_outcomes_name.format(method=options.method),
@@ -115,7 +105,7 @@ def _create_output_paths(options: _WorkflowOptions, root: Path) -> _WorkflowPath
     )
 
 
-def _run_grasp_inference_stage(options: _WorkflowOptions, paths: _WorkflowPaths, workflow_env: dict[str, str]) -> None:
+def _run_grasp_inference_stage(options: SimpleNamespace, paths: SimpleNamespace, workflow_env: dict[str, str]) -> None:
     """Run the grasp-generation stage."""
     grasp_inference_cmd: list[str] = [
         sys.executable,
@@ -155,7 +145,7 @@ def _run_grasp_inference_stage(options: _WorkflowOptions, paths: _WorkflowPaths,
     )
 
 
-def _run_simulation_stage(options: _WorkflowOptions, paths: _WorkflowPaths, workflow_env: dict[str, str]) -> None:
+def _run_simulation_stage(options: SimpleNamespace, paths: SimpleNamespace, workflow_env: dict[str, str]) -> None:
     """Run the MuJoCo grasp simulation stage when scene inputs are provided."""
     if options.robot_xml_path is not None and options.ycb_root_mjcf is not None and options.object_id is not None:
         sim_cmd: list[str] = [
@@ -188,7 +178,7 @@ def _run_simulation_stage(options: _WorkflowOptions, paths: _WorkflowPaths, work
         logger.info("skipping MuJoCo simulation stage: robot-xml / ycb-mjcf / object-id not fully provided")
 
 
-def _resolve_object_point_cloud(options: _WorkflowOptions) -> Path:
+def _resolve_object_point_cloud(options: SimpleNamespace) -> Path:
     """Return the object point cloud, sampling it from the YCB mesh when needed."""
     if options.observation_path is not None:
         return options.observation_path
@@ -219,8 +209,8 @@ def _resolve_gripper_point_cloud(gripper_point_cloud_path: Path, root: Path) -> 
 
 
 def _run_evaluation_stage(
-    options: _WorkflowOptions,
-    paths: _WorkflowPaths,
+    options: SimpleNamespace,
+    paths: SimpleNamespace,
     object_pc_path: Path,
     workflow_env: dict[str, str],
 ) -> None:
@@ -254,7 +244,7 @@ def _run_evaluation_stage(
     )
 
 
-def _run_rl_rollout_stage(options: _WorkflowOptions, paths: _WorkflowPaths, workflow_env: dict[str, str]) -> None:
+def _run_rl_rollout_stage(options: SimpleNamespace, paths: SimpleNamespace, workflow_env: dict[str, str]) -> None:
     """Run the optional RL policy rollout stage."""
     if options.rl_policy_checkpoint_path is None:
         return
@@ -357,7 +347,7 @@ def _read_rl_summary(rl_path: Path, summary: dict[str, float]) -> None:
         pass
 
 
-def _log_workflow_summary(options: _WorkflowOptions, paths: _WorkflowPaths) -> None:
+def _log_workflow_summary(options: SimpleNamespace, paths: SimpleNamespace) -> None:
     """Aggregate the stage report metrics and log them."""
     summary: dict[str, float] = {}
     _read_analytical_summary(paths.evaluation, summary)
@@ -367,154 +357,6 @@ def _log_workflow_summary(options: _WorkflowOptions, paths: _WorkflowPaths) -> N
     logger.info("workflow summary:")
     for key, value in summary.items():
         logger.info("  {} = {:.4f}", key, value)
-
-
-def _run_workflow(options: _WorkflowOptions) -> None:
-    """Execute the inference, simulation, evaluation, and RL stages in order."""
-    root = Path(__file__).resolve().parents[1]
-    _validate_workflow_options(options)
-    workflow_env = _build_workflow_env(root, options.pycache_dir)
-    paths = _create_output_paths(options, root)
-    _run_grasp_inference_stage(options, paths, workflow_env)
-    _run_simulation_stage(options, paths, workflow_env)
-    object_pc_path = _resolve_object_point_cloud(options)
-    _run_evaluation_stage(options, paths, object_pc_path, workflow_env)
-    _run_rl_rollout_stage(options, paths, workflow_env)
-    _log_workflow_summary(options, paths)
-
-
-def run_workflow_main(  # noqa: PLR0913  # flat signature mirrors the hydra workflow config keys
-    checkpoint_path: Path,
-    output_dir: Path,
-    method: str,
-    feature_dim: int,
-    num_steps: int,
-    *,
-    num_grasps: int,
-    device: str,
-    seed: int,
-    gripper_point_cloud_path: Path,
-    eval_object_key: str,
-    rl_rollout_report_name: str,
-    grasp_candidates_name: str,
-    simulation_outcomes_name: str,
-    analytical_evaluation_name: str,
-    object_point_cloud_name: str,
-    point_cloud_sample_multiplier: int,
-    pycache_dir: str,
-    observation_path: Path | None = None,
-    ycb_root_raw: Path | None = None,
-    ycb_root_mjcf: Path | None = None,
-    object_id: str | None = None,
-    robot_xml_path: Path | None = None,
-    observation_dim: int | None = None,
-    action_dim: int | None = None,
-    rl_policy_checkpoint_path: Path | None = None,
-    rl_episodes: int | None = None,
-    rl_max_steps: int | None = None,
-    table_xml_path: Path | None = None,
-    num_simulation_steps: int | None = None,
-    gripper_close_command: float | None = None,
-    friction_coefficient: float | None = None,
-    lift_height_threshold: float | None = None,
-    contact_clearance: float | None = None,
-    wrench_regularization: float | None = None,
-    grasp_pose_format: str | None = None,
-) -> None:
-    """Run the end-to-end runtime workflow on a single object.
-
-    Composes ``scripts/run_grasp_inference.py`` -> ``scripts/run_simulation.py`` ->
-    ``scripts/evaluate.py`` (and optionally ``scripts/run_rl_evaluation.py``) on
-    one object identity, writing four artifacts under ``output_dir`` and a
-    stdout summary.
-
-    Args:
-        checkpoint_path: Trained grasp-generation checkpoint (``diffusion_grasp_generator.pt``
-            or ``flow_grasp_generator.pt``).
-        output_dir: Destination directory for all generated artifacts.
-        method: ``"diffusion"`` or ``"flow"``; must match the trained checkpoint.
-        feature_dim: Conditioning feature dimension expected by the model.
-        num_steps: Diffusion denoising steps or flow integration steps.
-        num_grasps: Number of candidate grasps to generate.
-        device: Device identifier such as ``"cpu"`` or ``"cuda"``.
-        seed: Random seed used for both inference and RL rollout.
-        gripper_point_cloud_path: Path to the gripper point-cloud ``.npy`` file.
-        eval_object_key: Object key recorded in the evaluation artifacts.
-        rl_rollout_report_name: File name for the RL rollout report.
-        grasp_candidates_name: File-name template for the grasp candidates artifact.
-        simulation_outcomes_name: File-name template for the simulation outcomes report.
-        analytical_evaluation_name: File-name template for the analytical evaluation report.
-        object_point_cloud_name: File name for the sampled object point cloud.
-        point_cloud_sample_multiplier: Multiplier applied to ``num_grasps`` when
-            sampling the fallback object point cloud.
-        pycache_dir: Directory used for ``PYTHONPYCACHEPREFIX``.
-        observation_path: Optional path to a per-object point-cloud ``.npy``.
-        ycb_root_raw: Optional raw YCB root (used for sampling when
-            ``observation_path`` is not given).
-        ycb_root_mjcf: Optional MJCF-wrapped YCB root; required for the
-            simulation and RL stages.
-        object_id: Optional YCB object identifier; required for the mesh
-            fallback and for the simulation/RL stages.
-        robot_xml_path: Optional robot MJCF; required for the simulation and
-            RL stages.
-        observation_dim: Optional policy observation dimension; required for
-            the RL rollout stage.
-        action_dim: Optional policy action dimension; required for the RL
-            rollout stage.
-        rl_policy_checkpoint_path: Optional RL checkpoint; if supplied, the
-            RL rollout stage runs.
-        rl_episodes: Episodes for the RL rollout; required if
-            ``rl_policy_checkpoint_path`` is supplied.
-        rl_max_steps: Max steps per RL episode; required if
-            ``rl_policy_checkpoint_path`` is supplied.
-        table_xml_path: Optional path to a table/workbench MJCF description.
-        num_simulation_steps: Number of physics steps per simulated grasp.
-        gripper_close_command: Gripper command used to close the gripper.
-        friction_coefficient: Friction coefficient used by force closure.
-        lift_height_threshold: Height threshold used by lift success.
-        contact_clearance: Clearance threshold used by contact detection.
-        wrench_regularization: Wrench regularization used by force closure.
-        grasp_pose_format: Coordinate frame format for target grasp poses
-            (``"world"`` or ``"object"``).
-    """
-    options = _WorkflowOptions(
-        checkpoint_path=checkpoint_path,
-        output_dir=output_dir,
-        method=method,
-        feature_dim=feature_dim,
-        num_steps=num_steps,
-        num_grasps=num_grasps,
-        device=device,
-        seed=seed,
-        gripper_point_cloud_path=gripper_point_cloud_path,
-        eval_object_key=eval_object_key,
-        rl_rollout_report_name=rl_rollout_report_name,
-        grasp_candidates_name=grasp_candidates_name,
-        simulation_outcomes_name=simulation_outcomes_name,
-        analytical_evaluation_name=analytical_evaluation_name,
-        object_point_cloud_name=object_point_cloud_name,
-        point_cloud_sample_multiplier=point_cloud_sample_multiplier,
-        pycache_dir=pycache_dir,
-        observation_path=observation_path,
-        ycb_root_raw=ycb_root_raw,
-        ycb_root_mjcf=ycb_root_mjcf,
-        object_id=object_id,
-        robot_xml_path=robot_xml_path,
-        observation_dim=observation_dim,
-        action_dim=action_dim,
-        rl_policy_checkpoint_path=rl_policy_checkpoint_path,
-        rl_episodes=rl_episodes,
-        rl_max_steps=rl_max_steps,
-        table_xml_path=table_xml_path,
-        num_simulation_steps=num_simulation_steps,
-        gripper_close_command=gripper_close_command,
-        friction_coefficient=friction_coefficient,
-        lift_height_threshold=lift_height_threshold,
-        contact_clearance=contact_clearance,
-        wrench_regularization=wrench_regularization,
-        grasp_pose_format=grasp_pose_format,
-    )
-    _run_workflow(options)
 
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/run_workflow")
@@ -537,15 +379,17 @@ def main(cfg: DictConfig) -> None:
         "rl_rollout_report", "workflow", "rl_rollout_report", value_type=Path, script_or=True, required=True,
     )
 
-    run_workflow_main(
+    inference = dict(  # noqa: C408  # keyword grouping keeps options readable
         checkpoint_path=checkpoint,
-        output_dir=output_dir,
         method=method,
         feature_dim=yaml_config.value("architecture", "feature_dim", value_type=int),
         num_steps=yaml_config.value("model", "inference_steps", value_type=int),
         num_grasps=yaml_config.value("architecture", "num_grasps", value_type=int),
         device=str(yaml_config.get("device")),
         seed=yaml_config.value("seed", value_type=int),
+    )
+    artifact = dict(  # noqa: C408
+        output_dir=output_dir,
         gripper_point_cloud_path=yaml_config.value(
             "gripper_point_cloud", "workflow", "gripper_point_cloud", value_type=Path, script_or=True, required=True,
         ),
@@ -569,17 +413,23 @@ def main(cfg: DictConfig) -> None:
             script_or=True,
         ),
         pycache_dir=str(yaml_config.value("pycache_dir", "workflow", "pycache_dir", value_type=object, script_or=True)),
+    )
+    scene = dict(  # noqa: C408
         observation_path=yaml_config.value("observation", value_type=Path, script_or=True),
         ycb_root_raw=yaml_config.value("ycb_root", "paths", "ycb_root", value_type=Path, script_or=True),
         ycb_root_mjcf=yaml_config.value("ycb_mjcf", "paths", "ycb_mjcf", value_type=Path, script_or=True),
         object_id=yaml_config.value("object_id", value_type=object, script_or=True),
         robot_xml_path=yaml_config.value("robot_xml", "robot", "description", value_type=Path, script_or=True),
+        table_xml_path=yaml_config.value("table_xml", "env", "table_xml", value_type=Path, script_or=True),
+    )
+    rl = dict(  # noqa: C408
         observation_dim=yaml_config.value("observation_dim", value_type=object, script_or=True),
         action_dim=yaml_config.value("action_dim", value_type=object, script_or=True),
         rl_policy_checkpoint_path=yaml_config.value("rl_policy_checkpoint", value_type=Path, script_or=True),
         rl_episodes=yaml_config.value("rl_episodes", value_type=object, script_or=True),
         rl_max_steps=yaml_config.value("rl_max_steps", value_type=object, script_or=True),
-        table_xml_path=yaml_config.value("table_xml", "env", "table_xml", value_type=Path, script_or=True),
+    )
+    simulation = dict(  # noqa: C408
         num_simulation_steps=yaml_config.value("num_steps", value_type=int),
         gripper_close_command=close_default[0],
         friction_coefficient=yaml_config.value("metrics", "friction_coefficient", value_type=float),
@@ -589,6 +439,27 @@ def main(cfg: DictConfig) -> None:
         grasp_pose_format=str(
             yaml_config.value("grasp_pose_format", "workflow", "grasp_pose_format", value_type=object, script_or=True),
         ),
+    )
+    root = Path(__file__).resolve().parents[1]
+    validation = SimpleNamespace(**simulation)
+    paths_config = SimpleNamespace(**artifact, **inference)
+    grasp = SimpleNamespace(**inference, **scene)
+    simulation_stage = SimpleNamespace(**scene, **simulation)
+    point_cloud = SimpleNamespace(**inference, **artifact, **scene)
+    evaluation = SimpleNamespace(**artifact, **simulation)
+    rl_stage = SimpleNamespace(**inference, **scene, **rl)
+
+    _validate_workflow(validation)
+    workflow_env = _build_workflow_env(root, artifact["pycache_dir"])
+    paths = _create_output_paths(paths_config, root)
+    _run_grasp_inference_stage(grasp, paths, workflow_env)
+    _run_simulation_stage(simulation_stage, paths, workflow_env)
+    object_pc_path = _resolve_object_point_cloud(point_cloud)
+    _run_evaluation_stage(evaluation, paths, object_pc_path, workflow_env)
+    _run_rl_rollout_stage(rl_stage, paths, workflow_env)
+    _log_workflow_summary(
+        SimpleNamespace(eval_object_key=artifact["eval_object_key"]),
+        paths,
     )
 
 if __name__ == "__main__":

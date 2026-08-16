@@ -71,7 +71,7 @@ The following items were verified from the repository snapshot available during 
 - `scripts/train_rl.py` exists and contains a thin CLI entry point.
 - `scripts/train_rl.py` imports:
 
-  `from grasping_ai.pipelines.train_rl import run_rl_training_pipeline`
+  `python scripts/train_rl.py`
 
 - This confirms that `src/grasping_ai/pipelines/train_rl.py`, or an equivalent pipeline module, is expected to exist in the package layout.
 
@@ -335,7 +335,7 @@ Phase 1 must preserve the `src` layout. It must not move `src/grasping_ai` to an
 - Existing dependencies: `hatchling`.
 - Error behavior: not applicable.
 - Edge cases: not applicable.
-- Interaction with surrounding code: package imports such as `grasping_ai.pipelines.train_rl` depend on this layout.
+- Interaction with surrounding code: the RL training entrypoint is `scripts/train_rl.py`.
 - Existing pattern being followed: source code remains under `src`, while CLI scripts remain under `scripts`.
 
 ---
@@ -601,7 +601,7 @@ Phase 1 affects only the foundation required for step 2 and the low-level math p
 
 ### Verified execution path
 
-`scripts/train_rl.py -> grasping_ai.pipelines.train_rl.run_rl_training_pipeline`
+`scripts/train_rl.py`
 
 Phase 1 does not implement `run_rl_training_pipeline`. It only ensures that the package foundation required by this import path remains valid.
 

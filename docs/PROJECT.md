@@ -773,9 +773,9 @@ Google Colab–ready percent-format notebooks in `notebooks/` follow a standard 
 
 | Notebook | Script equivalent | Pipeline |
 | --- | --- | --- |
-| `notebooks/train_diffusion.py` | `scripts/train_diffusion.py` | `run_diffusion_training_pipeline` |
-| `notebooks/train_flow.py` | `scripts/train_flow.py` | `run_flow_training_pipeline` (`model=flow` override) |
-| `notebooks/train_rl.py` | `scripts/train_rl.py` | `run_rl_training_pipeline` |
+| `notebooks/train_diffusion.py` | `scripts/train_diffusion.py` | `scripts/_train_diffusion.py::run_diffusion_training_pipeline` |
+| `notebooks/train_flow.py` | `scripts/train_flow.py` | `scripts/_train_flow.py::run_flow_training_pipeline` (`model=flow` override) |
+| `notebooks/train_rl.py` | `scripts/train_rl.py` | `scripts/_train_rl.py::run_rl_training_pipeline` |
 | `notebooks/evaluate_diffusion.py`, `notebooks/evaluate_flow.py` | `run_grasp_inference.py`, `evaluate.py`, `run_simulation.py` | diffusion/flow inference, analytical evaluation, and MuJoCo simulation |
 | `notebooks/evaluate_rl.py` | `run_rl_evaluation.py` | RL policy rollouts |
 

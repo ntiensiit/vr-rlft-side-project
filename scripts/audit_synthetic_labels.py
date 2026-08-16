@@ -10,11 +10,7 @@ import hydra
 from loguru import logger
 
 from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
-
-try:
-    from scripts._synthetic_audit import audit_synthetic_labels
-except ModuleNotFoundError:
-    from _synthetic_audit import audit_synthetic_labels
+from grasping_ai.pipelines.synthetic_audit import audit_synthetic_labels
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
