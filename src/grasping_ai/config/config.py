@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,7 +41,7 @@ def hydra_cfg_to_dict(cfg: DictConfig) -> dict[str, object]:
     if not isinstance(container, dict):
         msg = "Hydra config root must be a mapping"
         raise TypeError(msg)
-    return container
+    return {str(key): value for key, value in container.items()}
 
 
 def config_get(
@@ -94,7 +95,10 @@ def _missing_script_key_result(
         raise ValueError(msg)
     if default is MISSING:
         return (), default
-    return (), list(default)  # type: ignore[arg-type]
+    if not isinstance(default, (list, ListConfig)):
+        msg = f"Default for config key {script_key!r} must be a list"
+        raise TypeError(msg)
+    return (), list(default)
 
 
 def _script_lookup_keys(
@@ -172,7 +176,7 @@ def _lookup_typed_value(
 
 def _coerce_config_value(value_type: type[object], raw: object, path: str, *, use_config_default: bool) -> object:
     """Coerce a raw config value to ``value_type`` or raise a descriptive error."""
-    coerce_strategies: dict[type[object], object] = {
+    coerce_strategies: dict[type[object], Callable[[object, str, bool], object]] = {
         object: lambda raw, _path, _use_config_default: raw,
         float: lambda raw, path, _use_config_default: (
             float(raw)

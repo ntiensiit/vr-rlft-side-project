@@ -91,7 +91,7 @@ def build_diffusion_grasp_generator(
             cond, frame, centroid = encode_grasp_conditioning(model.encoder, pc_tensor)
 
             rng = torch.Generator(device=device)
-            rng.manual_seed(seed)
+            rng.manual_seed(SEED if seed is None else seed)
 
             samples = sample_grasps_with_diffusion(
                 sampler=sampler,
@@ -104,7 +104,7 @@ def build_diffusion_grasp_generator(
 
             return sample_to_world_frame(samples, frame, centroid)
 
-    return generator
+    return cast(GraspPoseGenerator, generator)
 
 
 def build_flow_grasp_generator(
@@ -142,7 +142,7 @@ def build_flow_grasp_generator(
             cond, frame, centroid = encode_grasp_conditioning(model.encoder, pc_tensor)
 
             rng = torch.Generator(device=device)
-            rng.manual_seed(seed)
+            rng.manual_seed(SEED if seed is None else seed)
 
             samples = sample_grasps_with_flow(
                 integrator=integrator,
@@ -155,7 +155,7 @@ def build_flow_grasp_generator(
 
             return sample_to_world_frame(samples, frame, centroid)
 
-    return generator
+    return cast(GraspPoseGenerator, generator)
 
 
 def generate_candidate_grasps(

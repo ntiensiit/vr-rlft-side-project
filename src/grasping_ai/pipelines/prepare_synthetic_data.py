@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -12,6 +13,7 @@ from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.data.pointcloud_dataset import (
     discover_dataset_files,
     generate_analytical_grasps,
+    GraspSample,
     resolve_ycb_object_id,
     save_grasp_sample,
 )
@@ -124,18 +126,15 @@ def generate_labeled_analytical_grasps(  # noqa: PLR0913, PLR0917  # generation 
     relaxed_antipodal_dot: float,
 ) -> tuple[np.ndarray, str]:
     """Generate analytical grasps and report whether strict or relaxed succeeded."""
-    grasp_kwargs = {
-        "strict_antipodal_dot": strict_antipodal_dot,
-        "strict_alignment_dot": strict_alignment_dot,
-        "search_multiplier": search_multiplier,
-    }
     grasps = generate_analytical_grasps(
         points,
         normals,
         candidate_count,
         gripper_width,
         rng,
-        **grasp_kwargs,
+        strict_antipodal_dot=strict_antipodal_dot,
+        strict_alignment_dot=strict_alignment_dot,
+        search_multiplier=search_multiplier,
     )
     if grasps.shape[0] > 0:
         return grasps, "strict"
@@ -151,7 +150,9 @@ def generate_labeled_analytical_grasps(  # noqa: PLR0913, PLR0917  # generation 
         rng,
         allow_relaxed=True,
         relaxed_antipodal_dot=relaxed_antipodal_dot,
-        **grasp_kwargs,
+        strict_antipodal_dot=strict_antipodal_dot,
+        strict_alignment_dot=strict_alignment_dot,
+        search_multiplier=search_multiplier,
     )
     if grasps.shape[0] > 0:
         return grasps, "relaxed"
@@ -159,7 +160,7 @@ def generate_labeled_analytical_grasps(  # noqa: PLR0913, PLR0917  # generation 
 
 
 def sim_validation_passes(
-    outcome: dict[str, object],
+    outcome: Mapping[str, object],
     *,
     sim_validate_require_ik: bool,
     sim_validate_require_lift: bool,
@@ -167,14 +168,14 @@ def sim_validation_passes(
     lift_height_threshold: float,
 ) -> bool:
     """Return whether a MuJoCo grasp outcome satisfies validation criteria."""
-    fk_error = float(outcome.get("fk_position_error", float("inf")))
-    contact_count = float(outcome.get("contact_count", 0.0))
+    fk_error = float(cast(float, outcome.get("fk_position_error", float("inf"))))
+    contact_count = float(cast(float, outcome.get("contact_count", 0.0)))
     ik_ok = np.isfinite(fk_error) if sim_validate_require_ik else True
     contact_ok = contact_count >= sim_validate_min_contacts
     lift_ok = True
     if sim_validate_require_lift:
-        initial_height = float(outcome.get("initial_height", 0.0))
-        final_height = float(outcome.get("final_height", 0.0))
+        initial_height = float(cast(float, outcome.get("initial_height", 0.0)))
+        final_height = float(cast(float, outcome.get("final_height", 0.0)))
         lift_ok = (final_height - initial_height) >= lift_height_threshold
     return ik_ok and contact_ok and lift_ok
 
@@ -386,7 +387,7 @@ def process_object_synthetic(
         mean_score,
         sim_pass_count,
     )
-    sample = {
+    sample: GraspSample = {
         "point_cloud": points.astype(np.float32),
         "grasp_poses": np.stack(kept_poses, axis=0).astype(np.float32),
         "scores": np.asarray(kept_scores, dtype=np.float32),
@@ -460,7 +461,7 @@ def _process_one_object(  # noqa: PLR0913, PLR0917  # grouped configuration dict
         return
 
     quality_records.append(record)
-    kept = int(record["kept"])
+    kept = int(cast(int, record["kept"]))
     if kept == 0 and name in required_set:
         source = str(record["source"])
         if source == "none":

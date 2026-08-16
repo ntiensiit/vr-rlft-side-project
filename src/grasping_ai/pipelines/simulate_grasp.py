@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
@@ -322,7 +322,7 @@ def simulate_grasp(  # noqa: PLR0913, PLR0915, PLR0917  # public simulation API
     table_xml_path: Path | None,
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
-    **options: object,
+    **options: Any,
 ) -> dict[str, np.ndarray | bool | float]:
     """Execute a single grasp in a MuJoCo simulation and report its outcome.
 
@@ -480,7 +480,7 @@ def run_simulation_sweep(  # noqa: PLR0913  # public sweep API
     table_xml_path: Path | None,
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
-    **options: object,
+    **options: Any,
 ) -> list[dict[str, np.ndarray | bool | float]]:
     """Execute a batch of grasps and aggregate the simulation outcomes.
 

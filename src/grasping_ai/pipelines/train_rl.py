@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import torch
 from stable_baselines3 import PPO
@@ -24,7 +25,8 @@ from grasping_ai.utils.path_validation import require_path
 
 ROBOT_XML_PATH = Path(FLATTENED_YAML_CONFIG.get("robot.description", "assets/franka_emika_panda.xml"))
 YCB_ROOT = Path(FLATTENED_YAML_CONFIG.get("paths.ycb_root", "data/raw/ycb"))
-OBJECT_IDS = tuple(FLATTENED_YAML_CONFIG.get("objects.ids", []))
+_configured_object_ids: list[Any] = FLATTENED_YAML_CONFIG.get("objects.ids", [])
+OBJECT_IDS: tuple[str, ...] = tuple(str(item) for item in _configured_object_ids)
 POLICY_CHECKPOINT_PATH = Path(
     FLATTENED_YAML_CONFIG.get("rl.checkpoint", "artifacts/checkpoints/rl_grasp_policy.pt"),
 )
@@ -62,7 +64,7 @@ def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestrat
     object_ids: tuple[str, ...] = OBJECT_IDS,
     policy_checkpoint_path: Path = POLICY_CHECKPOINT_PATH,
     experiment_log_dir: Path | None = None,
-    **options: object,
+    **options: Any,
 ) -> None:
     """Run an end-to-end RL training pipeline using MuJoCo as the environment.
 
@@ -105,8 +107,8 @@ def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestrat
         msg = f"Unexpected RL training options: {unexpected}"
         raise TypeError(msg)
 
-    object_ids = list(object_ids)
-    _validate_rl_paths(robot_xml_path, ycb_root, object_ids)
+    object_ids_list = list(object_ids)
+    _validate_rl_paths(robot_xml_path, ycb_root, object_ids_list)
     for name, value in (
         ("observation_dim", observation_dim),
         ("action_dim", action_dim),

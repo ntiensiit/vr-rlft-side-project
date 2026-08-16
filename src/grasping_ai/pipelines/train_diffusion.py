@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -49,7 +50,7 @@ def run_diffusion_training_pipeline(
     experiment_log_dir: Path | None = None,
     pretrained_encoder_path: Path | None = None,
     resume_checkpoint_path: Path | None = None,
-    **options: object,
+    **options: Any,
 ) -> None:
     """Run the end-to-end diffusion training pipeline for grasp generation.
 

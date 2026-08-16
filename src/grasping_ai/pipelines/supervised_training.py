@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import cast
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -30,7 +31,7 @@ def build_supervised_dataloader(
         raise ValueError("num_workers must be non-negative")
     generator = torch.Generator().manual_seed(SEED if seed is None else seed)
     return DataLoader(
-        dataset,
+        cast(Dataset[tuple[torch.Tensor, torch.Tensor]], dataset),
         batch_size=batch_size,
         shuffle=True,
         generator=generator,

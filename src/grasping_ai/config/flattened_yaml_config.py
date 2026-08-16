@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 import numpy as np
 from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
+T = TypeVar("T")
+
 # ``project.yaml`` omits the evaluation group; library modules still need its metrics.
 _DEFAULT_LIBRARY_OVERRIDES = ("+evaluation=default",)
 
@@ -27,7 +29,9 @@ class FlattenedYAMLConfig:
 
     def __init__(self, cfg: DictConfig | Mapping[str, Any]) -> None:
         """Initialize from a composed Hydra config or a plain mapping."""
-        self._cfg = cfg if isinstance(cfg, DictConfig) else OmegaConf.create(cfg)
+        self._cfg: DictConfig = (
+            cfg if isinstance(cfg, DictConfig) else OmegaConf.create(dict(cfg))
+        )
 
     @classmethod
     def from_hydra(
@@ -50,12 +54,24 @@ class FlattenedYAMLConfig:
     def _split_key(key: str) -> tuple[str, ...]:
         return tuple(part for part in key.split(".") if part)
 
+    @overload
+    def get(self, key: str) -> Any: ...
+
+    @overload
+    def get(self, key: str, default: T) -> T: ...
+
     def get(self, key: str, default: object = None) -> object:
         """Return a nested configuration value addressed by a dot-separated key."""
         parts = self._split_key(key)
         if not parts:
             return default
         return config_get(self._cfg, *parts, default=default)
+
+    @overload
+    def get_path(self, *keys: str) -> Any: ...
+
+    @overload
+    def get_path(self, *keys: str, default: T) -> T: ...
 
     def get_path(self, *keys: str, default: object = None) -> object:
         """Return a nested configuration value addressed by path segments."""
@@ -69,10 +85,10 @@ class FlattenedYAMLConfig:
     def value(
         self,
         *keys: str,
-        value_type: type[object],
+        value_type: type[T],
         default: object = MISSING,
         **kwargs: bool,
-    ) -> object:
+    ) -> T:
         """Return a typed nested configuration value.
 
         Pass a single dot-separated key (``"paths.dataset_root"``) or multiple
@@ -87,7 +103,7 @@ class FlattenedYAMLConfig:
         if not parts:
             msg = "Config key must contain at least one segment"
             raise ValueError(msg)
-        return config_value(self._cfg, *parts, value_type=value_type, default=default, **kwargs)
+        return config_value(self._cfg, *parts, value_type=value_type, default=default, **kwargs)  # type: ignore[return-value]
 
     def numpy_dtype(self, key: str = "array_dtype", default: str = "float32") -> type[np.floating[Any]]:
         """Resolve a configured dtype name to a NumPy floating scalar type."""
@@ -110,7 +126,7 @@ class FlattenedYAMLConfig:
         if not isinstance(container, dict):
             msg = "Hydra config root must be a mapping"
             raise TypeError(msg)
-        return container
+        return {str(key): value for key, value in container.items()}
 
     def __getitem__(self, key: str) -> object:
         """Return the value at ``key``, raising when it is missing."""

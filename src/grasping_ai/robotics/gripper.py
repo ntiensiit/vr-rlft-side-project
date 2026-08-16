@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 import mujoco  # type: ignore[import-untyped]
@@ -39,7 +40,7 @@ def linspace_axis(axis_cfg: object) -> np.ndarray:
     return np.linspace(float(axis_cfg["start"]), float(axis_cfg["stop"]), int(axis_cfg["count"]))
 
 
-def gripper_point_cloud_from_grid(grid: dict[str, object]) -> np.ndarray:
+def gripper_point_cloud_from_grid(grid: Mapping[str, object]) -> np.ndarray:
     """Build a gripper collision point cloud from axis grid specifications."""
     x = linspace_axis(grid["x"])
     y = linspace_axis(grid["y"])
@@ -101,8 +102,10 @@ def panda_width_to_finger_joints(
     finger1_range = ranges["finger_joint1"]
     finger2_range = ranges["finger_joint2"]
     target_q2 = float(finger2_range[0]) + (clamped_width / 2.0)
-    target_q1 = float(np.clip(target_q1, *[float(value) for value in finger1_range]))
-    target_q2 = float(np.clip(target_q2, *[float(value) for value in finger2_range]))
+    finger1_min, finger1_max = (float(value) for value in finger1_range)
+    finger2_min, finger2_max = (float(value) for value in finger2_range)
+    target_q1 = float(np.clip(target_q1, finger1_min, finger1_max))
+    target_q2 = float(np.clip(target_q2, finger2_min, finger2_max))
     return target_q1, target_q2
 
 

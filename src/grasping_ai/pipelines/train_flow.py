@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -94,7 +94,7 @@ def run_flow_training_pipeline(
     experiment_log_dir: Path | None = None,
     pretrained_encoder_path: Path | None = None,
     resume_checkpoint_path: Path | None = None,
-    **options: object,
+    **options: Any,
 ) -> None:
     """Run the end-to-end flow-matching training pipeline for grasp generation.
 

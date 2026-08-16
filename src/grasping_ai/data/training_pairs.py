@@ -198,15 +198,15 @@ def _augment_sample(
         make_random_rotation_jitter(augment_rng),
         make_translation_jitter(augment_rng, scale=TRANSLATION_JITTER_SCALE),
     )
-    pc, grasp_poses, transformed_scores = sample_transform(
+    transformed_pc, transformed_grasp_poses, transformed_scores = sample_transform(
         pc,
         grasp_poses,
         scores if isinstance(scores, np.ndarray) else None,
     )
-    if grasp_poses is None:
+    if transformed_grasp_poses is None:
         msg = f"Augmentation removed grasp poses for {record}"
         raise ValueError(msg)
-    return pc, grasp_poses, transformed_scores
+    return transformed_pc, transformed_grasp_poses, transformed_scores
 
 
 def _canonical_grasp_vector(world_inv: torch.Tensor, world: torch.Tensor, grasp_pose: np.ndarray) -> np.ndarray:
