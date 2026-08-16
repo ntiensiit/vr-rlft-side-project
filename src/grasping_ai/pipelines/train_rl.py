@@ -26,6 +26,7 @@ from grasping_ai.utils.path_validation import require_path
 from typing import TYPE_CHECKING
 
 import torch
+from stable_baselines3 import PPO
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -113,8 +114,6 @@ def run_rl_training_pipeline(
         object_xml_path = find_ycb_mjcf(object_dir)
         object_name = object_ids[0]
         env_xml_path = build_scene_xml(robot_xml_path, object_xml_path, None, object_name)
-
-    from stable_baselines3 import PPO
 
     try:
         reward_config = RewardConfig.load_from_config()

@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+try:
+    import mlflow
+except ImportError:
+    mlflow = None  # type: ignore[assignment]
+
 
 def try_log_mlflow_param(key: str, value: str) -> None:
     """Log a single MLflow parameter when an active run exists.
@@ -10,13 +15,8 @@ def try_log_mlflow_param(key: str, value: str) -> None:
         key: Parameter name.
         value: Serialized parameter value.
     """
-    try:
-        import mlflow
-
-        if mlflow.active_run():
-            mlflow.log_param(key, value)
-    except ImportError:
-        pass
+    if mlflow is not None and mlflow.active_run():
+        mlflow.log_param(key, value)
 
 
 def try_log_mlflow_metric(key: str, value: float, step: int) -> None:
@@ -27,13 +27,8 @@ def try_log_mlflow_metric(key: str, value: float, step: int) -> None:
         value: Metric value.
         step: Training step index.
     """
-    try:
-        import mlflow
-
-        if mlflow.active_run():
-            mlflow.log_metric(key, value, step=step)
-    except ImportError:
-        pass
+    if mlflow is not None and mlflow.active_run():
+        mlflow.log_metric(key, value, step=step)
 
 
 def try_log_mlflow_artifact(path: str) -> None:
@@ -42,10 +37,5 @@ def try_log_mlflow_artifact(path: str) -> None:
     Args:
         path: Filesystem path to the artifact.
     """
-    try:
-        import mlflow
-
-        if mlflow.active_run():
-            mlflow.log_artifact(path)
-    except ImportError:
-        pass
+    if mlflow is not None and mlflow.active_run():
+        mlflow.log_artifact(path)

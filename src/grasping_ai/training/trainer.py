@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 import torch
 from loguru import logger
+from torch.utils.tensorboard import SummaryWriter
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -144,8 +145,6 @@ def run_training_loop(
     """
     writer = None
     if experiment_log_dir is not None:
-        from torch.utils.tensorboard import SummaryWriter
-
         writer = SummaryWriter(log_dir=str(experiment_log_dir))
         if metadata:
             for k, v in metadata.items():

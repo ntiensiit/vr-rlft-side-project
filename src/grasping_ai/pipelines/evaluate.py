@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
+from torch.utils.tensorboard import SummaryWriter
 
 GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
@@ -304,8 +305,6 @@ def write_evaluation_report(
     write_jsonl_records(report_path, records, mode="a")
 
     if experiment_log_dir is not None:
-        from torch.utils.tensorboard import SummaryWriter
-
         writer = SummaryWriter(log_dir=str(experiment_log_dir))
         try:
             for k, v in results.items():

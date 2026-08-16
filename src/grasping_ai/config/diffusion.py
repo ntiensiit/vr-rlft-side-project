@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from grasping_ai.config.flattened_yaml_config import (
+    FLATTENED_YAML_CONFIG,
+    FlattenedYAMLConfig,
+)
+
 import torch
 from omegaconf import DictConfig
 
@@ -32,11 +37,6 @@ class DiffusionSchedule:
         Returns:
             A DiffusionSchedule instance populated with configured parameters.
         """
-        from grasping_ai.config.flattened_yaml_config import (
-            FLATTENED_YAML_CONFIG,
-            FlattenedYAMLConfig,
-        )
-
         resolved_cfg = FLATTENED_YAML_CONFIG.cfg if cfg is None else cfg
         yaml_config = FlattenedYAMLConfig(resolved_cfg)
         return cls(

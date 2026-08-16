@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import open3d as o3d  # type: ignore[import-untyped]
 from loguru import logger
 
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
@@ -105,8 +106,6 @@ def sample_point_cloud_from_mesh(mesh_path: Path, num_samples: int, rng: np.rand
         raise ValueError("num_samples must be a positive integer")
     if not isinstance(rng, np.random.Generator):
         raise TypeError("rng must be a numpy random Generator")
-
-    import open3d as o3d  # type: ignore[import-untyped]
 
     mesh = o3d.io.read_triangle_mesh(str(mesh_path))
     if mesh.is_empty():

@@ -1,4 +1,4 @@
-"""Visualize robot teleoperation in MuJoCo."""
+"""Visualize robot in MuJoCo."""
 
 from __future__ import annotations
 

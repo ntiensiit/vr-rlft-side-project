@@ -46,6 +46,7 @@ from grasping_ai.simulation.ycb import (
 
 from pathlib import Path
 
+import mujoco  # type: ignore[import-untyped]
 import numpy as np
 from loguru import logger
 
@@ -113,9 +114,6 @@ def simulate_grasp(
     if grasp_width is not None and grasp_width < 0:
         raise ValueError("grasp_width must be non-negative when provided")
 
-    import mujoco  # type: ignore[import-untyped]
-
-                            
     hand_to_contact = panda_hand_to_contact_transform()
     hand_pose = transform_grasp_pose(grasp_pose, invert_transform(hand_to_contact))
 

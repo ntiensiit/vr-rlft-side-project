@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
+import pytransform3d.rotations as pr
 from loguru import logger
 
 if TYPE_CHECKING:
@@ -25,8 +26,6 @@ def panda_hand_to_contact_transform() -> np.ndarray:
     Returns:
         A ``(4, 4)`` homogeneous transform ``T_hand_contact``.
     """
-    import pytransform3d.rotations as pr
-    
     position = np.array([0.0, 0.0, -0.102], dtype=np.float64)
     quaternion_wxyz = np.array([0.707106781, 0.0, 0.0, 0.707106781], dtype=np.float64)
     rotation = pr.matrix_from_quaternion(quaternion_wxyz)
