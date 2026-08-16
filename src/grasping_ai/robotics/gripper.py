@@ -17,6 +17,35 @@ from loguru import logger
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+DEFAULT_GRIPPER_GRID: dict[str, dict[str, float | int]] = {
+    "x": {"start": -0.03, "stop": 0.03, "count": 4},
+    "y": {"start": -0.02, "stop": 0.02, "count": 3},
+    "z": {"start": -0.04, "stop": 0.04, "count": 5},
+}
+
+
+def linspace_axis(axis_cfg: object) -> np.ndarray:
+    """Build a 1D axis from a ``start``/``stop``/``count`` mapping."""
+    if not isinstance(axis_cfg, dict):
+        msg = "gripper grid axis must be a mapping with start, stop, and count"
+        raise TypeError(msg)
+    return np.linspace(float(axis_cfg["start"]), float(axis_cfg["stop"]), int(axis_cfg["count"]))
+
+
+def gripper_point_cloud_from_grid(grid: dict[str, object]) -> np.ndarray:
+    """Build a gripper collision point cloud from axis grid specifications."""
+    x = linspace_axis(grid["x"])
+    y = linspace_axis(grid["y"])
+    z = linspace_axis(grid["z"])
+    point_cloud = np.stack(np.meshgrid(x, y, z, indexing="ij"), axis=-1).reshape(-1, 3)
+    return point_cloud.astype(np.float32)
+
+
+def default_gripper_point_cloud() -> np.ndarray:
+    """Return the default analytical gripper collision point cloud."""
+    return gripper_point_cloud_from_grid(DEFAULT_GRIPPER_GRID)
+
+
 def panda_hand_to_contact_transform() -> np.ndarray:
     """Return the Panda hand-base to contact-center rigid transform.
 

@@ -9,9 +9,6 @@ from grasping_ai.data.pointcloud_dataset import (
 
 from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
 
-import os
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -157,7 +154,7 @@ def test_generate_analytical_grasps_validation():
         generate_analytical_grasps(points, normals, 2, 0.05, rng, search_multiplier=0)
 
 def test_prepare_data_synthetic_pipeline(tmp_path):
-    """Verify that the prepare_data script in synthetic mode runs via subprocess and exports grasp files correctly."""
+    """Verify that synthetic dataset generation and indexing produce grasp files correctly."""
     ycb_root = tmp_path / "ycb_raw"
     ycb_root.mkdir()
 
@@ -171,29 +168,17 @@ def test_prepare_data_synthetic_pipeline(tmp_path):
     dataset_root = tmp_path / "dataset"
     output_index = tmp_path / "custom_index.json"
 
-    cmd = [
-        sys.executable,
-        "scripts/prepare_data.py",
-        "--mode",
-        "synthetic",
-        "--ycb-root",
-        str(ycb_root),
-        "--dataset-root",
-        str(dataset_root),
-        "--output-index",
-        str(output_index),
-        "--num-samples",
-        "100",
-        "--num-grasps",
-        "5",
-        "--seed",
-        "42",
-    ]
+    from grasping_ai.pipelines.prepare_synthetic_data import generate_synthetic_dataset, prepare_data_index
 
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(Path(__file__).parents[1] / "src")
-
-    subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
+    generate_synthetic_dataset(
+        ycb_root=ycb_root,
+        output_dir=dataset_root,
+        num_samples=100,
+        num_grasps=5,
+        gripper_width=0.08,
+        seed=42,
+    )
+    prepare_data_index(dataset_root, output_index)
 
     npz_file = dataset_root / f"{obj_name}.npz"
     assert npz_file.is_file()
@@ -210,7 +195,7 @@ def test_prepare_data_synthetic_pipeline(tmp_path):
 
 def test_generate_synthetic_dataset_skips_zero_grasp_objects(monkeypatch):
     """Verify that object folders resulting in zero valid analytical grasp candidates are skipped during dataset generation."""
-    from scripts.prepare_data import generate_synthetic_dataset
+    from grasping_ai.pipelines.prepare_synthetic_data import generate_synthetic_dataset
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -229,7 +214,7 @@ def test_generate_synthetic_dataset_skips_zero_grasp_objects(monkeypatch):
             return np.empty((0, 4, 4), dtype=np.float32)
 
         monkeypatch.setattr(
-            "scripts.prepare_data.generate_analytical_grasps",
+            "grasping_ai.pipelines.prepare_synthetic_data.generate_analytical_grasps",
             always_empty,
         )
         generate_synthetic_dataset(
@@ -246,7 +231,7 @@ def test_generate_synthetic_dataset_skips_zero_grasp_objects(monkeypatch):
 
 def test_generate_synthetic_dataset_fail_fast_on_required_objects(monkeypatch):
     """Verify that dataset generation fails fast with a RuntimeError if required objects fail to yield grasps."""
-    from scripts.prepare_data import generate_synthetic_dataset
+    from grasping_ai.pipelines.prepare_synthetic_data import generate_synthetic_dataset
 
     ycb_root = Path(tempfile.mkdtemp()) / "ycb"
     obj_name = "006_mustard_bottle"
@@ -262,7 +247,7 @@ def test_generate_synthetic_dataset_fail_fast_on_required_objects(monkeypatch):
         return np.empty((0, 4, 4), dtype=np.float32)
 
     monkeypatch.setattr(
-        "scripts.prepare_data.generate_analytical_grasps",
+        "grasping_ai.pipelines.prepare_synthetic_data.generate_analytical_grasps",
         always_empty,
     )
     with pytest.raises(RuntimeError, match="Required YCB objects"):
@@ -278,7 +263,7 @@ def test_generate_synthetic_dataset_fail_fast_on_required_objects(monkeypatch):
 
 def test_generate_synthetic_dataset_writes_quality_report(tmp_path):
     """Verify that the synthetic dataset pipeline outputs a quality JSON report mapping objects to quality stats."""
-    from scripts.prepare_data import generate_synthetic_dataset
+    from grasping_ai.pipelines.prepare_synthetic_data import generate_synthetic_dataset
 
     ycb_root = tmp_path / "ycb_raw"
     ycb_root.mkdir()
@@ -305,7 +290,7 @@ def test_generate_synthetic_dataset_writes_quality_report(tmp_path):
 
 def test_generate_synthetic_dataset_sim_fallback_to_analytical(tmp_path, monkeypatch):
     """Verify that simulate-validation fallbacks to raw analytical candidates when simulation outcomes fail."""
-    from scripts.prepare_data import generate_synthetic_dataset
+    from grasping_ai.pipelines.prepare_synthetic_data import generate_synthetic_dataset
 
     ycb_root = tmp_path / "ycb_raw"
     ycb_root.mkdir()
@@ -326,7 +311,7 @@ def test_generate_synthetic_dataset_sim_fallback_to_analytical(tmp_path, monkeyp
 
     import importlib
 
-    simulate_grasp_module = importlib.import_module("grasping_ai.pipelines.simulate_grasp")
+    simulate_grasp_module = importlib.import_module("grasping_ai.pipelines.prepare_synthetic_data")
     monkeypatch.setattr(simulate_grasp_module, "simulate_grasp", reject_all_sim)
     generate_synthetic_dataset(
         ycb_root=ycb_root,
@@ -345,8 +330,8 @@ def test_generate_synthetic_dataset_sim_fallback_to_analytical(tmp_path, monkeyp
 
 def test_audit_synthetic_labels(tmp_path):
     """Verify that the audit_synthetic_labels tool runs on generated datasets and computes quality metrics."""
-    from scripts.audit_synthetic_labels import audit_synthetic_labels
-    from scripts.prepare_data import generate_synthetic_dataset
+    from grasping_ai.pipelines.synthetic_audit import audit_synthetic_labels
+    from grasping_ai.pipelines.prepare_synthetic_data import generate_synthetic_dataset
 
     ycb_root = tmp_path / "ycb_raw"
     ycb_root.mkdir()

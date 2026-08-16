@@ -3,62 +3,14 @@
 from __future__ import annotations
 
 from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
-
-from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
-
-from grasping_ai.perception.pointcloud import normalize_point_cloud
-
-from grasping_ai.sensors.pointcloud_sensor import (
-    merge_point_clouds,
-    sample_point_cloud_from_mesh,
-)
-
-from grasping_ai.simulation.ycb import list_ycb_objects
+from grasping_ai.pipelines.prepare_observations import make_observations
 
 from pathlib import Path
 
 import hydra
 import open3d as _open3d  # noqa: F401
-import numpy as np
 from omegaconf import DictConfig
 
-def _linspace_axis(axis_cfg: object) -> np.ndarray:
-    if not isinstance(axis_cfg, dict):
-        msg = "observations.gripper_grid axis must be a mapping with start, stop, and count"
-        raise TypeError(msg)
-    return np.linspace(float(axis_cfg["start"]), float(axis_cfg["stop"]), int(axis_cfg["count"]))
-
-def make_observations(
-    ycb_root: Path,
-    output_dir: Path,
-    num_samples: int,
-    seed: int,
-    merged_objects_name: str,
-    merged_objects_normalized_name: str,
-    gripper_name: str,
-    gripper_grid: dict[str, object],
-) -> None:
-    """Sample per-object point clouds and a simple gripper finger cloud."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    rng = np.random.default_rng(seed)
-    object_clouds: list[np.ndarray] = []
-    for object_id in list_ycb_objects(ycb_root):
-        pts = sample_point_cloud_from_mesh(resolve_ycb_object_id(ycb_root, object_id), num_samples, rng)
-        np.save(output_dir / f"{object_id}.npy", pts)
-        object_clouds.append(pts)
-
-    merged = merge_point_clouds(object_clouds)
-    np.save(output_dir / merged_objects_name, merged)
-    np.save(
-        output_dir / merged_objects_normalized_name,
-        normalize_point_cloud(merged).astype(np.float32),
-    )
-
-    x = _linspace_axis(gripper_grid["x"])
-    y = _linspace_axis(gripper_grid["y"])
-    z = _linspace_axis(gripper_grid["z"])
-    grid = np.stack(np.meshgrid(x, y, z, indexing="ij"), axis=-1).reshape(-1, 3)
-    np.save(output_dir / gripper_name, grid.astype(np.float32))
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/prepare_observations")
 def main(cfg: DictConfig) -> None:
@@ -78,6 +30,7 @@ def main(cfg: DictConfig) -> None:
         str(output_cfg["gripper"]),
         gripper_grid,
     )
+
 
 if __name__ == "__main__":
     main()

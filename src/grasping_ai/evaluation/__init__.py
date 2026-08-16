@@ -22,6 +22,7 @@ from grasping_ai.evaluation.metrics import (
     evaluate_lift_success,
     evaluate_stability,
 )
+from grasping_ai.evaluation.scoring import recompute_contact_scores, score_grasp_poses_by_contacts
 
 __all__ = [
     "aggregate_grasp_success_rate",
@@ -38,4 +39,6 @@ __all__ = [
     "filter_collision_free_grasps",
     "generate_analytical_contacts",
     "load_contact_set",
+    "recompute_contact_scores",
+    "score_grasp_poses_by_contacts",
 ]

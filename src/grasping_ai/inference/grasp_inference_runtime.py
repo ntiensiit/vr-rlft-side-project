@@ -11,7 +11,9 @@ from grasping_ai.inference.grasp_generator import (
     load_grasp_model_checkpoint,
 )
 
-from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
+from grasping_ai.pipelines.generate_grasps import write_generated_grasps
+
+from grasping_ai.sensors.pointcloud_sensor import acquire_point_cloud_stream, sample_point_cloud_from_mesh
 
 from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 
@@ -93,3 +95,24 @@ def run_single_object_grasp_inference(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(output_path, grasp_poses)
     return grasp_poses
+
+
+def run_batch_grasp_inference(
+    checkpoint_path: Path,
+    output_path: Path,
+    observation_paths: list[Path],
+    feature_dim: int,
+    num_grasps: int,
+    device: str,
+    seed: int,
+) -> dict[str, np.ndarray]:
+    """Generate grasp candidates for multiple observations and persist them."""
+    model_checkpoint = load_grasp_model_checkpoint(checkpoint_path, device)
+    generator = build_diffusion_grasp_generator(model_checkpoint, feature_dim, device, seed)
+    point_clouds = list(acquire_point_cloud_stream(observation_paths))
+    grasps = {
+        f"object_{index}": generate_candidate_grasps(generator, point_cloud, num_grasps)
+        for index, point_cloud in enumerate(point_clouds)
+    }
+    write_generated_grasps(output_path, grasps)
+    return grasps
