@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
@@ -13,6 +12,9 @@ from loguru import logger
 
 from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.perception.geometry import make_transform
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 GRIPPER_GRID = tuple(
     (axis, tuple(FLATTENED_YAML_CONFIG.get_path("observations", "gripper_grid", axis).items()))

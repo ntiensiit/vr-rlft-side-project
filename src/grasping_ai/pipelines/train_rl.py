@@ -64,7 +64,7 @@ def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestrat
     object_ids: tuple[str, ...] = OBJECT_IDS,
     policy_checkpoint_path: Path = POLICY_CHECKPOINT_PATH,
     experiment_log_dir: Path | None = None,
-    **options: Any,
+    **options: Any,  # noqa: ANN401
 ) -> None:
     """Run an end-to-end RL training pipeline using MuJoCo as the environment.
 

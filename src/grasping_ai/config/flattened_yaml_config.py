@@ -55,7 +55,7 @@ class FlattenedYAMLConfig:
         return tuple(part for part in key.split(".") if part)
 
     @overload
-    def get(self, key: str) -> Any: ...
+    def get(self, key: str) -> Any: ...  # noqa: ANN401
 
     @overload
     def get(self, key: str, default: T) -> T: ...
@@ -68,7 +68,7 @@ class FlattenedYAMLConfig:
         return config_get(self._cfg, *parts, default=default)
 
     @overload
-    def get_path(self, *keys: str) -> Any: ...
+    def get_path(self, *keys: str) -> Any: ...  # noqa: ANN401
 
     @overload
     def get_path(self, *keys: str, default: T) -> T: ...

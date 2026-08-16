@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # Relative to ``scripts/*.py`` when using ``@hydra.main(config_path=...)``.
 SCRIPTS_CONFIG_PATH = "../configs"

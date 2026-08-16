@@ -94,7 +94,7 @@ def run_flow_training_pipeline(
     experiment_log_dir: Path | None = None,
     pretrained_encoder_path: Path | None = None,
     resume_checkpoint_path: Path | None = None,
-    **options: Any,
+    **options: Any,  # noqa: ANN401
 ) -> None:
     """Run the end-to-end flow-matching training pipeline for grasp generation.
 

@@ -104,7 +104,7 @@ def build_diffusion_grasp_generator(
 
             return sample_to_world_frame(samples, frame, centroid)
 
-    return cast(GraspPoseGenerator, generator)
+    return cast("GraspPoseGenerator", generator)
 
 
 def build_flow_grasp_generator(
@@ -155,7 +155,7 @@ def build_flow_grasp_generator(
 
             return sample_to_world_frame(samples, frame, centroid)
 
-    return cast(GraspPoseGenerator, generator)
+    return cast("GraspPoseGenerator", generator)
 
 
 def generate_candidate_grasps(

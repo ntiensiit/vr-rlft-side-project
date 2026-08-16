@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
+import numpy as np
 import pytest
 from omegaconf import DictConfig, OmegaConf
 
@@ -13,6 +15,7 @@ from grasping_ai.config.config import (
     config_value,
     hydra_cfg_to_dict,
 )
+from grasping_ai.config.flattened_yaml_config import FlattenedYAMLConfig
 
 EXPECTED_FEATURE_DIM = 32
 EXPECTED_BATCH_SIZE = 2
@@ -314,6 +317,44 @@ def test_config_value_script_or_required_path() -> None:
     )
     if not (resolved == Path("artifacts/checkpoints/model.pt")):
         raise AssertionError
+
+
+def test_flattened_config_accessors_and_dtype_validation() -> None:
+    """Exercise flattened access, typed access, and representation helpers."""
+    config = FlattenedYAMLConfig(
+        {
+            "foo": {"bar": 3},
+            "array_dtype": "float32",
+            "items": [1, 2],
+        },
+    )
+    if config.get("foo.bar") != 3 or config.get("", 7) != 7:  # noqa: PLR2004
+        raise AssertionError
+    if config.get_path() is not None or config.get_path(default=7) != 7:  # noqa: PLR2004
+        raise AssertionError
+    if config.get_path("foo") != {"bar": 3} or config.get_path("foo", "bar") != 3:  # noqa: PLR2004
+        raise AssertionError
+    if config.value("foo.bar", value_type=int) != 3:  # noqa: PLR2004
+        raise AssertionError
+    if config.value("foo", "bar", value_type=int) != 3:  # noqa: PLR2004
+        raise AssertionError
+    with pytest.raises(ValueError, match="at least one segment"):
+        config.value(value_type=int)
+    if config.numpy_dtype() is not np.float32:
+        raise AssertionError
+    with pytest.raises(ValueError, match="Unsupported numpy dtype"):
+        config.numpy_dtype("missing", "not_a_dtype")
+    if config.cfg is not config._cfg or config["foo.bar"] != 3:  # noqa: PLR2004, SLF001
+        raise AssertionError
+    if "foo.bar" not in config or "" in config or "missing" in config:
+        raise AssertionError
+    if "top-level keys" not in repr(config):
+        raise AssertionError
+
+    invalid = FlattenedYAMLConfig({})
+    invalid._cfg = cast("Any", OmegaConf.create([1]))  # noqa: SLF001
+    with pytest.raises(TypeError, match="root must be a mapping"):
+        _ = invalid.source
 
 
 def test_hydra_cfg_to_dict_resolves_interpolation() -> None:

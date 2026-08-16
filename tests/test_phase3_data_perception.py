@@ -923,6 +923,28 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="point_cloud must have shape"):
         SupervisedGraspDataset(dataset_dir)
 
+    with pytest.raises(TypeError, match="index must be an integer"):
+        pairs["invalid"]  # type: ignore[index]
+    with pytest.raises(ValueError, match="num_points must be positive"):
+        SupervisedGraspDataset(scored_dir, num_points=-1)
+
+    resampled_pairs = SupervisedGraspDataset(scored_dir, num_points=10)
+    if resampled_pairs[0][0].shape != (10, 3):
+        raise AssertionError
+
+    low_score_dir = tmp_path / "low_score_dataset"
+    low_score_dir.mkdir()
+    save_grasp_sample(
+        low_score_dir / "low_score.npz",
+        {
+            "point_cloud": pc,
+            "grasp_poses": grasps,
+            "scores": np.array([0.1, 0.2], dtype=np.float32),
+        },
+    )
+    with pytest.raises(ValueError, match="no grasp poses above"):
+        SupervisedGraspDataset(low_score_dir, min_grasp_score=0.9)
+
 
 def test_generate_analytical_grasps_validations_and_fallbacks() -> None:
     """Verify type and value checks on antipodal dot limits, multipliers, and relaxed grasp fallbacks."""

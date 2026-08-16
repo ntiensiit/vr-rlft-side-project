@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -11,9 +10,9 @@ from loguru import logger
 
 from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.data.pointcloud_dataset import (
+    GraspSample,
     discover_dataset_files,
     generate_analytical_grasps,
-    GraspSample,
     resolve_ycb_object_id,
     save_grasp_sample,
 )
@@ -65,6 +64,7 @@ SIM_VALIDATE_FALLBACK_ANALYTICAL = bool(
 SIM_OBJECT_POSITION = tuple(FLATTENED_YAML_CONFIG.get_path("synthetic", "sim_object_position"))
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
 
@@ -168,14 +168,14 @@ def sim_validation_passes(
     lift_height_threshold: float,
 ) -> bool:
     """Return whether a MuJoCo grasp outcome satisfies validation criteria."""
-    fk_error = float(cast(float, outcome.get("fk_position_error", float("inf"))))
-    contact_count = float(cast(float, outcome.get("contact_count", 0.0)))
+    fk_error = float(cast("float", outcome.get("fk_position_error", float("inf"))))
+    contact_count = float(cast("float", outcome.get("contact_count", 0.0)))
     ik_ok = np.isfinite(fk_error) if sim_validate_require_ik else True
     contact_ok = contact_count >= sim_validate_min_contacts
     lift_ok = True
     if sim_validate_require_lift:
-        initial_height = float(cast(float, outcome.get("initial_height", 0.0)))
-        final_height = float(cast(float, outcome.get("final_height", 0.0)))
+        initial_height = float(cast("float", outcome.get("initial_height", 0.0)))
+        final_height = float(cast("float", outcome.get("final_height", 0.0)))
         lift_ok = (final_height - initial_height) >= lift_height_threshold
     return ik_ok and contact_ok and lift_ok
 
@@ -461,7 +461,7 @@ def _process_one_object(  # noqa: PLR0913, PLR0917  # grouped configuration dict
         return
 
     quality_records.append(record)
-    kept = int(cast(int, record["kept"]))
+    kept = int(cast("int", record["kept"]))
     if kept == 0 and name in required_set:
         source = str(record["source"])
         if source == "none":
