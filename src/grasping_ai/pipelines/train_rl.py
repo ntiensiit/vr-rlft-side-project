@@ -25,7 +25,8 @@ from grasping_ai.utils.path_validation import require_path
 
 ROBOT_XML_PATH = Path(FLATTENED_YAML_CONFIG.get("robot.description", "assets/franka_emika_panda.xml"))
 YCB_ROOT = Path(FLATTENED_YAML_CONFIG.get("paths.ycb_root", "data/raw/ycb"))
-OBJECT_IDS: tuple[str, ...] = tuple(str(item) for item in FLATTENED_YAML_CONFIG.get("objects.ids", []))
+_configured_object_ids: list[Any] = FLATTENED_YAML_CONFIG.get("objects.ids", [])
+OBJECT_IDS: tuple[str, ...] = tuple(str(item) for item in _configured_object_ids)
 POLICY_CHECKPOINT_PATH = Path(
     FLATTENED_YAML_CONFIG.get("rl.checkpoint", "artifacts/checkpoints/rl_grasp_policy.pt"),
 )
