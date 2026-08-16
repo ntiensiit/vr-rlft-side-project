@@ -1,5 +1,7 @@
 # Phase 3 — Data Pipeline & Perception
 
+> **Historical design record.** This document captures the Phase 3 plan from the skeleton era. Current architecture, CLIs, and contracts live in [architecture.md](architecture.md), [USAGE.md](USAGE.md), and the repository [README.md](../README.md).
+
 ## 1. Phase Objective
 
 Phase 3 establishes the minimum data ingestion and point-cloud perception foundation required before supervised grasp-model training can be implemented.

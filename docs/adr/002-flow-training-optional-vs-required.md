@@ -15,7 +15,8 @@ specification explicitly requires both."
 Until the most recent checklist update, the repository had a real flow
 field, integrator, and sampler (`src/grasping_ai/models/flow.py`), but the
 training pipeline for flow was only sketched in code comments and an
-empty-dataloader notebook. The diffusion path (`scripts/train.py`) was the
+empty-dataloader notebook. The diffusion path (`scripts/train.py`, now
+`scripts/train_diffusion.py`) was the
 maintained supervised training entry point.
 
 `CHECKLIST.md` added `src/grasping_ai/pipelines/train_flow.py` and

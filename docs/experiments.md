@@ -3,7 +3,7 @@
 End-to-end reproducible artifact generation is driven by:
 
 ```bash
-python scripts/run_artifacts.py
+uv run python scripts/run_artifacts.py
 ```
 
 The script writes `artifacts/manifest.jsonl` documenting the executed commands
@@ -14,7 +14,7 @@ control by `.gitignore` and are produced from source on demand by this script.
 ## Artifact versioning (optional)
 
 TensorBoard (Phase 8) records training and evaluation **metrics** locally.
-For **model weights**, dataset `.npy` shards, and `index.json` lineage, enable
+For **model weights**, dataset `.npz` shards, and `index.json` lineage, enable
 W&B artifact tracking in `configs/base.yaml`:
 
 ```yaml

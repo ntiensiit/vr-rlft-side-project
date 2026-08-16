@@ -1,5 +1,7 @@
 # Phase 7: Synthetic Data Generation and Ground Truth Grasps
 
+> **Historical design record.** This document captures the Phase 7 plan from the skeleton era. Current architecture, CLIs, and contracts live in [architecture.md](architecture.md), [USAGE.md](USAGE.md), and the repository [README.md](../README.md).
+
 ## 1. Phase Overview
 **Name:** Phase 7: Synthetic Data Generation and Ground Truth Grasps  
 **Objective:** Implement deterministic mesh-to-point-cloud sampling and analytical grasp generation to produce valid, paired training datasets from YCB 3D assets.  

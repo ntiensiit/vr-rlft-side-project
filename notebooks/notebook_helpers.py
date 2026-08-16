@@ -1,7 +1,29 @@
+"""Shared helpers for percent-format research notebooks."""
+
 from __future__ import annotations
 
+import json
+import os
+import platform
+import random
+import subprocess
+import sys
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+import numpy as np
+import torch
+from omegaconf import DictConfig
+
+from bootstrap import (
+    DEFAULT_DRIVE_STORAGE_DIR,
+    apply_drive_storage_env,
+    drive_process_storage_root,
+)
+
 from grasping_ai.config import FlattenedYAMLConfig
-from grasping_ai.inference import run_single_object_grasp_inference
+from grasping_ai.inference.grasp_inference_runtime import run_single_object_grasp_inference
 from grasping_ai.pipelines import (
     aggregate_evaluation_results,
     evaluate_generated_grasps,
@@ -11,168 +33,43 @@ from grasping_ai.pipelines import (
     write_jsonl_records,
 )
 
-import os
-import platform
-import random
-import subprocess
-import sys
-from collections.abc import Callable, Mapping
-from pathlib import Path
-
-import numpy as np
-import torch
-from omegaconf import DictConfig
-
-def _yaml_config(cfg: Mapping[str, object]) -> FlattenedYAMLConfig:
-    return FlattenedYAMLConfig(cfg)
-
-try:
-    import google.colab  # noqa: F401
-except ImportError:
-    google.colab = None  # pragma: no cover
-
-try:
-    from google.colab import drive
-except ImportError:
-    drive = None  # pragma: no cover
-
 try:
     import mlflow
 except ImportError:
     mlflow = None  # pragma: no cover
 
-DEFAULT_REPO_BRANCH = "dev"
-DEFAULT_REPO_DIR = "vr-rlft-side-project"
-DEFAULT_REPO_URL = "https://github.com/ntiensiit/vr-rlft-side-project.git"
-DEFAULT_COLAB_DRIVE_MOUNT = Path("/content/drive")
-DEFAULT_DRIVE_STORAGE_DIR = DEFAULT_REPO_DIR
-MGS_INPUT_DIR_ENV = "MGS_INPUT_DIR"
-MGS_OUTPUT_DIR_ENV = "MGS_OUTPUT_DIR"
 
-def is_colab_runtime() -> bool:
-    """Return whether the current interpreter is running in Google Colab.
+def _yaml_config(cfg: Mapping[str, object] | FlattenedYAMLConfig) -> FlattenedYAMLConfig:
+    if isinstance(cfg, FlattenedYAMLConfig):
+        return cfg
+    return FlattenedYAMLConfig(cfg)
 
-    Returns:
-        ``True`` when ``google.colab`` can be imported, otherwise ``False``.
-    """
-    return google.colab is not None
 
-def resolve_project_root(start: Path | None = None) -> Path:
-    """Locate the repository root from a starting directory.
+@dataclass(frozen=True)
+class NotebookContext:
+    """Resolved notebook session: project root, composed config, and runtime."""
 
-    Args:
-        start: Directory to inspect first. When omitted, ``Path.cwd()`` is used.
+    root: Path
+    config_name: str
+    cfg: DictConfig
+    yaml_config: FlattenedYAMLConfig
+    seed: int
+    device: str
+    experiment: str
+    object_ids: list[str]
 
-    Returns:
-        The nearest directory containing ``configs/config.yaml``, or ``start``
-        when no marker file is found.
-    """
-    root = start or Path.cwd()
-    if (root / "configs" / "config.yaml").is_file():
-        return root
-    parent = root.parent
-    if (parent / "configs" / "config.yaml").is_file():
-        return parent
-    return root
 
-def mount_colab_drive(*, force_remount: bool = False) -> Path:
-    """Mount Google Drive on Colab and return the ``MyDrive`` directory.
+def subprocess_env(root: Path) -> dict[str, str]:
+    """Build an environment mapping for notebook subprocess calls."""
+    return {**os.environ, "PYTHONPYCACHEPREFIX": str(root / ".pycache")}
 
-    Args:
-        force_remount: Forwarded to ``google.colab.drive.mount``.
-
-    Returns:
-        Path to ``/content/drive/MyDrive``.
-
-    Raises:
-        RuntimeError: When called outside Google Colab.
-        FileNotFoundError: When the mount succeeds but ``MyDrive`` is missing.
-    """
-    if not is_colab_runtime():
-        raise RuntimeError("Google Drive mounting is only supported on Colab.")
-    drive.mount(str(DEFAULT_COLAB_DRIVE_MOUNT), force_remount=force_remount)
-    my_drive = DEFAULT_COLAB_DRIVE_MOUNT / "MyDrive"
-    if not my_drive.is_dir():
-        raise FileNotFoundError(f"Google Drive MyDrive folder not found: {my_drive}")
-    return my_drive
-
-def drive_process_storage_root(
-    storage_dir: str = DEFAULT_DRIVE_STORAGE_DIR,
-    *,
-    mount: bool = True,
-    force_remount: bool = False,
-) -> Path | None:
-    """Return a Drive-backed root for persistent notebook data and artifacts.
-
-    Creates ``MyDrive/<storage_dir>`` on Colab so datasets, checkpoints, and
-    reports survive runtime disconnects.
-
-    Args:
-        storage_dir: Folder name under ``MyDrive`` used for project storage.
-        mount: When ``True``, mount Google Drive before resolving the path.
-        force_remount: Forwarded to :func:`mount_colab_drive`.
-
-    Returns:
-        Drive-backed storage root on Colab, otherwise ``None``.
-    """
-    if not is_colab_runtime():
-        return None
-    my_drive = (
-        mount_colab_drive(force_remount=force_remount)
-        if mount
-        else DEFAULT_COLAB_DRIVE_MOUNT / "MyDrive"
-    )
-    if not my_drive.is_dir():
-        raise FileNotFoundError(f"Google Drive MyDrive folder not found: {my_drive}")
-    storage_root = my_drive / storage_dir
-    storage_root.mkdir(parents=True, exist_ok=True)
-    return storage_root
-
-def apply_drive_storage_env(
-    storage_root: Path,
-    *,
-    input_subdir: str = "data",
-    output_subdir: str = "artifacts",
-) -> dict[str, str]:
-    """Point Hydra path environment variables at Drive-backed directories.
-
-    Sets ``MGS_INPUT_DIR`` and ``MGS_OUTPUT_DIR`` so ``configs/data/default.yaml``
-    resolves ``paths.input_dir`` and ``paths.output_dir`` under ``storage_root``.
-
-    Args:
-        storage_root: Drive-backed project storage root.
-        input_subdir: Relative folder for datasets and observations.
-        output_subdir: Relative folder for checkpoints, exports, and reports.
-
-    Returns:
-        Mapping of the environment variables that were applied.
-    """
-    input_dir = storage_root / input_subdir
-    output_dir = storage_root / output_subdir
-    input_dir.mkdir(parents=True, exist_ok=True)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    env_values = {
-        MGS_INPUT_DIR_ENV: str(input_dir),
-        MGS_OUTPUT_DIR_ENV: str(output_dir),
-    }
-    os.environ.update(env_values)
-    return env_values
 
 def setup_notebook_drive_storage(
     cfg: Mapping[str, object],
     *,
     force_remount: bool = False,
 ) -> Path | None:
-    """Mount Drive and configure persisted paths when enabled in config.
-
-    Args:
-        cfg: Loaded configuration mapping containing ``notebook.mount_drive``.
-        force_remount: Forwarded to :func:`mount_colab_drive`.
-
-    Returns:
-        Drive-backed storage root when mounting is enabled on Colab, otherwise
-        ``None``.
-    """
+    """Mount Drive and configure persisted paths when enabled in config."""
     if not notebook_mount_drive(cfg):
         return None
     storage_root = drive_process_storage_root(
@@ -183,116 +80,6 @@ def setup_notebook_drive_storage(
         apply_drive_storage_env(storage_root)
     return storage_root
 
-def setup_notebook_environment(
-    *,
-    mount_drive: bool = False,
-    repo_branch: str = DEFAULT_REPO_BRANCH,
-    repo_url: str = DEFAULT_REPO_URL,
-    repo_dir: str = DEFAULT_REPO_DIR,
-    root: Path | None = None,
-) -> Path:
-    """Clone or locate the project, install deps, and configure import paths.
-
-    On Colab, clones or updates the repository under ``/content/<repo_dir>``.
-    Locally, resolves the checkout, changes into it, prepends ``src``,
-    ``scripts``, and ``notebooks`` to ``sys.path``, and installs the package
-    in editable mode.
-
-    Args:
-        mount_drive: When ``True`` on Colab, mount Google Drive before setup.
-        repo_branch: Git branch to clone or update on Colab.
-        repo_url: Remote repository URL used for Colab clones.
-        repo_dir: Directory name under ``/content`` for Colab checkouts.
-        root: Optional pre-resolved project root. When provided, Colab clone is
-            skipped and the existing checkout is updated instead.
-
-    Returns:
-        Absolute path to the active project root.
-    """
-    if root is not None:
-        project_root = root
-        if is_colab_runtime() and project_root.is_dir():
-            subprocess.run(["git", "-C", str(project_root), "fetch", "origin", repo_branch], check=True)
-            subprocess.run(["git", "-C", str(project_root), "checkout", repo_branch], check=True)
-            subprocess.run(["git", "-C", str(project_root), "pull", "origin", repo_branch], check=True)
-    elif is_colab_runtime():
-        if mount_drive:
-            mount_colab_drive(force_remount=False)
-        project_root = Path("/content") / repo_dir
-        if not project_root.is_dir():
-            subprocess.run(
-                ["git", "clone", "--branch", repo_branch, "--depth", "1", repo_url, str(project_root)],
-                check=True,
-            )
-        else:
-            subprocess.run(["git", "-C", str(project_root), "fetch", "origin", repo_branch], check=True)
-            subprocess.run(["git", "-C", str(project_root), "checkout", repo_branch], check=True)
-            subprocess.run(["git", "-C", str(project_root), "pull", "origin", repo_branch], check=True)
-    else:
-        project_root = resolve_project_root(root)
-
-    os.chdir(project_root)
-    os.environ["PYTHONPYCACHEPREFIX"] = str(project_root / ".pycache")
-    for relative in ("src", "scripts", "notebooks"):
-        path = str(project_root / relative)
-        if path not in sys.path:
-            sys.path.insert(0, path)
-    try:
-        subprocess.run([sys.executable, "-m", "pip", "--version"], capture_output=True, check=True)
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", "."], check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-    return project_root
-
-def config_dir_relative(config_dir: Path, root: Path) -> str:
-    """Format a config directory path for ``--config-dir`` CLI usage.
-
-    Args:
-        config_dir: Hydra config directory, typically ``<root>/configs``.
-        root: Active project root used to compute a relative path.
-
-    Returns:
-        Posix-style path to ``config_dir`` relative to ``root``.
-    """
-    return config_dir.resolve().relative_to(root.resolve()).as_posix()
-
-def config_script_cmd(
-    config_dir_arg: str,
-    config_name: str,
-    script: str,
-    *extra: str,
-) -> list[str]:
-    """Build a subprocess argv list for a Hydra-aware project script.
-
-    Args:
-        config_dir_arg: Value passed to ``--config-dir``.
-        config_name: Hydra entrypoint basename, e.g. ``training/diffusion``.
-        script: Script path relative to the project root.
-        *extra: Additional CLI arguments appended after the config flags.
-
-    Returns:
-        Argument vector suitable for ``subprocess.run``.
-    """
-    return [
-        sys.executable,
-        script,
-        "--config-dir",
-        config_dir_arg,
-        "--config-name",
-        config_name,
-        *extra,
-    ]
-
-def subprocess_env(root: Path) -> dict[str, str]:
-    """Build an environment mapping for notebook subprocess calls.
-
-    Args:
-        root: Project root used to set ``PYTHONPYCACHEPREFIX``.
-
-    Returns:
-        A copy of ``os.environ`` with notebook-friendly defaults applied.
-    """
-    return {**os.environ, "PYTHONPYCACHEPREFIX": str(root / ".pycache")}
 
 def load_notebook_config(
     config_dir: Path,
@@ -301,21 +88,7 @@ def load_notebook_config(
     overrides: list[str] | None = None,
     force_remount: bool = False,
 ) -> DictConfig:
-    """Load a named Hydra entrypoint for notebook workflows.
-
-    When ``notebook.mount_drive`` is enabled, mounts Google Drive, configures
-    ``MGS_INPUT_DIR`` / ``MGS_OUTPUT_DIR``, and reloads the config so path
-    interpolation resolves to Drive-backed storage.
-
-    Args:
-        config_dir: Directory containing Hydra YAML entrypoints.
-        config_name: Entrypoint basename without ``.yaml``.
-        overrides: Optional list of Hydra override strings.
-        force_remount: Forwarded to :func:`setup_notebook_drive_storage`.
-
-    Returns:
-        Composed configuration for the requested entrypoint.
-    """
+    """Load a named Hydra entrypoint for notebook workflows."""
     yaml_config = FlattenedYAMLConfig.from_hydra(
         config_dir,
         config_name,
@@ -333,16 +106,9 @@ def load_notebook_config(
         cfg = yaml_config.cfg
     return cfg
 
+
 def configure_seeds_and_device(cfg: Mapping[str, object]) -> tuple[int, str]:
-    """Seed Python, NumPy, and PyTorch and resolve the runtime device.
-
-    Args:
-        cfg: Loaded configuration containing ``seed`` and ``device`` keys.
-
-    Returns:
-        A ``(seed, device)`` tuple. ``device`` resolves ``auto`` to ``cuda``
-        when CUDA is available, otherwise ``cpu``.
-    """
+    """Seed Python, NumPy, and PyTorch and resolve the runtime device."""
     yaml_config = _yaml_config(cfg)
     seed = int(yaml_config.get_path("seed"))
     device_setting = str(yaml_config.get_path("device"))
@@ -356,6 +122,7 @@ def configure_seeds_and_device(cfg: Mapping[str, object]) -> tuple[int, str]:
         device = "cpu"
     return seed, device
 
+
 def print_runtime_banner(
     *,
     experiment: str,
@@ -365,16 +132,7 @@ def print_runtime_banner(
     config_names: Mapping[str, str] | str,
     **details: object,
 ) -> None:
-    """Print a standard runtime summary for notebook configuration cells.
-
-    Args:
-        experiment: Notebook experiment name from ``notebook.experiment``.
-        root: Active project root.
-        device: Resolved runtime device string.
-        seed: Configured random seed.
-        config_names: Single config name or mapping of label to config name.
-        **details: Additional key/value pairs printed after the standard banner.
-    """
+    """Print a standard runtime summary for notebook configuration cells."""
     print("experiment:", experiment)
     if isinstance(config_names, str):
         print("config_name:", config_names)
@@ -391,31 +149,67 @@ def print_runtime_banner(
     for key, value in details.items():
         print(f"{key}:", value)
 
+
+def object_ids_from_config(cfg: Mapping[str, object]) -> list[str]:
+    """Read configured object identifiers."""
+    return _yaml_config(cfg).value("objects", "ids", value_type=list[str])
+
+
+def notebook_experiment(cfg: Mapping[str, object]) -> str:
+    """Read the notebook experiment name."""
+    return str(_yaml_config(cfg).get_path("notebook", "experiment"))
+
+
+def notebook_download_ycb(cfg: Mapping[str, object]) -> bool:
+    """Read whether notebooks should download missing YCB assets."""
+    return bool(_yaml_config(cfg).get_path("notebook", "download_ycb", default=True))
+
+
+def notebook_augment(cfg: Mapping[str, object]) -> bool:
+    """Read whether supervised notebook training should augment data."""
+    return bool(_yaml_config(cfg).get_path("notebook", "augment", default=False))
+
+
+def notebook_mount_drive(cfg: Mapping[str, object]) -> bool:
+    """Read whether notebooks should mount Google Drive for persisted storage."""
+    return bool(_yaml_config(cfg).get_path("notebook", "mount_drive", default=False))
+
+
+def notebook_drive_storage_dir(cfg: Mapping[str, object]) -> str:
+    """Read the Drive folder name used for persisted notebook storage."""
+    return str(
+        _yaml_config(cfg).get_path("notebook", "drive_storage_dir", default=DEFAULT_DRIVE_STORAGE_DIR),
+    )
+
+
+def notebook_object_index(cfg: Mapping[str, object]) -> int:
+    """Read the configured notebook object index."""
+    return int(_yaml_config(cfg).get_path("notebook", "object_index", default=0))
+
+
+def selected_object_id(cfg: Mapping[str, object]) -> str:
+    """Resolve the object identifier selected by ``notebook.object_index``."""
+    object_ids = object_ids_from_config(cfg)
+    return object_ids[notebook_object_index(cfg)]
+
+
 def dataset_paths(cfg: Mapping[str, object]) -> dict[str, Path]:
-    """Extract common dataset path entries from a composed config.
-
-    Args:
-        cfg: Loaded configuration mapping.
-
-    Returns:
-        Mapping of logical dataset path names to ``pathlib.Path`` objects.
-    """
+    """Extract common dataset path entries from a composed config."""
+    yaml_config = _yaml_config(cfg)
     return {
-        "ycb_root": _yaml_config(cfg).value("paths", "ycb_root", value_type=Path),
-        "dataset_root": _yaml_config(cfg).value("paths", "dataset_root", value_type=Path),
-        "mjcf_root": _yaml_config(cfg).value("paths", "ycb_mjcf", value_type=Path),
-        "observations_dir": _yaml_config(cfg).value("paths", "observations", value_type=Path),
-        "output_index": _yaml_config(cfg).value("paths", "output_index", value_type=Path),
+        "ycb_root": yaml_config.value("paths", "ycb_root", value_type=Path),
+        "dataset_root": yaml_config.value("paths", "dataset_root", value_type=Path),
+        "mjcf_root": yaml_config.value("paths", "ycb_mjcf", value_type=Path),
+        "observations_dir": yaml_config.value("paths", "observations", value_type=Path),
+        "output_index": yaml_config.value("paths", "output_index", value_type=Path),
     }
 
-def ensure_dataset_dirs(paths: Mapping[str, Path]) -> None:
-    """Create dataset directories expected by notebook data-prep scripts.
 
-    Args:
-        paths: Mapping returned by :func:`dataset_paths`.
-    """
+def ensure_dataset_dirs(paths: Mapping[str, Path]) -> None:
+    """Create dataset directories expected by notebook data-prep scripts."""
     for key in ("mjcf_root", "observations_dir", "dataset_root"):
         paths[key].mkdir(parents=True, exist_ok=True)
+
 
 def maybe_download_ycb(
     root: Path,
@@ -425,15 +219,7 @@ def maybe_download_ycb(
     download: bool,
     env: Mapping[str, str] | None = None,
 ) -> None:
-    """Download YCB assets when requested and any required object is missing.
-
-    Args:
-        root: Project root used as the subprocess working directory.
-        ycb_root: Root directory containing per-object YCB folders.
-        object_ids: Object identifiers that must exist under ``ycb_root``.
-        download: When ``False``, this function is a no-op.
-        env: Optional environment mapping passed to ``subprocess.run``.
-    """
+    """Download YCB assets when requested and any required object is missing."""
     if download and not all((ycb_root / object_id).is_dir() for object_id in object_ids):
         subprocess.run(
             [sys.executable, "scripts/download_ycb_dataset.py"],
@@ -442,32 +228,20 @@ def maybe_download_ycb(
             check=True,
         )
 
+
+def hydra_script_cmd(script: str, *overrides: str) -> list[str]:
+    """Build a subprocess argv list for a Hydra ``@hydra.main`` script."""
+    return [sys.executable, script, *overrides]
+
+
 def run_dataset_preparation(
     root: Path,
     *,
     cfg: Mapping[str, object],
-    config_dir_arg: str,
-    config_name: str,
     object_ids: list[str],
     download_ycb: bool,
 ) -> dict[str, Path]:
-    """Run the standard notebook dataset preparation script chain.
-
-    Optionally downloads YCB assets, then invokes ``prepare_ycb_mjcf``,
-    ``prepare_data``, and ``prepare_observations`` with the supplied Hydra
-    entrypoint.
-
-    Args:
-        root: Project root used as the subprocess working directory.
-        cfg: Loaded configuration mapping.
-        config_dir_arg: Value passed to ``--config-dir``.
-        config_name: Hydra entrypoint basename without ``.yaml``.
-        object_ids: Object identifiers forwarded to ``prepare_data.py``.
-        download_ycb: Whether missing YCB assets should be downloaded first.
-
-    Returns:
-        Dataset path mapping from :func:`dataset_paths`.
-    """
+    """Run the standard notebook dataset preparation script chain."""
     paths = dataset_paths(cfg)
     ensure_dataset_dirs(paths)
     env = subprocess_env(root)
@@ -478,47 +252,23 @@ def run_dataset_preparation(
         download=download_ycb,
         env=env,
     )
-    subprocess.run(
-        config_script_cmd(config_dir_arg, config_name, "scripts/prepare_ycb_mjcf.py"),
-        cwd=root,
-        env=env,
-        check=True,
-    )
-    subprocess.run(
-        config_script_cmd(
-            config_dir_arg,
-            config_name,
-            "scripts/prepare_data.py",
-            "--mode",
-            "synthetic",
-            "--required-objects",
-            *object_ids,
-        ),
-        cwd=root,
-        env=env,
-        check=True,
-    )
-    subprocess.run(
-        config_script_cmd(config_dir_arg, config_name, "scripts/prepare_observations.py"),
-        cwd=root,
-        env=env,
-        check=True,
-    )
+    for script, extra in (
+        ("scripts/prepare_ycb_mjcf.py", ()),
+        ("scripts/prepare_data.py", ("prepare.mode=synthetic",)),
+        ("scripts/prepare_observations.py", ()),
+    ):
+        subprocess.run(hydra_script_cmd(script, *extra), cwd=root, env=env, check=True)
     return paths
 
+
 def supervised_hyperparameters(cfg: Mapping[str, object]) -> tuple[float, int, int]:
-    """Read supervised training hyperparameters from the composed config.
-
-    Args:
-        cfg: Loaded configuration mapping.
-
-    Returns:
-        ``(learning_rate, num_epochs, batch_size)``.
-    """
-    learning_rate = _yaml_config(cfg).value("supervised", "learning_rate", value_type=float, default=1e-3)
-    num_epochs = _yaml_config(cfg).value("supervised", "num_epochs", value_type=int, default=3)
-    batch_size = _yaml_config(cfg).value("supervised", "batch_size", value_type=int, default=2)
+    """Read supervised training hyperparameters from the composed config."""
+    yaml_config = _yaml_config(cfg)
+    learning_rate = yaml_config.value("supervised", "learning_rate", value_type=float, default=1e-3)
+    num_epochs = yaml_config.value("supervised", "num_epochs", value_type=int, default=3)
+    batch_size = yaml_config.value("supervised", "batch_size", value_type=int, default=2)
     return learning_rate, num_epochs, batch_size
+
 
 def build_supervised_train_kwargs(
     cfg: Mapping[str, object],
@@ -532,42 +282,28 @@ def build_supervised_train_kwargs(
     num_epochs: int,
     batch_size: int,
 ) -> dict[str, object]:
-    """Build keyword arguments for supervised training pipelines.
-
-    Args:
-        cfg: Loaded configuration mapping.
-        model_key: Top-level model namespace, e.g. ``"diffusion"`` or ``"flow"``.
-        dataset_root: Prepared dataset directory.
-        checkpoint_path: Destination checkpoint file.
-        device: Resolved runtime device string.
-        seed: Configured random seed.
-        learning_rate: Supervised learning rate.
-        num_epochs: Number of training epochs.
-        batch_size: Training batch size.
-
-    Returns:
-        Keyword-argument mapping for ``run_diffusion_training_pipeline`` or
-        ``run_flow_training_pipeline``.
-    """
+    """Build keyword arguments for supervised training pipelines."""
+    yaml_config = _yaml_config(cfg)
     return {
         "dataset_root": dataset_root,
         "checkpoint_path": checkpoint_path,
-        "feature_dim": int(_yaml_config(cfg).get_path("architecture", "feature_dim")),
-        "hidden_dim": int(_yaml_config(cfg).get_path("architecture", "hidden_dim")),
-        "num_layers": int(_yaml_config(cfg).get_path("architecture", "num_layers")),
+        "feature_dim": int(yaml_config.get_path("architecture", "feature_dim")),
+        "hidden_dim": int(yaml_config.get_path("architecture", "hidden_dim")),
+        "num_layers": int(yaml_config.get_path("architecture", "num_layers")),
         "learning_rate": learning_rate,
         "num_epochs": num_epochs,
         "batch_size": batch_size,
         "device": device,
         "seed": seed,
-        "experiment_log_dir": _yaml_config(cfg).value(model_key, "tensorboard", value_type=Path),
+        "experiment_log_dir": yaml_config.value(model_key, "tensorboard", value_type=Path),
         "pretrained_encoder_path": None,
         "resume_checkpoint_path": None,
         "augment": notebook_augment(cfg),
-        "min_grasp_score": float(_yaml_config(cfg).get_path("supervised", "min_grasp_score", default=0.0)),
-        "score_repeat_factor": int(_yaml_config(cfg).get_path("supervised", "score_repeat_factor", default=0)),
-        "score_repeat_power": float(_yaml_config(cfg).get_path("supervised", "score_repeat_power", default=1.0)),
+        "min_grasp_score": float(yaml_config.get_path("supervised", "min_grasp_score", default=0.0)),
+        "score_repeat_factor": int(yaml_config.get_path("supervised", "score_repeat_factor", default=0)),
+        "score_repeat_power": float(yaml_config.get_path("supervised", "score_repeat_power", default=1.0)),
     }
+
 
 def run_with_optional_mlflow(
     use_mlflow: bool,
@@ -576,16 +312,11 @@ def run_with_optional_mlflow(
     pipeline: Callable[..., object],
     **pipeline_kwargs: object,
 ) -> None:
-    """Run a pipeline directly or inside an MLflow run.
-
-    Args:
-        use_mlflow: When ``True``, open an MLflow run and log parameters first.
-        experiment: MLflow run name.
-        log_params: Parameter mapping written with ``mlflow.log_param``.
-        pipeline: Callable training or evaluation entry point.
-        **pipeline_kwargs: Keyword arguments forwarded to ``pipeline``.
-    """
+    """Run a pipeline directly or inside an MLflow run."""
     if use_mlflow:
+        if mlflow is None:
+            msg = "mlflow is required when tracking is enabled"
+            raise RuntimeError(msg)
         with mlflow.start_run(run_name=experiment):
             for key, value in log_params.items():
                 mlflow.log_param(key, value)
@@ -593,13 +324,9 @@ def run_with_optional_mlflow(
         return
     pipeline(**pipeline_kwargs)
 
-def print_checkpoint_summary(checkpoint_path: Path, tensorboard_dir: Path) -> None:
-    """Print checkpoint existence, size, and TensorBoard log directory.
 
-    Args:
-        checkpoint_path: Model or policy checkpoint file.
-        tensorboard_dir: TensorBoard output directory for the run.
-    """
+def print_checkpoint_summary(checkpoint_path: Path, tensorboard_dir: Path) -> None:
+    """Print checkpoint existence, size, and TensorBoard log directory."""
     if checkpoint_path.is_file():
         stat = checkpoint_path.stat()
         print(
@@ -613,16 +340,177 @@ def print_checkpoint_summary(checkpoint_path: Path, tensorboard_dir: Path) -> No
         print({"path": str(checkpoint_path), "exists": False})
     print("tensorboard:", tensorboard_dir)
 
+
+def require_checkpoint(checkpoint_path: Path, label: str) -> Path:
+    """Return ``checkpoint_path`` or raise if the file is missing."""
+    exists = checkpoint_path.is_file()
+    print(label, {"path": str(checkpoint_path), "exists": exists})
+    if not exists:
+        msg = f"Missing {label} checkpoint: {checkpoint_path}"
+        raise FileNotFoundError(msg)
+    return checkpoint_path
+
+
+def supervised_mlflow_log_params(
+    cfg: Mapping[str, object],
+    *,
+    device: str,
+    learning_rate: float,
+    num_epochs: int,
+    batch_size: int,
+) -> dict[str, object]:
+    """Build MLflow parameter mappings for supervised notebook training."""
+    return {
+        "download_ycb": notebook_download_ycb(cfg),
+        "augment": notebook_augment(cfg),
+        "device": device,
+        "experiment": notebook_experiment(cfg),
+        "learning_rate": learning_rate,
+        "num_epochs": num_epochs,
+        "batch_size": batch_size,
+    }
+
+
+def load_notebook_context(
+    root: Path,
+    config_name: str,
+    *,
+    overrides: list[str] | None = None,
+    config_labels: Mapping[str, str] | str | None = None,
+    extra_banner: Mapping[str, object] | None = None,
+) -> NotebookContext:
+    """Load config, seed the runtime, and print the standard banner."""
+    cfg = load_notebook_config(root / "configs", config_name, overrides=overrides)
+    yaml_config = FlattenedYAMLConfig(cfg)
+    seed, device = configure_seeds_and_device(cfg)
+    ctx = NotebookContext(
+        root=root,
+        config_name=config_name,
+        cfg=cfg,
+        yaml_config=yaml_config,
+        seed=seed,
+        device=device,
+        experiment=notebook_experiment(cfg),
+        object_ids=object_ids_from_config(cfg),
+    )
+    banner = dict(extra_banner or {})
+    if config_name.startswith("training/") and "rl_train" not in config_name:
+        learning_rate, num_epochs, batch_size = supervised_hyperparameters(cfg)
+        banner.setdefault(
+            "supervised",
+            {"learning_rate": learning_rate, "num_epochs": num_epochs, "batch_size": batch_size},
+        )
+    if "rl_train" in config_name:
+        banner.setdefault("training_object", selected_object_id(cfg))
+        banner.setdefault(
+            "rl",
+            {
+                "learning_rate": yaml_config.value("rl", "learning_rate", value_type=float, default=3e-4),
+                "num_updates": yaml_config.value("rl", "num_updates", value_type=int, default=10),
+            },
+        )
+    print_runtime_banner(
+        experiment=ctx.experiment,
+        config_names=config_labels if config_labels is not None else config_name,
+        root=root,
+        device=device,
+        seed=seed,
+        **banner,
+    )
+    return ctx
+
+
+def prepare_context_dataset(ctx: NotebookContext) -> dict[str, Path]:
+    """Run dataset preparation for a loaded notebook context."""
+    paths = run_dataset_preparation(
+        ctx.root,
+        cfg=ctx.cfg,
+        object_ids=ctx.object_ids,
+        download_ycb=notebook_download_ycb(ctx.cfg),
+    )
+    dataset_root = paths["dataset_root"]
+    print("dataset_root:", dataset_root)
+    print("records:", sorted(p.name for p in dataset_root.glob("*.npz")))
+    return paths
+
+
+def run_supervised_notebook(
+    ctx: NotebookContext,
+    *,
+    method: str,
+    pipeline: Callable[..., object],
+    dataset_root: Path,
+) -> Path:
+    """Train a diffusion or flow model and print the checkpoint summary."""
+    from grasping_ai import init_mlflow, setup_logging
+
+    setup_logging(module_name=f"train_{method}")
+    use_mlflow = init_mlflow(ctx.cfg)
+    checkpoint_path = ctx.yaml_config.value(method, "checkpoint", value_type=Path)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    learning_rate, num_epochs, batch_size = supervised_hyperparameters(ctx.cfg)
+    train_kwargs = build_supervised_train_kwargs(
+        ctx.cfg,
+        model_key=method,
+        dataset_root=dataset_root,
+        checkpoint_path=checkpoint_path,
+        device=ctx.device,
+        seed=ctx.seed,
+        learning_rate=learning_rate,
+        num_epochs=num_epochs,
+        batch_size=batch_size,
+    )
+    run_with_optional_mlflow(
+        use_mlflow,
+        ctx.experiment,
+        supervised_mlflow_log_params(
+            ctx.cfg,
+            device=ctx.device,
+            learning_rate=learning_rate,
+            num_epochs=num_epochs,
+            batch_size=batch_size,
+        ),
+        pipeline,
+        **train_kwargs,
+    )
+    print_checkpoint_summary(checkpoint_path, ctx.yaml_config.value(method, "tensorboard", value_type=Path))
+    return checkpoint_path
+
+
+def run_rl_training_notebook(ctx: NotebookContext, paths: Mapping[str, Path]) -> Path:
+    """Train the PPO policy and print the checkpoint summary."""
+    from grasping_ai import setup_logging
+    from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
+
+    setup_logging(module_name="train_rl")
+    policy_checkpoint = ctx.yaml_config.value("rl", "checkpoint", value_type=Path)
+    policy_checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    robot_xml = ctx.yaml_config.value("robot", "description", value_type=Path)
+    print("robot_xml:", robot_xml)
+    print("ycb_mjcf:", paths["mjcf_root"])
+    learning_rate = ctx.yaml_config.value("rl", "learning_rate", value_type=float, default=3e-4)
+    num_updates = ctx.yaml_config.value("rl", "num_updates", value_type=int, default=10)
+    run_rl_training_pipeline(
+        robot_xml_path=robot_xml,
+        ycb_root=paths["mjcf_root"],
+        object_ids=[selected_object_id(ctx.cfg)],
+        policy_checkpoint_path=policy_checkpoint,
+        observation_dim=int(ctx.yaml_config.get_path("rl", "observation_dim")),
+        action_dim=int(ctx.yaml_config.get_path("rl", "action_dim")),
+        hidden_dim=int(ctx.yaml_config.get_path("rl", "hidden_dim")),
+        learning_rate=learning_rate,
+        num_updates=num_updates,
+        gamma=float(ctx.yaml_config.get_path("rl", "gamma")),
+        device=ctx.device,
+        seed=ctx.seed,
+        experiment_log_dir=ctx.yaml_config.value("rl", "tensorboard", value_type=Path),
+    )
+    print_checkpoint_summary(policy_checkpoint, ctx.yaml_config.value("rl", "tensorboard", value_type=Path))
+    return policy_checkpoint
+
+
 def simulation_outcome_records(object_id: str, outcomes: list[Mapping[str, object]]) -> list[dict[str, object]]:
-    """Convert simulation outcome mappings into JSONL-ready report records.
-
-    Args:
-        object_id: Evaluated object identifier.
-        outcomes: Raw simulation outcome mappings from ``run_simulation_sweep``.
-
-    Returns:
-        List of JSON-serializable report records.
-    """
+    """Convert simulation outcome mappings into JSONL-ready report records."""
     records: list[dict[str, object]] = []
     for grasp_index, outcome in enumerate(outcomes):
         record: dict[str, object] = {
@@ -635,18 +523,37 @@ def simulation_outcome_records(object_id: str, outcomes: list[Mapping[str, objec
         records.append(record)
     return records
 
+
 def lift_success_rate(outcomes: list[Mapping[str, object]]) -> float | None:
-    """Compute the fraction of simulation outcomes with ``lift_success=True``.
-
-    Args:
-        outcomes: Simulation outcome mappings from ``run_simulation_sweep``.
-
-    Returns:
-        Success rate in ``[0, 1]``, or ``None`` when ``outcomes`` is empty.
-    """
+    """Compute the fraction of simulation outcomes with ``lift_success=True``."""
     if not outcomes:
         return None
     return sum(1 for row in outcomes if bool(row.get("lift_success"))) / len(outcomes)
+
+
+def evaluation_runtime_kwargs(ctx: NotebookContext) -> dict[str, object]:
+    """Read shared analytical/simulation evaluation settings."""
+    close_default = ctx.yaml_config.get_path("robot", "gripper", "close_command") or [0.0]
+    return {
+        "friction_coefficient": ctx.yaml_config.value(
+            "metrics", "friction_coefficient", value_type=float, default=0.5,
+        ),
+        "lift_height_threshold": ctx.yaml_config.value(
+            "metrics", "lift_height_threshold", value_type=float, default=0.05,
+        ),
+        "contact_clearance": ctx.yaml_config.value(
+            "metrics", "collision_clearance", value_type=float, default=0.005,
+        ),
+        "wrench_regularization": ctx.yaml_config.value(
+            "metrics", "wrench_regularization", value_type=float, default=1.0,
+        ),
+        "filter_collisions": ctx.yaml_config.value(
+            "evaluation", "filter_collisions", value_type=bool, default=False,
+        ),
+        "num_simulation_steps": int(ctx.yaml_config.get_path("num_steps")),
+        "gripper_close_command": np.asarray(close_default, dtype=np.float64),
+    }
+
 
 def run_generative_evaluation(
     *,
@@ -669,39 +576,15 @@ def run_generative_evaluation(
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
 ) -> tuple[dict[str, object], list[Mapping[str, object]], Path, Path]:
-    """Run inference, analytical evaluation, and simulation for one generative method.
-
-    Args:
-        method: Generative method namespace, e.g. ``"diffusion"`` or ``"flow"``.
-        cfg: Loaded configuration mapping for the method.
-        checkpoint_path: Model checkpoint used for grasp inference.
-        grasp_path: Output path for generated grasp poses.
-        object_id: Evaluated object identifier.
-        object_point_cloud: Object observation point cloud.
-        gripper_point_cloud: Gripper point cloud used for evaluation.
-        observation_path: Observation ``.npy`` file passed to inference.
-        reports_dir: Directory for simulation JSONL output.
-        device: Resolved runtime device string.
-        seed: Configured random seed.
-        friction_coefficient: Analytical evaluation friction coefficient.
-        lift_height_threshold: Lift-success height threshold.
-        contact_clearance: Collision clearance threshold.
-        wrench_regularization: Force-closure wrench regularization weight.
-        filter_collisions: Whether colliding grasps should be filtered out.
-        num_simulation_steps: MuJoCo rollout length for simulation evaluation.
-        gripper_close_command: Gripper close command vector for simulation.
-
-    Returns:
-        ``(aggregated_results, simulation_outcomes, analytical_report_path,
-        simulation_report_path)``.
-    """
+    """Run inference, analytical evaluation, and simulation for one generative method."""
+    yaml_config = _yaml_config(cfg)
     run_single_object_grasp_inference(
         checkpoint_path=checkpoint_path,
         output_path=grasp_path,
         method=method,
-        feature_dim=int(_yaml_config(cfg).get_path("architecture", "feature_dim")),
-        num_steps=int(_yaml_config(cfg).get_path(method, "inference_steps")),
-        num_grasps=int(_yaml_config(cfg).get_path("architecture", "num_grasps")),
+        feature_dim=int(yaml_config.get_path("architecture", "feature_dim")),
+        num_steps=int(yaml_config.get_path(method, "inference_steps")),
+        num_grasps=int(yaml_config.get_path("architecture", "num_grasps")),
         device=device,
         seed=seed,
         observation_path=observation_path,
@@ -720,7 +603,7 @@ def run_generative_evaluation(
         contact_path=None,
         filter_collisions=filter_collisions,
     )
-    report_path = _yaml_config(cfg).value("evaluation", "analytical_report", value_type=Path)
+    report_path = yaml_config.value("evaluation", "analytical_report", value_type=Path)
     aggregated = aggregate_evaluation_results({object_id: results})
     write_evaluation_report(report_path, aggregated, None, per_object_results=None)
 
@@ -728,8 +611,8 @@ def run_generative_evaluation(
     sim_outcomes = run_simulation_sweep(
         grasp_poses=grasps,
         object_id=object_id,
-        ycb_root=_yaml_config(cfg).value("paths", "ycb_mjcf", value_type=Path),
-        robot_xml_path=_yaml_config(cfg).value("robot", "description", value_type=Path),
+        ycb_root=yaml_config.value("paths", "ycb_mjcf", value_type=Path),
+        robot_xml_path=yaml_config.value("robot", "description", value_type=Path),
         table_xml_path=None,
         num_simulation_steps=num_simulation_steps,
         gripper_close_command=gripper_close_command,
@@ -737,121 +620,95 @@ def run_generative_evaluation(
     write_jsonl_records(sim_path, simulation_outcome_records(object_id, sim_outcomes))
     return aggregated, sim_outcomes, report_path, sim_path
 
-def object_ids_from_config(cfg: Mapping[str, object]) -> list[str]:
-    """Read configured object identifiers.
 
-    Args:
-        cfg: Loaded configuration mapping.
-
-    Returns:
-        Values from ``objects.ids``.
-    """
-    return _yaml_config(cfg).value("objects", "ids", value_type=list[str])
-
-def notebook_experiment(cfg: Mapping[str, object]) -> str:
-    """Read the notebook experiment name.
-
-    Args:
-        cfg: Loaded configuration mapping.
-
-    Returns:
-        Value of ``notebook.experiment``.
-    """
-    return str(_yaml_config(cfg).get_path("notebook", "experiment"))
-
-def notebook_download_ycb(cfg: Mapping[str, object]) -> bool:
-    """Read whether notebooks should download missing YCB assets.
-
-    Args:
-        cfg: Loaded configuration mapping.
-
-    Returns:
-        Value of ``notebook.download_ycb``.
-    """
-    return bool(_yaml_config(cfg).get_path("notebook", "download_ycb", default=True))
-
-def notebook_augment(cfg: Mapping[str, object]) -> bool:
-    """Read whether supervised notebook training should augment data.
-
-    Args:
-        cfg: Loaded configuration mapping.
-
-    Returns:
-        Value of ``notebook.augment``.
-    """
-    return bool(_yaml_config(cfg).get_path("notebook", "augment", default=False))
-
-def notebook_mount_drive(cfg: Mapping[str, object]) -> bool:
-    """Read whether notebooks should mount Google Drive for persisted storage.
-
-    Args:
-        cfg: Loaded configuration mapping.
-
-    Returns:
-        Value of ``notebook.mount_drive``.
-    """
-    return bool(_yaml_config(cfg).get_path("notebook", "mount_drive", default=False))
-
-def notebook_drive_storage_dir(cfg: Mapping[str, object]) -> str:
-    """Read the Drive folder name used for persisted notebook storage.
-
-    Args:
-        cfg: Loaded configuration mapping.
-
-    Returns:
-        Value of ``notebook.drive_storage_dir``.
-    """
-    return str(_yaml_config(cfg).get_path("notebook", "drive_storage_dir", default=DEFAULT_DRIVE_STORAGE_DIR))
-
-def notebook_object_index(cfg: Mapping[str, object]) -> int:
-    """Read the configured notebook object index.
-
-    Args:
-        cfg: Loaded configuration mapping.
-
-    Returns:
-        Value of ``notebook.object_index``.
-    """
-    return int(_yaml_config(cfg).get_path("notebook", "object_index", default=0))
-
-def selected_object_id(cfg: Mapping[str, object]) -> str:
-    """Resolve the object identifier selected by ``notebook.object_index``.
-
-    Args:
-        cfg: Loaded configuration mapping.
-
-    Returns:
-        Object ID at ``objects.ids[notebook.object_index]``.
-    """
-    object_ids = object_ids_from_config(cfg)
-    return object_ids[notebook_object_index(cfg)]
-
-def supervised_mlflow_log_params(
-    cfg: Mapping[str, object],
+def run_generative_eval_notebook(
+    ctx: NotebookContext,
     *,
-    device: str,
-    learning_rate: float,
-    num_epochs: int,
-    batch_size: int,
+    method: str,
+    dataset_paths: Mapping[str, Path],
 ) -> dict[str, object]:
-    """Build MLflow parameter mappings for supervised notebook training.
+    """Run generative inference/evaluation and print a JSON summary."""
+    from grasping_ai import init_mlflow, setup_logging
 
-    Args:
-        cfg: Loaded configuration mapping.
-        device: Resolved runtime device string.
-        learning_rate: Supervised learning rate.
-        num_epochs: Number of training epochs.
-        batch_size: Training batch size.
+    object_id = selected_object_id(ctx.cfg)
+    exports_dir = ctx.yaml_config.value("paths", "exports", value_type=Path)
+    reports_dir = ctx.yaml_config.value("paths", "reports", value_type=Path)
+    exports_dir.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True)
 
-    Returns:
-        Parameter mapping suitable for :func:`run_with_optional_mlflow`.
-    """
-    return {
-        "download_ycb": notebook_download_ycb(cfg),
-        "augment": notebook_augment(cfg),
-        "device": device,
-        "experiment": notebook_experiment(cfg),
-        "learning_rate": learning_rate,
-        "num_epochs": num_epochs,
-        "batch_size": batch_size,
+    observations_dir = dataset_paths["observations_dir"]
+    observation_path = observations_dir / f"{object_id}.npy"
+    eval_kwargs = evaluation_runtime_kwargs(ctx)
+    checkpoint_path = require_checkpoint(ctx.yaml_config.value(method, "checkpoint", value_type=Path), method)
+
+    setup_logging(module_name=f"evaluate_{method}")
+    use_mlflow = init_mlflow(ctx.cfg)
+    aggregated, sim_outcomes, report_path, sim_path = run_generative_evaluation(
+        method=method,
+        cfg=ctx.cfg,
+        checkpoint_path=checkpoint_path,
+        grasp_path=exports_dir / f"{method}_grasp_poses_{object_id}.npy",
+        object_id=object_id,
+        object_point_cloud=np.load(observation_path),
+        gripper_point_cloud=np.load(observations_dir / "gripper.npy"),
+        observation_path=observation_path,
+        reports_dir=reports_dir,
+        device=ctx.device,
+        seed=ctx.seed,
+        **eval_kwargs,
+    )
+    sim_rate = lift_success_rate(sim_outcomes)
+    summary = {
+        "object_id": object_id,
+        f"{method}_aggregated": aggregated,
+        f"{method}_sim_lift_success_rate": sim_rate,
+        "reports": {
+            f"{method}_analytical": str(report_path),
+            f"{method}_simulation": str(sim_path),
+        },
     }
+    print(json.dumps(summary, indent=2, default=str))
+    if use_mlflow:
+        if mlflow is None:
+            msg = "mlflow is required when tracking is enabled"
+            raise RuntimeError(msg)
+        with mlflow.start_run(run_name=ctx.experiment):
+            mlflow.log_param("object_id", object_id)
+            for key, val in aggregated.items():
+                if isinstance(val, (int, float)):
+                    mlflow.log_metric(f"{method}_{key}", val)
+            if sim_rate is not None:
+                mlflow.log_metric(f"{method}_sim_lift_success_rate", sim_rate)
+    return summary
+
+
+def run_rl_eval_notebook(ctx: NotebookContext) -> dict[str, object]:
+    """Roll out the exported RL policy and print a JSON summary."""
+    from run_rl_evaluation import run_rl_evaluation_main
+
+    object_id = selected_object_id(ctx.cfg)
+    reports_dir = ctx.yaml_config.value("paths", "reports", value_type=Path)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = require_checkpoint(ctx.yaml_config.value("rl", "checkpoint", value_type=Path), "rl")
+    output_path = ctx.yaml_config.value("evaluation", "rollout_report", value_type=Path)
+    run_rl_evaluation_main(
+        policy_checkpoint_path=checkpoint_path,
+        robot_xml_path=ctx.yaml_config.value("robot", "description", value_type=Path),
+        ycb_root=ctx.yaml_config.value("paths", "ycb_mjcf", value_type=Path),
+        object_id=object_id,
+        observation_dim=int(ctx.yaml_config.get_path("rl", "observation_dim")),
+        action_dim=int(ctx.yaml_config.get_path("rl", "action_dim")),
+        output_path=output_path,
+        episodes=ctx.yaml_config.value("evaluation", "episodes", value_type=int, default=5),
+        max_steps=ctx.yaml_config.value("evaluation", "max_steps", value_type=int, default=100),
+        device=ctx.device,
+        seed=ctx.seed,
+        table_xml_path=None,
+        observation_dim_from_env=False,
+        action_dim_from_env=False,
+        stochastic=ctx.yaml_config.value("evaluation", "stochastic", value_type=bool, default=False),
+        exploration_noise=ctx.yaml_config.value("evaluation", "exploration_noise", value_type=float, default=0.1),
+    )
+    summary = {"object_id": object_id, "reports": {"rl_rollout": str(output_path)}}
+    print(json.dumps(summary, indent=2, default=str))
+    return summary

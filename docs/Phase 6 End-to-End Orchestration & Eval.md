@@ -1,5 +1,7 @@
 # Phase 6 — End-to-End Orchestration & Eval
 
+> **Historical design record.** This document captures the Phase 6 plan from the skeleton era. Current architecture, CLIs, and contracts live in [architecture.md](architecture.md), [USAGE.md](USAGE.md), and the repository [README.md](../README.md).
+
 ## 1. Phase Objective
 
 Phase 6 establishes the minimum end-to-end orchestration and evaluation capability required to connect the preceding phases into a verifiable grasping research pipeline.

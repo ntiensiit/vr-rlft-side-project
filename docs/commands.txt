@@ -1,26 +1,24 @@
-& ".venv\Scripts\python.exe" -m "scripts.download_ycb_dataset"
 uv sync --frozen --group dev
 uv run --frozen ruff check src tests scripts
 uv run --frozen mypy --num-workers 0 --cache-dir .mypy_cache src
 uv run --frozen python -c "import grasping_ai; print('grasping_ai ok')"
-uv run pytest
-uv run --frozen pytest -m "not slow" --cov --cov-config=coverage.toml --cov-report=term-missing
-uv run python -m scripts.prepare_ycb_mjcf --config-dir configs --ycb-root data/raw/ycb --output-root data/processed/ycb_mjcf object=default
-uv run python -m scripts.prepare_data --config-dir configs --mode synthetic --quality-report artifacts/reports/synthetic_quality.json object=default
-uv run python -m scripts.audit_synthetic_labels --config-dir configs --dataset-root data/processed --output artifacts/reports/synthetic_label_audit.json
-uv run python -m scripts.prepare_data --config-dir configs --mode synthetic --sim-validate --output-dir data/processed_sim --output-index data/processed_sim/index.json object=default
-uv run python -m scripts.audit_synthetic_labels --config-dir configs --dataset-root data/processed_sim --output artifacts/reports/synthetic_label_audit_sim.json
-uv run python -m scripts.prepare_observations --config-dir configs --ycb-root data/raw/ycb --output-dir data/observations --num-samples 256 --seed 42 object=default
-uv run python -m scripts.train_diffusion --config-dir configs --dataset-root data/processed --checkpoint artifacts/checkpoints/diffusion_grasp_generator.pt --feature-dim 32 --hidden-dim 32 --num-layers 2 --learning-rate 0.001 --num-epochs 100 --batch-size 2 --device cpu --seed 42 --experiment-log-dir artifacts/exports/tensorboard/diffusion_train --pretrained-encoder None --resume None --augment model=default training=default
-uv run python -m scripts.train_flow --config-dir configs --dataset-root data/processed --checkpoint artifacts/checkpoints/flow_grasp_generator.pt --feature-dim 64 --hidden-dim 64 --num-layers 3 --learning-rate 0.001 --num-epochs 150 --batch-size 2 --device cpu --seed 42 --experiment-log-dir artifacts/exports/tensorboard/flow_train --pretrained-encoder None --resume None --augment model=flow training=flow
-uv run python -m scripts.train_rl --config-dir configs --robot-xml deploy/robot.xml --ycb-root data/processed/ycb_mjcf --object-ids 003_cracker_box 004_sugar_box --policy-checkpoint artifacts/checkpoints/rl_grasp_policy.pt --observation-dim 31 --action-dim 8 --hidden-dim 32 --learning-rate 0.0003 --num-updates 1000 --gamma 0.99 --device cpu --seed 42 --experiment-log-dir artifacts/exports/tensorboard/rl_grasp_train model=default training=default gripper=default env=default object=default
-uv run python -m scripts.generate_grasps --config-dir configs --checkpoint artifacts/checkpoints/diffusion_grasp_generator.pt --observations data/observations/obs_0.npy --output artifacts/exports/diffusion_grasp_candidates_by_object.npy --feature-dim 32 --num-diffusion-steps 5 --num-grasps 8 --device cpu --seed 42 model=default
-uv run python -m scripts.run_grasp_inference --config-dir configs --method flow --checkpoint artifacts/checkpoints/flow_grasp_generator.pt --observation data/observations/obs_0.npy --output artifacts/exports/flow_grasp_poses_003_cracker_box.npy --feature-dim 64 --num-steps 10 --device cpu --seed 42 model=flow
-uv run python -m scripts.run_simulation --config-dir configs --grasps artifacts/exports/diffusion_grasp_poses_003_cracker_box.npy --object-id 003_cracker_box --ycb-root data/processed/ycb_mjcf --robot-xml deploy/robot.xml --table-xml deploy/table.xml --output artifacts/reports/diffusion_simulation_outcomes_003_cracker_box.jsonl --num-simulation-steps 50 --gripper-close-command 0.0 --grasp-pose-format world env=default gripper=default
-uv run python -m scripts.visualize_robot --robot-xml deploy/robot.xml --object-id 003_cracker_box --ycb-root data/processed/ycb_mjcf --table-xml deploy/table.xml
-uv run python -m scripts.evaluate --config-dir configs --grasps artifacts/exports/diffusion_grasp_poses_003_cracker_box.npy --simulation-report artifacts/reports/diffusion_simulation_outcomes_003_cracker_box.jsonl --report artifacts/reports/diffusion_analytical_evaluation_report.jsonl --friction-coefficient 2.4 --wrench-regularization 0.001 model=default evaluation=diffusion
-uv run python -m scripts.run_artifacts --config-dir configs --robot-xml deploy/robot.xml --ycb-root data/processed/ycb_mjcf --object-id 003_cracker_box --device cpu model=default env=default gripper=default object=default evaluation=diffusion training=default
-uv run python -m scripts.run_workflow --config-dir configs --method flow --checkpoint artifacts/checkpoints/flow_grasp_generator.pt --observation data/observations/obs_0.npy --output-dir artifacts --object-id 003_cracker_box --ycb-root data/processed/ycb_mjcf --robot-xml deploy/robot.xml --table-xml deploy/table.xml --num-grasps 8 --num-steps 10 --device cpu --seed 42 --gripper-close-command 0.0 --friction-coefficient 2.4 --lift-height-threshold 0.05 --contact-clearance 0.01 --wrench-regularization 0.001 model=default env=default gripper=default object=default evaluation=flow
-uv run python -m scripts.extract_object_grasps --input artifacts/exports/diffusion_grasp_candidates_by_object.npy --output artifacts/exports/diffusion_grasp_poses_003_cracker_box.npy --key object_0
-uv run python -m scripts.print_model_info --checkpoint artifacts/checkpoints/diffusion_grasp_generator.pt --device cpu
-uv run python -m scripts.run_rl_evaluation --policy-checkpoint artifacts/checkpoints/rl_grasp_policy.pt --robot-xml deploy/robot.xml --ycb-root data/processed/ycb_mjcf --object-id 003_cracker_box --observation-dim 31 --action-dim 8 --output artifacts/eval.jsonl --episodes 5 --max-steps 100 --device cpu --seed 42 --table-xml deploy/table.xml --observation-dim-from-env --action-dim-from-env --stochastic --exploration-noise 0.1
+uv run --frozen pytest -c pytest.toml -q -m "not slow" --cov --cov-config=coverage.toml --cov-report=term-missing
+uv run python -m scripts.download_ycb_dataset
+uv run python -m scripts.prepare_ycb_mjcf
+uv run python -m scripts.prepare_data prepare.mode=synthetic prepare.quality_report=artifacts/reports/synthetic_quality.json
+uv run python -m scripts.audit_synthetic_labels
+uv run python -m scripts.prepare_data prepare.mode=synthetic synthetic.sim_validate=true paths.dataset_root=data/processed_sim paths.output_index=data/processed_sim/index.json
+uv run python -m scripts.prepare_observations
+uv run python -m scripts.train_diffusion supervised.num_epochs=100
+uv run python -m scripts.train_flow supervised.num_epochs=150
+uv run python -m scripts.train_rl rl.num_updates=1000
+uv run python -m scripts.generate_grasps
+uv run python -m scripts.run_grasp_inference model=flow script.observation=data/observations/003_cracker_box.npy
+uv run python -m scripts.run_simulation script.table_xml=deploy/table.xml
+uv run python -m scripts.visualize_robot script.object_id=003_cracker_box script.table_xml=deploy/table.xml
+uv run python -m scripts.evaluate evaluation=diffusion
+uv run python -m scripts.run_artifacts
+uv run python -m scripts.run_workflow model=flow evaluation=flow
+uv run python -m scripts.extract_object_grasps
+uv run python -m scripts.print_model_info
+uv run python -m scripts.run_rl_evaluation script.observation_dim_from_env=true script.action_dim_from_env=true

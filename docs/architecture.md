@@ -22,17 +22,17 @@ import from pipelines or training.
 
 | Subsystem     | Source root                              | Responsibility |
 | ------------- | ---------------------------------------- | -------------- |
-| Config        | `configs/`                               | YAML defaults merged by CLI scripts; flags override. |
+| Config        | `configs/` + `src/grasping_ai/config/`   | Hydra groups. CLIs use `@hydra.main` + `configs/scripts/<name>.yaml`; library code composes `project.yaml` via `FlattenedYAMLConfig`. |
 | Data          | `src/grasping_ai/data/`                  | Dataset discovery, serialized-sample loading, point-cloud preprocessing. |
 | Perception    | `src/grasping_ai/perception/`            | Point-cloud sampling, normalization, SE(3) frame construction. |
-| Models        | `src/grasping_ai/models/`                | Diffusion/flow grasp generation, equivariant encoder, RL policy. |
+| Models        | `src/grasping_ai/models/`                | Diffusion/flow grasp generation, SE(3) canonicalizing encoder, RL policy, shared MLPs. |
 | Inference     | `src/grasping_ai/inference/`             | Checkpoint loading, grasp generation, policy runners. |
 | Robotics      | `src/grasping_ai/robotics/`              | Coordinate transforms, kinematics, IK. |
 | Simulation    | `src/grasping_ai/simulation/`            | MuJoCo env, scene assembly, YCB loading. |
 | Evaluation    | `src/grasping_ai/evaluation/`            | Collision, force closure, analytical lift/stability judges. |
 | Training      | `src/grasping_ai/training/`              | Supervised/RL optimizers and step/loop primitives. |
 | Pipelines     | `src/grasping_ai/pipelines/`             | End-to-end orchestration of the above. |
-| Scripts       | `scripts/`                               | CLI entry points; thin wrappers around pipelines. |
+| Scripts       | `scripts/`                               | Hydra `@hydra.main` CLIs; thin wrappers around pipelines. |
 
 ## RL policy: two distinct interfaces
 
@@ -102,7 +102,7 @@ The active grasp representation is 9D = 3 translation components + the
 first two columns of the rotation matrix (a 6D rotation subset), as
 produced by `se3_to_vec` in `src/grasping_ai/data/grasp_vector.py`. This
 replaces an older 7D convention (3 translation + 4 quaternion) that no
-code path uses; `configs/model.yaml::grasp_dim` is set to 9.
+code path uses; `configs/model/grasp.yaml` sets `grasp.dim` to 9.
 
 ## Generated MJCF portability
 
@@ -113,6 +113,20 @@ mesh's absolute path. This is a deliberate trade-off: MuJoCo resolves
 the included file, which prevents reliable relocatable paths. The
 wrappers are therefore regenerable from source (`scripts/run_artifacts.py`)
 in any fresh checkout rather than being relocatable as-is.
+
+## Dataset and grasp I/O
+
+Training records under `paths.dataset_root` are pickle-free `.npz` archives
+(`point_cloud`, `grasp_poses`, optional `scores` / `object_id`). Generated
+candidate files remain `.npy`: a pickled dict for multi-object artifact-chain
+output, or a plain `(K, 4, 4)` array for single-object runtime inference.
+`load_generated_grasps` accepts both generated-grasp layouts.
+
+## Robot viewer
+
+`scripts/visualize_robot.py` launches MuJoCo's passive viewer and steps
+physics until the window closes. Actuator controls are the viewer's built-in
+UI. There is no separate keyboard-topic TUI.
 
 ## simulate_grasp() trajectory simplification
 

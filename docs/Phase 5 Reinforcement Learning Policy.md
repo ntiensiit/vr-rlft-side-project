@@ -1,5 +1,7 @@
 # Phase 5 — Reinforcement Learning Policy
 
+> **Historical design record.** This document captures the Phase 5 plan from the skeleton era. Current architecture, CLIs, and contracts live in [architecture.md](architecture.md), [USAGE.md](USAGE.md), and the repository [README.md](../README.md).
+
 ## 1. Phase Objective
 
 Phase 5 establishes the minimum reinforcement learning capability required to train a grasping or interaction policy against the Phase 2 simulation core.

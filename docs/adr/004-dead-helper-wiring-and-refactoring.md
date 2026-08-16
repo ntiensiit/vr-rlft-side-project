@@ -60,9 +60,9 @@ behavior change; no tests weakened or removed.
 | `prepare_point_cloud_tensor`, `encode_grasp_conditioning`, `sample_to_world_frame` | `inference/grasp_sampling.py` |
 | `load_torch_checkpoint`, `read_model_checkpoint_metadata`, `checkpoint_scalar_int`, `checkpoint_dict_int` | `training/checkpoint_io.py` |
 | `SupervisedTrainingDataloader`, `ConditionedTrainingDataloader` | `pipelines/supervised_training.py` |
-| `build_grasp_sampling_batch` | `models/grasp_sampling_batch.py` |
+| `batch_conditioned_grasp_samples` | `models/grasp_sampling_batch.py` |
 
-Callers updated: `pipelines/train.py`, `pipelines/train_flow.py`,
+Callers updated: `pipelines/train_diffusion.py`, `pipelines/train_flow.py`,
 `inference/grasp_generator.py`, `training/trainer.py`, `inference/policy_runner.py`,
 `models/diffusion.py`, `models/flow.py`.
 
@@ -92,9 +92,9 @@ original policy:
 | Helper / flag | Production caller |
 | --- | --- |
 | `make_open_command` | `pipelines/simulate_grasp.py` (pre-grasp open phase) |
-| Augmentation transforms | `SupervisedGraspDataset(augment=True)` + `--augment` on train CLIs |
+| Augmentation transforms | `SupervisedGraspDataset(augment=True)` + `training.augment` on train CLIs |
 | `iterate_grasp_dataset` | `validate_grasp_dataset()` in diffusion/flow pipelines |
-| `load_training_checkpoint` | `--resume` on `scripts/train.py` / `scripts/train_flow.py` |
+| `load_training_checkpoint` | `training.resume` on `scripts/train_diffusion.py` / `scripts/train_flow.py` |
 
 Flow inference unified on `FlowGeneratorModel` via `load_flow_model_from_state`
 (`models/flow.py`). All 30 code-audit checklist items closed; open work is CI
@@ -137,10 +137,17 @@ Do **not** remove `theseus` or demote `pytransform3d` to dev-only.
 | --- | --- |
 | Software pipeline correctness | **Verified** — `scripts/run_artifacts.py` end-to-end; `tests/test_artifact_chain.py` (slow). |
 | Learning pipeline execution | **Verified mechanically** — training, checkpoints, inference, resume, augmentation paths execute. |
-| Robotics / research outcome | **Not verified** — 2-DOF robot reachability and undertrained diffusion remain research-stage limits. |
+| Robotics / research outcome | **Not verified** — Panda reachability and undertrained diffusion remain research-stage limits. |
 
-Gate: `uv run pytest -q`, `uv run ruff check src tests scripts`, `uv run mypy src`
-— 226 passed, 85.74% coverage (2026-08-13).
+Gate: see `CHECKLIST.md` (2026-08-16 local: 320 fast tests passed; coverage 84% vs 97% gate; mypy not clean).
+
+### 2026-08-16 follow-up
+
+- CLI argparse wrappers removed; Hydra `@hydra.main` + `configs/scripts/`.
+- Dataset records are pickle-free `.npz`.
+- Package re-exports slimmed; supervised CLI helper is `pipelines/supervised_training_script.py`.
+- Robot viewer uses MuJoCo's built-in UI (no UDP keyboard TUI).
+- Shared `models/mlp.py` and `models/grasp_sampling_batch.py` remain the MLP / sampling builders.
 
 ## Follow-up review triggers
 

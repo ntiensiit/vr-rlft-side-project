@@ -1,5 +1,7 @@
 # Phase 4 — Generative Grasp Model
 
+> **Historical design record.** This document captures the Phase 4 plan from the skeleton era. Current architecture, CLIs, and contracts live in [architecture.md](architecture.md), [USAGE.md](USAGE.md), and the repository [README.md](../README.md).
+
 ## 1. Phase Objective
 
 Phase 4 establishes the minimum generative grasp-model capability required before generated grasp poses can be executed or evaluated in later phases.

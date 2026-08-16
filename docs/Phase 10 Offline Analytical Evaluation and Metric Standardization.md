@@ -1,5 +1,7 @@
 # Phase 10: Offline Analytical Evaluation and Metric Standardization
 
+> **Historical design record.** This document captures the Phase 10 plan from the skeleton era. Current architecture, CLIs, and contracts live in [architecture.md](architecture.md), [USAGE.md](USAGE.md), and the repository [README.md](../README.md).
+
 ## 1. Phase Overview
 
 **Phase name:** Phase 10: Offline Analytical Evaluation and Metric Standardization

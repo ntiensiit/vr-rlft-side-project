@@ -1,5 +1,7 @@
 # Phase 2 — Simulation & Robotics Core
 
+> **Historical design record.** This document captures the Phase 2 plan from the skeleton era. Current architecture, CLIs, and contracts live in [architecture.md](architecture.md), [USAGE.md](USAGE.md), and the repository [README.md](../README.md).
+
 ## 1. Phase Objective
 
 Phase 2 establishes the minimum simulation and robotics core required by later reinforcement learning, evaluation, and inference phases.

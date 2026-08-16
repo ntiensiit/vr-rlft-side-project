@@ -6,30 +6,36 @@ Open implementation and research tasks for the grasping-ai side project.
 
 | Evidence | Meaning | Current state |
 | --- | --- | --- |
-| Local gate pass | Engineering verification on this machine | 293 passed (not slow), ruff clean, mypy clean on 49 source files (2026-08-14) |
+| Local gate pass | Engineering verification on this machine | 320 passed, 3 slow deselected; coverage 84% vs `fail_under=97`; ruff: 1 import-sort error in `scripts/visualize_robot.py`; mypy: 277 errors in 36 of 61 source files (2026-08-16) |
 | Record in this file | Repository-recorded verification | Same as local gate above |
-| GitHub Actions on current `dev` HEAD | GitHub CI verified | Failed: mid-test triton/dynamo segfaults misclassified as teardown; fix pending (`TORCHDYNAMO_DISABLE`) |
+| GitHub Actions on current `dev` HEAD | GitHub CI verified | Not confirmed on current `refactor` HEAD. Workflow is two jobs (`Lint and typecheck`, `Fast tests and coverage`); Linux CI uninstalls `triton` |
 
 Local verify gate (run after each code change):
 
 ```bash
 cd vr-rlft-side-project
-uv run ruff check src tests scripts
-uv run mypy src
-uv run pytest -q
+uv run --frozen ruff check src tests scripts
+uv run --frozen mypy --num-workers 0 src
+uv run --frozen pytest -c pytest.toml -q -m "not slow" --cov --cov-config=coverage.toml --cov-report=term-missing
 ```
 
-Completed wiring, refactor, and robot-viewer split: [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md), [ADR-0005](docs/adr/005-runtime-workflow-integration.md), [ADR-0006](docs/adr/006-robot-viewer-keyboard-topic-split.md).
+Completed wiring, refactor, Hydra CLIs, and robot-viewer consolidation: [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md), [ADR-0005](docs/adr/005-runtime-workflow-integration.md), [ADR-0008](docs/adr/008-hydra-configuration.md).
 
 ## Cross-cutting verification
 
 - [ ] **Current GitHub CI status confirmed** on the current `dev` HEAD commit.
+- [ ] Restore the local/CI coverage gate (`coverage.toml` `fail_under=97`) after pipeline tests were trimmed. Fast suite currently reports **84%**.
+- [ ] Restore mypy cleanliness on `src/` (277 errors, mostly `FLATTENED_YAML_CONFIG.get(...)` returning `object`).
+- [ ] Fix ruff I001 in `scripts/visualize_robot.py`.
 
 ### Execution plan: GitHub CI verification
 
 **Pass/fail:** Mark the item above `[x]` only when the current `dev` HEAD has a completed GitHub Actions run and every required job passed (not skipped, not `continue-on-error`).
 
-Required jobs in workflow `CI`: `Lint and typecheck`, `Fast tests and coverage`.
+Required jobs in workflow `CI`:
+
+- `Lint and typecheck` (`jobs.lint`)
+- `Fast tests and coverage` (`jobs.fast-tests`)
 
 **Step 1 — Push current `dev` commit**
 
@@ -63,39 +69,47 @@ In the run details, confirm:
 
 Pass/fail: mismatch or run on an older SHA means **UNKNOWN**.
 
-**Step 4 — Confirm job executed (not skipped)**
+**Step 4 — Confirm jobs executed (not skipped)**
 
 Workflow file: `.github/workflows/ci.yml`
 
-Single job: `Lint, typecheck, and fast tests` (`jobs.fast`).
+Jobs:
 
-Inspect the run: the job must have executed. A green workflow with a skipped required job does not count.
+- `Lint and typecheck` (`jobs.lint`)
+- `Fast tests and coverage` (`jobs.fast-tests`, `needs: lint`)
+
+Inspect the run: both jobs must have executed. A green workflow with a skipped required job does not count.
 
 **Step 5 — Ruff step**
 
-Step name in log: `Ruff`
+Job: `Lint and typecheck`. Step name in log: `Ruff`
 
-Command in CI: `uv run ruff check src tests scripts`
+Command in CI: `uv run --frozen ruff check src tests scripts`
 
 Pass/fail: step exits 0; log shows no ruff errors.
 
 **Step 6 — Mypy step**
 
-Step name in log: `Mypy`
+Job: `Lint and typecheck`. Step name in log: `Mypy`
 
-Command in CI: `uv run mypy src`
+Command in CI: `uv run --frozen mypy --num-workers 0 --cache-dir .mypy_cache src`
 
 Pass/fail: step exits 0; log reports success on source files.
 
 **Step 7 — Pytest and coverage step**
 
-Step name in log: `Pytest (excluding slow / artifact-chain tests)`
+Job: `Fast tests and coverage`. Step name in log: `Pytest (excluding slow / artifact-chain tests)`
 
-Command in CI: `xvfb-run -a uv run pytest -q -m "not slow" --cov=src/grasping_ai --cov-config=coverage.toml --cov-fail-under=80`
+Command in CI:
 
-Pass/fail: step exits 0; tests ran (not skipped); coverage gate at or above 80%.
+```text
+xvfb-run -a uv run --frozen pytest -c pytest.toml -n auto -q -m "not slow"
+  --cov --cov-config=coverage.toml --cov-report=term-missing
+```
 
-Note: CI excludes `@pytest.mark.slow` tests (artifact chain). Full local suite is 226 passed; CI fast suite is smaller by three slow tests. Both are valid; do not treat a green CI run as proof the slow artifact-chain tests ran on GitHub.
+Pass/fail: step exits 0; tests ran (not skipped); coverage meets `coverage.toml` `fail_under` (currently 97).
+
+Note: CI excludes `@pytest.mark.slow` tests (artifact chain). Full local suite is 323 collected (320 fast + 3 slow). Do not treat a green CI run as proof the slow artifact-chain tests ran on GitHub.
 
 **Step 8 — Record evidence**
 
@@ -106,18 +120,18 @@ GitHub CI verification
 Branch: dev
 Commit: <SHA>
 Workflow: CI
-Job: Lint, typecheck, and fast tests
+Jobs: Lint and typecheck; Fast tests and coverage
 Ruff: PASS
 Mypy: PASS
 Pytest (not slow): PASS
-Coverage (>= 80%): PASS
+Coverage (>= fail_under in coverage.toml): PASS
 Overall GitHub CI: PASS
 Verified: <YYYY-MM-DD>
 ```
 
 Then change the checklist item to `[x]`.
 
-**Latest run (2026-08-13):** Matrix run https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31640843518 — all 12 `Pytest tests/*` jobs PASS on Linux; coverage aggregation fixed in `935a012` (`scripts/ci_pytest.sh`).
+**Latest recorded Linux matrix (historical, 2026-08-13):** https://github.com/ntiensiit/vr-rlft-side-project/actions/runs/31640843518 — all 12 `Pytest tests/*` jobs PASS on Linux; coverage aggregation fixed in `935a012` (`scripts/ci_pytest.sh`). Current workflow is a single fast-tests job, not that matrix.
 
 ---
 
@@ -129,7 +143,7 @@ These tasks validate learned behavior and research claims. Each item is independ
 
 - [ ] Correlate offline `grasp_success` against MuJoCo simulated lift success.
 
-Commands (illustrative; adjust paths to trained checkpoints):
+Commands (illustrative; defaults come from Hydra configs):
 
 ```bash
 uv run python scripts/evaluate.py --help

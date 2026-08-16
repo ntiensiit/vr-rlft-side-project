@@ -1,5 +1,7 @@
 # Phase 9: Standardized Gymnasium RL Environment
 
+> **Historical design record.** This document captures the Phase 9 plan from the skeleton era. Current architecture, CLIs, and contracts live in [architecture.md](architecture.md), [USAGE.md](USAGE.md), and the repository [README.md](../README.md).
+
 ## 1. Phase Overview
 
 **Phase name:** Phase 9: Standardized Gymnasium RL Environment

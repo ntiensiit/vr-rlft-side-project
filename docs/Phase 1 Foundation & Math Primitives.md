@@ -1,5 +1,7 @@
 # Phase 1 — Foundation & Math Primitives
 
+> **Historical design record.** This document captures the Phase 1 plan from the skeleton era. Current architecture, CLIs, and contracts live in [architecture.md](architecture.md), [USAGE.md](USAGE.md), and the repository [README.md](../README.md).
+
 ## 1. Phase Objective
 
 The objective of Phase 1 is to establish the minimum verified foundation required before any simulation, data, model, training, evaluation, or inference work begins.

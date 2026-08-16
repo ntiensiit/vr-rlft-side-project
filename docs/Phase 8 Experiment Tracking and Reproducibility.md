@@ -1,5 +1,7 @@
 # Phase 8: Experiment Tracking and Reproducibility
 
+> **Historical design record.** This document captures the Phase 8 plan from the skeleton era. Current architecture, CLIs, and contracts live in [architecture.md](architecture.md), [USAGE.md](USAGE.md), and the repository [README.md](../README.md).
+
 ## 1. Phase Overview
 
 **Phase name:** Phase 8: Experiment Tracking and Reproducibility

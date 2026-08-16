@@ -2,7 +2,9 @@
 
 Percent-format notebooks (`# %%` / `# %% [markdown]`) for interactive diffusion, flow, and RL experiments.
 
-Shared setup, config loading, data prep, and training helpers live in [`notebook_helpers.py`](notebook_helpers.py); [`bootstrap.py`](bootstrap.py) handles Colab clone and import-path setup for the first cell.
+Shared setup lives in [`bootstrap.py`](bootstrap.py) (Colab clone, import paths, editable install) and [`notebook_helpers.py`](notebook_helpers.py) (config, data prep, train/eval). Each notebook keeps unique markdown plus a short method-specific cell.
+
+The **environment cell is identical** in every notebook: it locates or clones the repo so `bootstrap.py` can be imported, then calls `bootstrap_notebook()`. Edit clone URL/branch only in that cell and in `bootstrap.py` (`DEFAULT_REPO_*`).
 
 ## Notebooks
 
@@ -19,7 +21,7 @@ Notebooks call existing `scripts/` entry points for data preparation and `graspi
 
 ## Configuration
 
-Full Hydra compositions live in the matching config group files. Each notebook sets only `CONFIG_NAME`:
+Full Hydra compositions live in the matching config group files. Each notebook passes one entrypoint into ``load_notebook_context``:
 
 | Notebook | Config entrypoint |
 | --- | --- |
@@ -30,7 +32,7 @@ Full Hydra compositions live in the matching config group files. Each notebook s
 | `evaluate_flow.py` | `evaluation/flow` |
 | `evaluate_rl.py` | `evaluation/rl` |
 
-Data-prep subprocesses receive the same `--config-name` so scripts load an identical composed tree.
+Data-prep subprocesses compose the same Hydra tree. CLI scripts load `configs/scripts/<name>.yaml` via `@hydra.main`; notebooks use `compose_config` with the entrypoints below.
 
 Edit the ``notebook`` block in each entrypoint YAML for notebook-only flags (`download_ycb`, `augment`, `object_index`, `experiment`, `mount_drive`). Set ``notebook.mount_drive: true`` on Colab to persist ``data/`` and ``artifacts/`` under ``MyDrive/<drive_storage_dir>/`` across sessions. Hyperparameters and paths come from the composed config. Override at runtime with Hydra, e.g. ``compose_config(CONFIG_DIR, config_name=CONFIG_NAME, overrides=["notebook.augment=true"])``.
 
@@ -49,11 +51,11 @@ Open any notebook `.py` file with the Jupyter extension. The environment cell de
 
 | Notebook | CLI |
 | --- | --- |
-| `train_diffusion.py` | `python scripts/train_diffusion.py --config-name training/diffusion` |
-| `train_flow.py` | `python scripts/train_flow.py --config-name training/flow` |
-| `train_rl.py` | `python scripts/train_rl.py --config-name training/rl_train` |
-| `evaluate_diffusion.py` | `python scripts/run_grasp_inference.py --config-name evaluation/diffusion` |
-| `evaluate_flow.py` | `python scripts/run_grasp_inference.py --config-name evaluation/flow` |
-| `evaluate_rl.py` | `python scripts/run_rl_evaluation.py --config-name evaluation/rl` |
+| `train_diffusion.py` | `uv run python scripts/train_diffusion.py` |
+| `train_flow.py` | `uv run python scripts/train_flow.py` |
+| `train_rl.py` | `uv run python scripts/train_rl.py` |
+| `evaluate_diffusion.py` | `uv run python scripts/run_grasp_inference.py` then `evaluate.py` / `run_simulation.py` |
+| `evaluate_flow.py` | `uv run python scripts/run_grasp_inference.py model=flow` then `evaluate.py` / `run_simulation.py` |
+| `evaluate_rl.py` | `uv run python scripts/run_rl_evaluation.py` |
 
 Legacy Colab notebooks are archived under [`archive/`](archive/README.md).

@@ -3,6 +3,7 @@
 ## Status
 
 Accepted (2026-08-12). Updated 2026-08-13 for inference deduplication and grasp I/O.
+Updated 2026-08-16 for Hydra CLIs.
 
 ## Context
 
@@ -17,17 +18,19 @@ workflow scripts below are **entry points** for single-object or composed runs.
 
 ## Decision
 
-Implement the following scripts under `scripts/` using `PYTHONPATH=src` (or
-equivalent) like existing CLIs.
+Implement the following scripts under `scripts/` as Hydra entrypoints
+(`configs/scripts/<name>.yaml`), using `PYTHONPATH=src` (or equivalent)
+like existing CLIs.
 
 | Script | Role |
 | --- | --- |
 | `generate_grasps.py` | Multi-object artifact-chain inference; pickled dict output via `write_generated_grasps`. |
 | `run_grasp_inference.py` | Single-object runtime inference; plain `(num_grasps, 4, 4)` `.npy` (no pickle). |
-| `run_simulation.py` | MuJoCo grasp simulation; optional `--grasp-pose-format` (default `world`); rejects unsupported formats with clear `ValueError`. |
+| `run_simulation.py` | MuJoCo grasp simulation; `script.grasp_pose_format` (default `world`); rejects unsupported formats with clear `ValueError`. |
 | `evaluate.py` | Analytical grasp evaluation; accepts plain array or dict-on-disk via `load_generated_grasps`. |
-| `run_rl_evaluation.py` | Deterministic RL policy rollout; same `MuJoCoGraspingEnv` as `train_rl.py`; clips to actuator bounds; optional `--observation-dim-from-env` / `--action-dim-from-env`; `--stochastic` uses `select_action`. |
-| `run_workflow.py` | Orchestrates inference → simulation → evaluation (optional RL rollout); writes artifacts under `--output-dir`. |
+| `run_rl_evaluation.py` | Deterministic RL policy rollout; same `MuJoCoGraspingEnv` as `train_rl.py`; clips to actuator bounds; optional `script.observation_dim_from_env` / `script.action_dim_from_env`; stochastic mode uses `select_action`. |
+| `run_workflow.py` | Orchestrates inference → simulation → evaluation (optional RL rollout); writes artifacts under `artifacts.root`. |
+| `visualize_robot.py` | Passive MuJoCo viewer; actuator controls are the built-in viewer UI. |
 | `print_model_info.py` | Prints checkpoint metadata (`feature_dim`, `hidden_dim`, `num_layers`, RL dims) via `training/checkpoint_io.read_model_checkpoint_metadata`. |
 
 Shared inference logic lives in `inference/grasp_inference_runtime.py`

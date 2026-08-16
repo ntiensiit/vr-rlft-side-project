@@ -555,34 +555,20 @@ grasping_ai/
 │
 ├── configs/
 │   ├── base.yaml
-│   ├── config.yaml
-│   ├── data/
-│   │   └── default.yaml
-│   ├── evaluation/
-│   │   ├── default.yaml
-│   │   ├── diffusion.yaml
-│   │   ├── flow.yaml
-│   │   └── rl.yaml
-│   ├── model/
-│   │   ├── default.yaml
-│   │   ├── diffusion.yaml
-│   │   └── flow.yaml
-│   ├── object/
-│   │   └── default.yaml
-│   ├── gripper/
-│   │   ├── default.yaml
-│   │   └── franka_emika_panda.yaml
-│   ├── env/
-│   │   └── default.yaml
-│   ├── notebook/
-│   │   └── default.yaml
-│   ├── rl/
-│   │   ├── default.yaml
-│   │   └── rl_train.yaml
-│   └── training/
-│       ├── default.yaml
-│       ├── diffusion.yaml
-│       └── flow.yaml
+│   ├── config.yaml              # thin training alias used by scripts/base
+│   ├── project.yaml             # library composition root
+│   ├── artifacts/default.yaml
+│   ├── data/default.yaml
+│   ├── env/default.yaml
+│   ├── evaluation/{default,diffusion,flow,rl}.yaml
+│   ├── gripper/{default,franka_emika_panda}.yaml
+│   ├── model/{default,diffusion,flow,grasp}.yaml
+│   ├── notebook/default.yaml
+│   ├── object/default.yaml
+│   ├── rl/default.yaml
+│   ├── scripts/                 # @hydra.main entrypoints per CLI
+│   ├── training/{default,diffusion,flow,supervised,entrypoint,rl_train}.yaml
+│   └── workflow/default.yaml
 │
 ├── data/
 │   ├── raw/
@@ -592,6 +578,7 @@ grasping_ai/
 │
 ├── src/
 │   └── grasping_ai/
+│       ├── config/
 │       ├── data/
 │       ├── perception/
 │       ├── models/
@@ -605,7 +592,10 @@ grasping_ai/
 │       └── utils/
 │
 ├── scripts/
+│   ├── download_ycb_dataset.py
+│   ├── prepare_ycb_mjcf.py
 │   ├── prepare_data.py
+│   ├── audit_synthetic_labels.py
 │   ├── prepare_observations.py
 │   ├── train_diffusion.py
 │   ├── train_flow.py
@@ -615,7 +605,10 @@ grasping_ai/
 │   ├── evaluate.py
 │   ├── run_simulation.py
 │   ├── run_rl_evaluation.py
+│   ├── extract_object_grasps.py
+│   ├── print_model_info.py
 │   ├── run_artifacts.py
+│   ├── run_workflow.py
 │   └── visualize_robot.py
 │
 ├── notebooks/
@@ -623,7 +616,9 @@ grasping_ai/
 │   ├── train_diffusion.py
 │   ├── train_flow.py
 │   ├── train_rl.py
-│   ├── evaluate.py
+│   ├── evaluate_diffusion.py
+│   ├── evaluate_flow.py
+│   ├── evaluate_rl.py
 │   └── archive/
 │       └── README.md
 │
@@ -662,6 +657,7 @@ This structure is intended to remain simple during the initial implementation wh
 
 | Module | Responsibility | Should not contain |
 |---|---|---|
+| `config/` | Hydra composition and typed config access | Training or robot control |
 | `data/` | Dataset loading, parsing, and data transforms | Robot control or training business logic |
 | `perception/` | Point-cloud and 3D preprocessing | RL or robot control |
 | `models/` | Neural-network architectures | Direct hardware control |
@@ -720,20 +716,14 @@ For example, a grasp-generation model should return a grasp pose. It should not 
 
 ## 16. Configuration
 
-Configuration is separated from source code.
+Configuration is separated from source code and composed with Hydra.
 
-The `configs/` directory is intended for:
+- CLI scripts use `@hydra.main` and `configs/scripts/<name>.yaml`.
+- Library modules read `configs/project.yaml` through `FlattenedYAMLConfig`.
+- Experiment variants are config groups (`model=flow`, `evaluation=rl`) plus dotted overrides (`supervised.num_epochs=10`).
+- Script-local keys live under `script:` and are resolved with `script_or=True`.
 
-- Dataset paths and parameters.
-- Model parameters.
-- Training parameters.
-- Evaluation parameters.
-- Simulation parameters.
-- Robot parameters.
-
-The source code should consume configuration values rather than hard-code experiment-specific parameters.
-
-The configuration system should also make it possible to compare experiments while keeping the implementation unchanged.
+The source code should consume configuration values rather than hard-code experiment-specific parameters. See `docs/USAGE.md` and [ADR-0008](adr/008-hydra-configuration.md).
 
 ## 17. Training Workflow
 
@@ -1006,7 +996,7 @@ A new contributor should understand the project in the following order:
 6. Set up the Python and MuJoCo environment.
 7. Load a YCB object in simulation.
 8. Verify robot and gripper control.
-9. Run the basic grasp-generation and evaluation pipeline via `scripts/run_artifacts.py` or the interactive notebooks in `notebooks/`.
+9. Run the basic grasp-generation and evaluation pipeline via `uv run python scripts/run_artifacts.py` or the interactive notebooks in `notebooks/`.
 10. Only then work on training and RL components.
 
 The first implementation milestone should be an end-to-end system that can produce a grasp pose, execute it in MuJoCo on a YCB object, and report an objective evaluation result.

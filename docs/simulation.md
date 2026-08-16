@@ -7,7 +7,7 @@ The simulation subsystem uses MuJoCo and the YCB object set.
 | Path | Entry point                     | Description |
 | ---- | ------------------------------- | ----------- |
 | Single-grasp simulation | `scripts/run_simulation.py` | Loads a batch of grasps and runs them in MuJoCo against a YCB object. |
-| Robot visualization | `scripts/visualize_robot.py` | Interactive MuJoCo viewer. |
+| Robot visualization | `scripts/visualize_robot.py` | Passive MuJoCo viewer; use the built-in viewer UI for actuators. |
 | RL training environment | `scripts/train_rl.py`        | Uses `MuJoCoGraspingEnv` (Gymnasium-compatible) via SB3 PPO. |
 
 ## Limitations
