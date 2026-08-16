@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
 from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import scipy.spatial  # type: ignore[import-untyped]
 
-from grasping_ai.utils.constants import MIN_NORMAL_NEIGHBORHOOD, NORM_EPS, POINT_CLOUD_NDIM, SPATIAL_DIM
+MIN_NORMAL_NEIGHBORHOOD = int(FLATTENED_YAML_CONFIG.get("geometry.min_normal_neighborhood", 3))
+NORM_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.norm_eps", 1e-8))
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 
 PointCloud = np.ndarray
 FeatureExtractor = Callable[[np.ndarray], np.ndarray]
-
 
 def sample_point_cloud(points: np.ndarray, num_samples: int, rng: np.random.Generator) -> np.ndarray:
     """Sample a fixed number of points from a point cloud.
@@ -43,7 +47,6 @@ def sample_point_cloud(points: np.ndarray, num_samples: int, rng: np.random.Gene
     indices = rng.choice(n, size=num_samples, replace=replace)
     return points[indices]
 
-
 def normalize_point_cloud(points: np.ndarray) -> np.ndarray:
     """Center and scale a point cloud to a unit canonical frame.
 
@@ -68,7 +71,6 @@ def normalize_point_cloud(points: np.ndarray) -> np.ndarray:
     if max_distance > 0:
         return centered / max_distance
     return centered
-
 
 def farthest_point_sampling(points: np.ndarray, num_samples: int, rng: np.random.Generator) -> np.ndarray:
     """Select ``num_samples`` points using farthest point sampling.
@@ -117,7 +119,6 @@ def farthest_point_sampling(points: np.ndarray, num_samples: int, rng: np.random
 
     return selected_indices
 
-
 def estimate_point_cloud_normals(points: np.ndarray, neighborhood_size: int) -> np.ndarray:
     """Estimate per-point normals from local neighborhoods.
 
@@ -165,7 +166,6 @@ def estimate_point_cloud_normals(points: np.ndarray, neighborhood_size: int) -> 
 
     return normals
 
-
 def voxel_downsample(points: np.ndarray, voxel_size: float) -> np.ndarray:
     """Downsample a point cloud using a regular voxel grid.
 
@@ -196,7 +196,6 @@ def voxel_downsample(points: np.ndarray, voxel_size: float) -> np.ndarray:
     np.add.at(counts, inverse_indices, 1.0)
 
     return downsampled / counts[:, np.newaxis]
-
 
 def build_kdtree(points: np.ndarray) -> Any:
     """Build a spatial index over a point cloud for neighbor queries.

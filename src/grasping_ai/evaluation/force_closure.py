@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
+from grasping_ai.utils.path_validation import require_path
+
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -10,23 +14,19 @@ from loguru import logger
 from scipy.optimize import linprog  # type: ignore[import-untyped]
 from scipy.spatial import ConvexHull  # type: ignore[import-untyped]
 
-from grasping_ai.utils.constants import (
-    ALIGNMENT_DOT_THRESHOLD,
-    HULL_HALFSPACE_EPS,
-    LP_FEASIBILITY_EPS,
-    MIN_WRENCH_COLUMNS,
-    NORM_EPS,
-    WRENCH_DIM,
-    WRENCH_LP_EQUALITY_ROWS,
-)
-from grasping_ai.utils.path_validation import require_path
+ALIGNMENT_DOT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("tolerances.alignment_dot_threshold", 0.9))
+HULL_HALFSPACE_EPS = float(FLATTENED_YAML_CONFIG.get("metrics.hull_halfspace_eps", 1e-9))
+LP_FEASIBILITY_EPS = float(FLATTENED_YAML_CONFIG.get("metrics.lp_feasibility_eps", 1e-5))
+MIN_WRENCH_COLUMNS = int(FLATTENED_YAML_CONFIG.get("wrench.min_columns", 6))
+NORM_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.norm_eps", 1e-8))
+WRENCH_DIM = int(FLATTENED_YAML_CONFIG.get("wrench.dim", 6))
+WRENCH_LP_EQUALITY_ROWS = int(FLATTENED_YAML_CONFIG.get("wrench.lp_equality_rows", 7))
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 ContactSet = list[dict[str, np.ndarray]]
 ForceClosureJudge = Callable[[ContactSet], bool]
-
 
 def _parse_contact_record(record: object) -> dict[str, np.ndarray]:
     """Validate one contact record from a serialized contact set.
@@ -52,7 +52,6 @@ def _parse_contact_record(record: object) -> dict[str, np.ndarray]:
         parsed[key] = value
     return parsed
 
-
 def parse_contact_set(loaded: object) -> ContactSet:
     """Validate a deserialized contact-set payload.
 
@@ -74,7 +73,6 @@ def parse_contact_set(loaded: object) -> ContactSet:
     if not isinstance(loaded, list):
         raise TypeError("Contact set must deserialize to a list of contact records")
     return [_parse_contact_record(record) for record in loaded]
-
 
 def load_contact_set(contact_path: Path) -> ContactSet:
     """Load a contact set from a serialized file.
@@ -104,7 +102,6 @@ def load_contact_set(contact_path: Path) -> ContactSet:
         return parse_contact_set(loaded)
     except Exception as e:
         raise ValueError(f"Failed to load contact set: {e}") from e
-
 
 def build_force_closure_judge(friction_coefficient: float, wrench_regularization: float) -> ForceClosureJudge:
     """Construct a callable force-closure judge for a contact set.
@@ -183,7 +180,6 @@ def build_force_closure_judge(friction_coefficient: float, wrench_regularization
 
     return judge
 
-
 def evaluate_force_closure(judge: ForceClosureJudge, contact_set: ContactSet) -> bool:
     """Evaluate whether a contact set provides force closure.
 
@@ -195,7 +191,6 @@ def evaluate_force_closure(judge: ForceClosureJudge, contact_set: ContactSet) ->
         ``True`` if the grasp provides force closure, otherwise ``False``.
     """
     return judge(contact_set)
-
 
 def compute_grasp_wrench_matrix(contact_set: ContactSet, friction_coefficient: float) -> np.ndarray:
     """Compute the grasp wrench matrix from a contact set.
@@ -262,7 +257,6 @@ def compute_grasp_wrench_matrix(contact_set: ContactSet, friction_coefficient: f
         return np.zeros((6, 0))
 
     return np.stack(wrenches, axis=1)
-
 
 def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) -> float:
     """Compute the standardized scalar grasp-quality metric for a contact set.

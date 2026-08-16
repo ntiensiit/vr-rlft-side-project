@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from grasping_ai.perception.geometry import make_transform
+
+from grasping_ai.simulation.mujoco_env import set_actuator_controls
+
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -11,7 +15,6 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
 
 def panda_hand_to_contact_transform() -> np.ndarray:
     """Return the Panda hand-base to contact-center rigid transform.
@@ -23,14 +26,11 @@ def panda_hand_to_contact_transform() -> np.ndarray:
         A ``(4, 4)`` homogeneous transform ``T_hand_contact``.
     """
     import pytransform3d.rotations as pr
-
-    from grasping_ai.perception.geometry import make_transform
-
+    
     position = np.array([0.0, 0.0, -0.102], dtype=np.float64)
     quaternion_wxyz = np.array([0.707106781, 0.0, 0.0, 0.707106781], dtype=np.float64)
     rotation = pr.matrix_from_quaternion(quaternion_wxyz)
     return make_transform(rotation, position)
-
 
 def panda_width_to_finger_joints(width: float) -> tuple[float, float]:
     """Map a Panda finger opening width in meters to slide-joint targets.
@@ -47,7 +47,6 @@ def panda_width_to_finger_joints(width: float) -> tuple[float, float]:
     target_q1 = float(np.clip(target_q1, 0.0, 0.04))
     target_q2 = float(np.clip(target_q2, -0.04, 0.0))
     return target_q1, target_q2
-
 
 def gripper_actuator_indices(mj_model: Any) -> list[int]:
     """Return actuator indices that drive the gripper rather than the arm."""
@@ -67,7 +66,6 @@ def gripper_actuator_indices(mj_model: Any) -> list[int]:
                 indices.append(i)
     logger.info("Found gripper actuator indices: {}", indices)
     return indices
-
 
 def load_gripper_model(gripper_description_path: str) -> dict[str, object]:
     """Load a gripper description from disk.
@@ -106,7 +104,6 @@ def load_gripper_model(gripper_description_path: str) -> dict[str, object]:
         "nq": model.nq,
     }
 
-
 def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[np.ndarray], None]:
     """Build a callable gripper controller that issues open/close commands.
 
@@ -126,8 +123,7 @@ def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[np.n
     if not isinstance(gripper_model, dict) or "model" not in gripper_model:
         raise TypeError("gripper_model must be a dictionary returned by load_gripper_model")
 
-    from grasping_ai.simulation.mujoco_env import set_actuator_controls
-
+    
     def controller(command: np.ndarray) -> None:
         if not isinstance(command, np.ndarray):
             raise TypeError("command must be a numpy array")
@@ -147,7 +143,6 @@ def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[np.n
         set_actuator_controls({"model": model, "data": data}, command)
 
     return controller
-
 
 def make_open_command(gripper_model: dict[str, object]) -> np.ndarray:
     """Build an "open" gripper command for the supplied gripper model.
@@ -173,7 +168,6 @@ def make_open_command(gripper_model: dict[str, object]) -> np.ndarray:
         else:
             cmd[i] = 0.0
     return cmd
-
 
 def make_close_command(gripper_model: dict[str, object]) -> np.ndarray:
     """Build a "close" gripper command for the supplied gripper model.

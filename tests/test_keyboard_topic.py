@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
-import socket
-
 from grasping_ai.pipelines.visualize_robot import run_keyboard_tui
 
+import json
+import socket
 
 def _bind_topic_socket() -> socket.socket:
     """Bind a UDP socket to local loopback on an ephemeral port for testing."""
@@ -15,7 +14,6 @@ def _bind_topic_socket() -> socket.socket:
     sock.bind(("127.0.0.1", 0))
     sock.setblocking(False)
     return sock
-
 
 def _drain_topic_keycodes(sock: socket.socket) -> list[int]:
     """Receive and parse keycode messages from a bound socket."""
@@ -41,7 +39,6 @@ def _drain_topic_keycodes(sock: socket.socket) -> list[int]:
             keycodes.append(keycode)
     return keycodes
 
-
 def test_keyboard_topic_round_trip() -> None:
     """Verify that a keyboard topic message sent over UDP is correctly received and parsed."""
     topic_sock = _bind_topic_socket()
@@ -61,7 +58,6 @@ def test_keyboard_topic_round_trip() -> None:
     finally:
         pub_sock.close()
         topic_sock.close()
-
 
 def test_run_keyboard_tui_publishes_then_quits() -> None:
     """Verify that the keyboard TUI publishes parsed keycodes and terminates on exit indicator."""

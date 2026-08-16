@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+from grasping_ai.data.pointcloud_dataset import save_grasp_sample
+
+from grasping_ai.models.flow import (
+    FlowFieldNet,
+    FlowGeneratorModel,
+    load_flow_model_from_state,
+)
+
+from grasping_ai.pipelines.train_flow import (
+    build_flow_training_components,
+    load_flow_model_checkpoint,
+    run_flow_training_pipeline,
+)
+
 import os
 import subprocess
 import sys
@@ -11,11 +25,9 @@ import numpy as np
 import pytest
 import torch
 
-
 def _make_dataset(tmp_path: Path, *, n_grasps: int, seed: int) -> Path:
     """Create a mock grasp dataset file for testing flow matching models."""
-    from grasping_ai.data.pointcloud_dataset import save_grasp_sample
-
+    
     dataset_root = tmp_path / "dataset"
     dataset_root.mkdir()
     rng = np.random.default_rng(seed)
@@ -33,21 +45,18 @@ def _make_dataset(tmp_path: Path, *, n_grasps: int, seed: int) -> Path:
     )
     return dataset_root
 
-
 def test_flow_model_forward_delegates_to_flow_field() -> None:
     """Verify ``FlowGeneratorModel.forward`` returns flow-field predictions.
 
     Returns:
         None. Asserts output shape matches the input grasp batch.
     """
-    from grasping_ai.models.flow import FlowGeneratorModel
-
+    
     model = FlowGeneratorModel(feature_dim=8, hidden_dim=8, num_layers=1)
     x = torch.zeros(2, 9)
     cond = torch.zeros(2, 8)
     out = model.forward(x, cond)
     assert out.shape == (2, 9)
-
 
 def test_flow_checkpoint_persists_encoder_and_flow_field(tmp_path):
     """The flow checkpoint must contain both encoder and flow_field state.
@@ -56,8 +65,7 @@ def test_flow_checkpoint_persists_encoder_and_flow_field(tmp_path):
     training time must be saved as part of the flow checkpoint so inference
     can reproduce the same conditioning signal.
     """
-    from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
-
+    
     dataset_root = _make_dataset(tmp_path, n_grasps=4, seed=0)
     checkpoint = tmp_path / "flow_model.pt"
     run_flow_training_pipeline(
@@ -77,14 +85,9 @@ def test_flow_checkpoint_persists_encoder_and_flow_field(tmp_path):
     assert any(k.startswith("encoder.") for k in keys), f"flow checkpoint missing encoder keys: {keys}"
     assert any(k.startswith("flow_field.") for k in keys), f"flow checkpoint missing flow_field keys: {keys}"
 
-
 def test_load_flow_model_checkpoint_reproduces_trained_state(tmp_path):
     """``load_flow_model_checkpoint`` restores the encoder used at training."""
-    from grasping_ai.pipelines.train_flow import (
-        load_flow_model_checkpoint,
-        run_flow_training_pipeline,
-    )
-
+    
     dataset_root = _make_dataset(tmp_path, n_grasps=4, seed=1)
     checkpoint = tmp_path / "flow_repro.pt"
     run_flow_training_pipeline(
@@ -105,11 +108,9 @@ def test_load_flow_model_checkpoint_reproduces_trained_state(tmp_path):
     for key in expected:
         assert torch.allclose(model.state_dict()[key], expected[key]), f"mismatch at {key}"
 
-
 def test_flow_training_optimizes_encoder_and_flow_field(tmp_path):
     """Both the encoder and flow field parameters change after a training step."""
-    from grasping_ai.pipelines.train_flow import build_flow_training_components
-
+    
     model, optimizer = build_flow_training_components(
         feature_dim=8, hidden_dim=8, num_layers=2, learning_rate=0.01, device="cpu",
     )
@@ -132,11 +133,9 @@ def test_flow_training_optimizes_encoder_and_flow_field(tmp_path):
     assert updated_encoder_norm != pytest.approx(initial_encoder_norm)
     assert updated_flow_norm != pytest.approx(initial_flow_norm)
 
-
 def test_run_flow_training_pipeline_produces_checkpoint(tmp_path):
     """End-to-end flow training writes a checkpoint."""
-    from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
-
+    
     dataset_root = _make_dataset(tmp_path, n_grasps=4, seed=0)
     checkpoint = tmp_path / "flow_model.pt"
     run_flow_training_pipeline(
@@ -153,11 +152,9 @@ def test_run_flow_training_pipeline_produces_checkpoint(tmp_path):
     )
     assert checkpoint.is_file()
 
-
 def test_run_flow_training_pipeline_rejects_missing_dataset_root(tmp_path):
     """Missing dataset root raises FileNotFoundError."""
-    from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
-
+    
     with pytest.raises(FileNotFoundError):
         run_flow_training_pipeline(
             dataset_root=tmp_path / "missing",
@@ -170,7 +167,6 @@ def test_run_flow_training_pipeline_rejects_missing_dataset_root(tmp_path):
             batch_size=1,
             device="cpu",
         )
-
 
 def test_flow_training_cli(tmp_path):
     """``scripts/train_flow.py`` runs end-to-end via subprocess."""
@@ -205,11 +201,9 @@ def test_flow_training_cli(tmp_path):
     subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
     assert checkpoint.is_file()
 
-
 def test_run_flow_training_pipeline_validations_and_resume(tmp_path: Path) -> None:
     """Verify parameter validations and resuming from checkpoint files in the flow training pipeline."""
-    from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
-
+    
     with pytest.raises(TypeError, match="dataset_root"):
         run_flow_training_pipeline(
             dataset_root="not_a_path",  # type: ignore[arg-type]
@@ -269,14 +263,9 @@ def test_run_flow_training_pipeline_validations_and_resume(tmp_path: Path) -> No
 
     assert checkpoint_2.is_file()
 
-
 def test_flow_network_builder_and_sampler_additional_coverage() -> None:
     """Verify flow network setup errors when using invalid state dict mapping structures."""
-    from grasping_ai.models.flow import (
-        FlowFieldNet,
-        load_flow_model_from_state,
-    )
-
+    
     net = FlowFieldNet(8, 16, 2)
     assert isinstance(net, FlowFieldNet)
 

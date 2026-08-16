@@ -2,31 +2,39 @@
 
 from __future__ import annotations
 
-from functools import partial
-from typing import TYPE_CHECKING
-
-import torch
-
 from grasping_ai.data.training_pairs import (
     build_supervised_training_pairs,
     validate_grasp_dataset,
 )
+
 from grasping_ai.models.diffusion import GraspGeneratorModel
+
 from grasping_ai.pipelines.supervised_training import iter_conditioned_training_batches
-from grasping_ai.training import trainer as training_trainer
+
+from grasping_ai.training import (
+    trainer as training_trainer,
+)
+
 from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+
 from grasping_ai.training.losses import build_diffusion_score_loss
+
 from grasping_ai.training.trainer import (
     BatchSource,
     build_adam_optimizer,
     build_training_step,
     load_training_checkpoint,
 )
+
 from grasping_ai.utils.path_validation import require_path
+
+from functools import partial
+from typing import TYPE_CHECKING
+
+import torch
 
 if TYPE_CHECKING:
     from pathlib import Path
-
 
 def run_diffusion_training_pipeline(
     dataset_root: Path,

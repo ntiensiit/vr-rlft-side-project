@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from grasping_ai.data.pointcloud_dataset import (
+    generate_analytical_grasps,
+    load_grasp_sample,
+)
+
+from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
+
 import os
 import subprocess
 import sys
@@ -12,13 +19,6 @@ import open3d as o3d  # type: ignore[import-untyped]
 import numpy as np
 import pytest
 
-from grasping_ai.data.pointcloud_dataset import (
-    generate_analytical_grasps,
-    load_grasp_sample,
-)
-from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
-
-
 @pytest.fixture
 def temp_mesh_path(tmp_path) -> Path:
     """Fixture providing a temporary 3D mesh box file path using Open3D."""
@@ -26,7 +26,6 @@ def temp_mesh_path(tmp_path) -> Path:
     mesh_file = tmp_path / "cube.obj"
     o3d.io.write_triangle_mesh(str(mesh_file), mesh)
     return mesh_file
-
 
 def test_sample_point_cloud_from_mesh(temp_mesh_path):
     """Verify that sampling a point cloud from a mesh generates the expected size, dtype, and is deterministic."""
@@ -44,7 +43,6 @@ def test_sample_point_cloud_from_mesh(temp_mesh_path):
     pts2 = sample_point_cloud_from_mesh(temp_mesh_path, num_samples, rng2)
     assert np.allclose(pts1, pts2)
 
-
 def test_sample_point_cloud_invalid_inputs(temp_mesh_path):
     """Verify that sampling from a mesh raises appropriate exceptions for non-existent files and invalid parameters."""
     rng = np.random.default_rng(42)
@@ -57,7 +55,6 @@ def test_sample_point_cloud_invalid_inputs(temp_mesh_path):
 
     with pytest.raises(ValueError):
         sample_point_cloud_from_mesh(temp_mesh_path, -10, rng)
-
 
 def test_generate_analytical_grasps():
     """Verify that generating analytical grasps from simulated antipodal points yields valid orthogonal SE3 poses."""
@@ -88,7 +85,6 @@ def test_generate_analytical_grasps():
             r_rot = pose[:3, :3]
             assert np.allclose(r_rot @ r_rot.T, np.eye(3), atol=1e-3)
             assert np.abs(np.linalg.det(r_rot) - 1.0) < 1e-3
-
 
 def test_generate_analytical_grasps_fallback():
     """Verify that relaxed antipodal filters allow grasp generation fallbacks when strict filters yield no candidate poses."""
@@ -122,7 +118,6 @@ def test_generate_analytical_grasps_fallback():
     )
     assert strict.shape == (0, 4, 4)
 
-
 def test_generate_analytical_grasps_strict_policy():
     """Verify that generating grasps under strict constraints yields empty results for flat parallel normal vectors."""
     rng = np.random.default_rng(42)
@@ -138,7 +133,6 @@ def test_generate_analytical_grasps_strict_policy():
         allow_relaxed=True,
     )
     assert grasps.shape == (0, 4, 4)
-
 
 def test_generate_analytical_grasps_validation():
     """Verify that generating analytical grasps validates parameter types and boundary ranges strictly."""
@@ -161,7 +155,6 @@ def test_generate_analytical_grasps_validation():
         generate_analytical_grasps(points, normals, 2, 0.05, rng, strict_antipodal_dot=1.5)
     with pytest.raises(ValueError, match="search_multiplier"):
         generate_analytical_grasps(points, normals, 2, 0.05, rng, search_multiplier=0)
-
 
 def test_prepare_data_synthetic_pipeline(tmp_path):
     """Verify that the prepare_data script in synthetic mode runs via subprocess and exports grasp files correctly."""
@@ -215,7 +208,6 @@ def test_prepare_data_synthetic_pipeline(tmp_path):
     assert isinstance(sample["scores"], np.ndarray)
     assert sample["scores"].shape[0] == sample["grasp_poses"].shape[0]
 
-
 def test_generate_synthetic_dataset_skips_zero_grasp_objects(monkeypatch):
     """Verify that object folders resulting in zero valid analytical grasp candidates are skipped during dataset generation."""
     from scripts.prepare_data import generate_synthetic_dataset
@@ -252,7 +244,6 @@ def test_generate_synthetic_dataset_skips_zero_grasp_objects(monkeypatch):
         npz_file = output_dir / "006_mustard_bottle.npz"
         assert not npz_file.exists()
 
-
 def test_generate_synthetic_dataset_fail_fast_on_required_objects(monkeypatch):
     """Verify that dataset generation fails fast with a RuntimeError if required objects fail to yield grasps."""
     from scripts.prepare_data import generate_synthetic_dataset
@@ -285,7 +276,6 @@ def test_generate_synthetic_dataset_fail_fast_on_required_objects(monkeypatch):
             required_objects=[obj_name],
         )
 
-
 def test_generate_synthetic_dataset_writes_quality_report(tmp_path):
     """Verify that the synthetic dataset pipeline outputs a quality JSON report mapping objects to quality stats."""
     from scripts.prepare_data import generate_synthetic_dataset
@@ -312,7 +302,6 @@ def test_generate_synthetic_dataset_writes_quality_report(tmp_path):
     assert report_path.is_file()
     report_text = report_path.read_text(encoding="utf-8")
     assert obj_name in report_text
-
 
 def test_generate_synthetic_dataset_sim_fallback_to_analytical(tmp_path, monkeypatch):
     """Verify that simulate-validation fallbacks to raw analytical candidates when simulation outcomes fail."""
@@ -353,7 +342,6 @@ def test_generate_synthetic_dataset_sim_fallback_to_analytical(tmp_path, monkeyp
         sim_validate_fallback_analytical=True,
     )
     assert (output_dir / f"{obj_name}.npz").is_file()
-
 
 def test_audit_synthetic_labels(tmp_path):
     """Verify that the audit_synthetic_labels tool runs on generated datasets and computes quality metrics."""

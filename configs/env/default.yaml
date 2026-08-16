@@ -4,3 +4,14 @@ fallback_timestep: ${dt}
 num_steps: 50
 contact_body_names: []
 table_xml: deploy/table.xml
+teleop:
+  key_digit_1: 49
+  key_digit_9: 57
+  key_gripper_toggle: 71
+  key_home: 72
+  key_space: 32
+  actuator_span_large_threshold: 10.0
+  actuator_step_large: 15.0
+  actuator_step_small: 0.05
+  udp_port_min: 0
+  udp_port_max: 65535

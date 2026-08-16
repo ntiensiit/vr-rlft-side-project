@@ -2,3 +2,12 @@
 grasp:
   dim: 9
   representation: 6d_rotation_columns
+  poses_ndim: 3
+  se3_matrix_shape:
+    - 4
+    - 4
+  object_batch_ndim: 4
+  quaternion_dim: 4
+  torch_norm_clamp_min: 1.0e-8
+  torch_degenerate_clamp_min: 1.0e-12
+  min_antipodal_contacts: 2

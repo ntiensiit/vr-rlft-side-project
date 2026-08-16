@@ -2,6 +2,44 @@
 
 from __future__ import annotations
 
+from grasping_ai.evaluation.collision import (
+    build_collision_checker,
+    check_collision,
+    filter_collision_free_grasps,
+)
+
+from grasping_ai.evaluation.force_closure import (
+    build_force_closure_judge,
+    compute_grasp_wrench_matrix,
+    evaluate_force_closure,
+)
+
+from grasping_ai.evaluation.metrics import (
+    aggregate_grasp_success_rate,
+    build_lift_outcome_judge,
+    build_stability_judge,
+    evaluate_lift_success,
+    evaluate_stability,
+)
+
+from grasping_ai.pipelines.evaluate import (
+    aggregate_evaluation_results,
+    evaluate_generated_grasps,
+    read_jsonl_records,
+    write_evaluation_report,
+)
+
+from grasping_ai.pipelines.simulate_grasp import simulate_grasp
+
+from grasping_ai.robotics.gripper import panda_hand_to_contact_transform
+
+from grasping_ai.robotics.kinematics import (
+    build_forward_kinematics,
+    load_robot_model,
+)
+
+from grasping_ai.robotics.transforms import transform_grasp_pose
+
 import os
 import tempfile
 from pathlib import Path
@@ -10,31 +48,6 @@ import numpy as np
 import pytest
 
 import grasping_ai
-from grasping_ai.evaluation.collision import (
-    build_collision_checker,
-    check_collision,
-    filter_collision_free_grasps,
-)
-from grasping_ai.evaluation.force_closure import (
-    build_force_closure_judge,
-    compute_grasp_wrench_matrix,
-    evaluate_force_closure,
-)
-from grasping_ai.evaluation.metrics import (
-    aggregate_grasp_success_rate,
-    build_lift_outcome_judge,
-    build_stability_judge,
-    evaluate_lift_success,
-    evaluate_stability,
-)
-from grasping_ai.pipelines.evaluate import (
-    aggregate_evaluation_results,
-    evaluate_generated_grasps,
-    read_jsonl_records,
-    write_evaluation_report,
-)
-from grasping_ai.pipelines.simulate_grasp import simulate_grasp
-
 
 @pytest.fixture
 def minimal_ycb_root(tmp_path):
@@ -53,7 +66,6 @@ def minimal_ycb_root(tmp_path):
     (obj_dir / "mustard_bottle.xml").write_text(xml_content, encoding="utf-8")
     return tmp_path / "ycb"
 
-
 @pytest.fixture
 def minimal_ycb_root_differing_body_name(tmp_path):
     """Fixture providing a YCB root where the object body name differs from the object folder/file name."""
@@ -71,7 +83,6 @@ def minimal_ycb_root_differing_body_name(tmp_path):
     (obj_dir / "mustard_bottle.xml").write_text(xml_content, encoding="utf-8")
     return tmp_path / "ycb"
 
-
 @pytest.fixture
 def minimal_ycb_root_at_height(tmp_path):
     """Fixture providing a YCB root where the object is initialized at a specific height offset."""
@@ -88,7 +99,6 @@ def minimal_ycb_root_at_height(tmp_path):
     """
     (obj_dir / "mustard_bottle.xml").write_text(xml_content, encoding="utf-8")
     return tmp_path / "ycb"
-
 
 @pytest.fixture
 def minimal_ycb_root_freejoint(tmp_path):
@@ -108,11 +118,9 @@ def minimal_ycb_root_freejoint(tmp_path):
     (obj_dir / "mustard_bottle.xml").write_text(xml_content, encoding="utf-8")
     return tmp_path / "ycb"
 
-
 def test_phase1_package_import_remains_stable():
     """Verify that grasping_ai is importable."""
     assert grasping_ai.__name__ == "grasping_ai"
-
 
 def test_evaluation_config_files_exist():
     """Verify evaluation config default alias, common base, and method variants exist."""
@@ -120,7 +128,6 @@ def test_evaluation_config_files_exist():
     assert os.path.isfile(os.path.join("configs", "evaluation", "diffusion.yaml"))
     assert os.path.isfile(os.path.join("configs", "evaluation", "flow.yaml"))
     assert os.path.isfile(os.path.join("configs", "evaluation", "rl.yaml"))
-
 
 def test_collision_checker_shape_checks():
     """Verify collision checker validates inputs."""
@@ -135,7 +142,6 @@ def test_collision_checker_shape_checks():
 
     with pytest.raises(ValueError, match="clearance"):
         build_collision_checker(obj_pc, grip_pc, -0.01)
-
 
 def test_collision_metric_returns_valid_output():
     """Verify check_collision and filter_collision_free_grasps work."""
@@ -159,7 +165,6 @@ def test_collision_metric_returns_valid_output():
     assert filtered.shape[0] == 1
     assert np.allclose(filtered[0][:3, 3], [1.0, 1.0, 1.0])
 
-
 def test_force_closure_metric_returns_valid_output():
     """Verify force closure LP solver works."""
     judge = build_force_closure_judge(friction_coefficient=0.5, wrench_regularization=1.0)
@@ -180,7 +185,6 @@ def test_force_closure_metric_returns_valid_output():
     fc = evaluate_force_closure(judge, contacts)
     assert isinstance(fc, bool)
 
-
 def test_stability_judge_basic():
     """Verify stability judge evaluates linear/angular velocities."""
     judge = build_stability_judge(max_linear_velocity=0.1, max_angular_velocity=0.05)
@@ -191,19 +195,16 @@ def test_stability_judge_basic():
     vel_unstable = np.array([0.2, 0.0, 0.0, 0.0, 0.0, 0.0])
     assert evaluate_stability(judge, vel_unstable) is False
 
-
 def test_lift_outcome_judge_basic():
     """Verify lift outcome judge evaluates height difference."""
     judge = build_lift_outcome_judge(lift_height_threshold=0.05)
     assert evaluate_lift_success(judge, 0.1, 0.16) is True
     assert evaluate_lift_success(judge, 0.1, 0.12) is False
 
-
 def test_aggregate_grasp_success_rate():
     """Verify success rate computation."""
     per_obj = {"obj1": True, "obj2": False, "obj3": True}
     assert aggregate_grasp_success_rate(per_obj) == pytest.approx(2.0 / 3.0)
-
 
 def test_run_simulation_rejects_missing_robot_xml(minimal_ycb_root):
     """Verify simulation raises error on missing robot XML."""
@@ -218,7 +219,6 @@ def test_run_simulation_rejects_missing_robot_xml(minimal_ycb_root):
             10,
             np.zeros(1),
         )
-
 
 def test_run_simulation_creates_outcome_report(panda_robot_xml, minimal_ycb_root):
     """Verify simulate_grasp runs and returns valid outcome dict."""
@@ -237,7 +237,6 @@ def test_run_simulation_creates_outcome_report(panda_robot_xml, minimal_ycb_root
     assert "initial_height" in outcome
     assert "final_height" in outcome
     assert "contact_count" in outcome
-
 
 def test_run_simulation_validates_success_contract_params(panda_robot_xml, minimal_ycb_root):
     """Verify simulate_grasp validates lift and stability thresholds."""
@@ -277,7 +276,6 @@ def test_run_simulation_validates_success_contract_params(panda_robot_xml, minim
             max_angular_velocity=-0.1,
         )
 
-
 def test_evaluate_creates_report_from_synthetic_inputs():
     """Verify evaluate_generated_grasps runs evaluation on batch."""
     grasps = np.stack([np.eye(4), np.eye(4)], axis=0)
@@ -316,7 +314,6 @@ def test_evaluate_creates_report_from_synthetic_inputs():
         summary = next(record for record in records if record.get("record_type") == "summary")
         assert "success_rate" in summary
 
-
 def test_phase6_pipelines_do_not_leak_global_state(panda_robot_xml, minimal_ycb_root):
     """Verify that multiple simulation runs are independent."""
     grasp1 = np.eye(4)
@@ -343,7 +340,6 @@ def test_phase6_pipelines_do_not_leak_global_state(panda_robot_xml, minimal_ycb_
     assert np.allclose(outcome1["grasp_pose"], grasp1)
     assert np.allclose(outcome2["grasp_pose"], grasp2)
 
-
 def test_simulate_grasp_renames_object_body_to_object_identifier(panda_robot_xml, minimal_ycb_root_differing_body_name):
     """Verify object body is renamed to the identifier so lookups succeed.
 
@@ -352,13 +348,7 @@ def test_simulate_grasp_renames_object_body_to_object_identifier(panda_robot_xml
         minimal_ycb_root_differing_body_name: YCB root whose object body name
             differs from the object identifier.
     """
-    from grasping_ai.robotics.gripper import panda_hand_to_contact_transform
-    from grasping_ai.robotics.kinematics import (
-        build_forward_kinematics,
-        load_robot_model,
-    )
-    from grasping_ai.robotics.transforms import transform_grasp_pose
-
+            
     r_model = load_robot_model(str(panda_robot_xml))
     q_home = np.array([0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853, 0.04, 0.04])
     hand_pose = build_forward_kinematics(r_model)(q_home)
@@ -385,7 +375,6 @@ def test_simulate_grasp_renames_object_body_to_object_identifier(panda_robot_xml
     assert outcome["final_height"] == pytest.approx(0.5)
     assert np.allclose(outcome["grasp_pose"], contact_grasp)
 
-
 def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(panda_robot_xml, minimal_ycb_root_at_height):
     """Verify IK failure returns an unsuccessful outcome without simulating."""
     grasp = np.eye(4)
@@ -406,7 +395,6 @@ def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(panda_robot_xml,
     assert np.array_equal(outcome["object_velocity"], np.zeros(6))
     assert np.allclose(outcome["grasp_pose"], grasp)
 
-
 def test_simulate_grasp_ik_failure_aligns_freejoint_object(panda_robot_xml, minimal_ycb_root_freejoint):
     """Verify unreachable grasps still run physics when the object can teleport."""
     grasp = np.eye(4)
@@ -423,7 +411,6 @@ def test_simulate_grasp_ik_failure_aligns_freejoint_object(panda_robot_xml, mini
     assert outcome["success"] is False
     assert outcome["fk_position_error"] == float("inf")
     assert outcome["initial_height"] != 0.0
-
 
 def test_simulate_grasp_missing_object_body_reports_error(panda_robot_xml, tmp_path):
     """Verify a missing object body is reported as an error, not silently zeroed."""

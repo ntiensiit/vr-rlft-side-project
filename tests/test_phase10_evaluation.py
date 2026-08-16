@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
-
-import numpy as np
-import pytest
-
 from grasping_ai.evaluation.collision import (
     build_collision_checker,
     check_collision,
     filter_collision_free_grasps,
     generate_analytical_contacts,
 )
+
 from grasping_ai.evaluation.force_closure import (
     build_force_closure_judge,
     compute_grasp_quality,
@@ -21,6 +16,7 @@ from grasping_ai.evaluation.force_closure import (
     evaluate_force_closure,
     load_contact_set,
 )
+
 from grasping_ai.evaluation.metrics import (
     aggregate_grasp_success_rate,
     build_lift_outcome_judge,
@@ -28,14 +24,22 @@ from grasping_ai.evaluation.metrics import (
     evaluate_lift_success,
     evaluate_stability,
 )
+
 from grasping_ai.pipelines.evaluate import (
     aggregate_evaluation_results,
     evaluate_generated_grasps,
     read_jsonl_records,
     write_evaluation_report,
+    write_jsonl_records,
 )
+
 from grasping_ai.pipelines.generate_grasps import load_generated_grasps
 
+import tempfile
+from pathlib import Path
+
+import numpy as np
+import pytest
 
 @pytest.fixture
 def temp_files():
@@ -73,7 +77,6 @@ def temp_files():
             "report_path": report_path,
         }
 
-
 def test_analytical_contacts_valid():
     """Verify that generate_analytical_contacts correctly computes positions and normals for contact points within clearance."""
     # Setup simple geometry
@@ -99,7 +102,6 @@ def test_analytical_contacts_valid():
     # The contact normal points from the gripper sample toward the object origin.
     assert np.allclose(contacts[0]["normal"], np.array([0.0, 0.0, -1.0]))
 
-
 def test_analytical_contacts_rejection():
     """Verify that generate_analytical_contacts yields zero contacts when geometry points are too far apart."""
     object_pc = np.array([[0.0, 0.0, 0.0]], dtype=np.float32)
@@ -109,7 +111,6 @@ def test_analytical_contacts_rejection():
     # Too far, should yield 0 contacts
     contacts = generate_analytical_contacts(object_pc, gripper_pc, grasp_pose, contact_clearance=0.005)
     assert len(contacts) == 0
-
 
 def test_analytical_contacts_invalid_shapes():
     """Verify that generate_analytical_contacts raises ValueError for dimension or shape mismatches."""
@@ -125,18 +126,15 @@ def test_analytical_contacts_invalid_shapes():
     with pytest.raises(ValueError, match="grasp_pose"):
         generate_analytical_contacts(object_pc, gripper_pc, grasp_pose, 0.005)
 
-
 def test_grasp_quality_empty():
     """Verify that compute_grasp_quality returns zero for empty contact lists."""
     assert compute_grasp_quality([], friction_coefficient=0.5) == 0.0
-
 
 def test_grasp_quality_rank_deficient():
     """Verify that compute_grasp_quality returns zero for rank-deficient wrench matrices (e.g. single contact point)."""
     # Only 1 contact, wrench matrix will be rank deficient (< 6)
     contacts = [{"position": np.array([0.0, 0.0, 0.0]), "normal": np.array([0.0, 0.0, 1.0])}]
     assert compute_grasp_quality(contacts, friction_coefficient=0.5) == 0.0
-
 
 def test_grasp_quality_valid_force_closure():
     """Verify that compute_grasp_quality calculates positive quality for valid force-closure contacts."""
@@ -151,7 +149,6 @@ def test_grasp_quality_valid_force_closure():
 
     q = compute_grasp_quality(contacts, friction_coefficient=0.5)
     assert q > 0.0
-
 
 def test_evaluate_generated_grasps_analytical():
     """Verify that evaluate_generated_grasps correctly runs analytical evaluations on batch grasp inputs."""
@@ -180,7 +177,6 @@ def test_evaluate_generated_grasps_analytical():
     assert evals[0]["collision_free"] is True
     assert evals[0]["force_closure"] is True
     assert evals[0]["grasp_success"] is True
-
 
 def test_aggregate_evaluation_results():
     """Verify that aggregate_evaluation_results computes correct statistics over multiple objects and runs."""
@@ -215,7 +211,6 @@ def test_aggregate_evaluation_results():
     assert report["collision_free_rate"] == pytest.approx(2.0 / 3.0)
     assert report["mean_grasp_quality"] == pytest.approx(0.5 / 3.0)
 
-
 def test_evaluate_script_plain_array(temp_files):
     """Verify that evaluate_generated_grasps can load and evaluate plain numpy array grasp formats."""
     grasps = load_generated_grasps(temp_files["grasps_arr_path"], object_key="default")
@@ -235,7 +230,6 @@ def test_evaluate_script_plain_array(temp_files):
     write_evaluation_report(temp_files["report_path"], report)
     assert temp_files["report_path"].is_file()
 
-
 def test_evaluate_script_dictionary(temp_files):
     """Verify that evaluate_generated_grasps can load and evaluate pickled dictionary grasp formats."""
     grasps = load_generated_grasps(temp_files["grasps_dict_path"], object_key="mustard_bottle")
@@ -253,7 +247,6 @@ def test_evaluate_script_dictionary(temp_files):
     results = {"mustard_bottle": evals}
     report = aggregate_evaluation_results(results)
     assert "mean_grasp_quality" in report
-
 
 def test_force_closure_load_contact_set_validations(tmp_path: Path) -> None:
     """Verify validations and type/value exceptions for loading contact set file payloads."""
@@ -276,7 +269,6 @@ def test_force_closure_load_contact_set_validations(tmp_path: Path) -> None:
     corrupted_file.write_bytes(b"invalid data")
     with pytest.raises(ValueError, match="Failed to load contact set"):
         load_contact_set(corrupted_file)
-
 
 def test_force_closure_judge_and_quality_validations() -> None:
     """Verify validation boundaries and force closure computations under various contact normals."""
@@ -304,7 +296,6 @@ def test_force_closure_judge_and_quality_validations() -> None:
 
     q = compute_grasp_quality(contacts_x_normal, 0.5)
     assert q > 0.0
-
 
 def test_metrics_validations() -> None:
     """Verify stability and lift outcome judge validations for dimensions, non-negative bounds, and types."""
@@ -338,7 +329,6 @@ def test_metrics_validations() -> None:
         aggregate_grasp_success_rate("not_a_dict")  # type: ignore[arg-type]
     assert aggregate_grasp_success_rate({}) == 0.0
     assert aggregate_grasp_success_rate({"obj1": True, "obj2": False}) == 0.5
-
 
 def test_collision_and_evaluate_pipeline_validations() -> None:
     """Verify that collision checking and grasp evaluation functions validate shapes, boundaries, and clear ranges."""
@@ -386,7 +376,6 @@ def test_collision_and_evaluate_pipeline_validations() -> None:
 
     assert aggregate_evaluation_results({})["success_rate"] == 0.0
 
-
 def test_force_closure_additional_branches() -> None:
     """Verify additional force closure logic branches including incomplete contact structures and zero contact lists."""
     incomplete_contacts = [{"position": np.zeros(3)}, {"normal": np.zeros(3)}]
@@ -396,7 +385,6 @@ def test_force_closure_additional_branches() -> None:
     zero_contacts = [{"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])} for _ in range(7)]
     q_zero = compute_grasp_quality(zero_contacts, 0.5)
     assert q_zero == 0.0
-
 
 def test_collision_additional_branches() -> None:
     """Verify validation checks on input geometries, non-finite arrays, and invalid contact clearance boundaries."""
@@ -437,7 +425,6 @@ def test_collision_additional_branches() -> None:
     assert filter_collision_free_grasps(colliding_checker, np.eye(4)).shape == (0, 4, 4)
     assert filter_collision_free_grasps(colliding_checker, np.stack([np.eye(4), np.eye(4)])).shape == (0, 4, 4)
 
-
 def test_evaluate_pipeline_additional_branches(tmp_path: Path) -> None:
     """Verify custom contact providers and file path arguments inside the evaluation pipeline."""
     contacts = [{"position": np.zeros(3), "normal": np.array([0.0, 0.0, 1.0])}]
@@ -467,7 +454,6 @@ def test_evaluate_pipeline_additional_branches(tmp_path: Path) -> None:
     with pytest.raises(TypeError, match="per_object_results must be a dictionary"):
         aggregate_evaluation_results("not_a_dict")  # type: ignore[arg-type]
 
-
 def test_force_closure_additional_rank_and_friction() -> None:
     """Verify force closure evaluations for negative friction coefficients and zero-normal vectors."""
     with pytest.raises(ValueError, match="friction_coefficient must be non-negative"):
@@ -481,7 +467,6 @@ def test_force_closure_additional_rank_and_friction() -> None:
     w_zero = compute_grasp_wrench_matrix(zero_normal_contact, 0.5)
     assert w_zero.shape == (6, 0)
 
-
 def test_force_closure_degenerate_contacts_hull_fallback() -> None:
     """Verify that degenerate contact points spanning a subspace yield zero grasp quality values."""
     degenerate_contacts = [
@@ -493,7 +478,6 @@ def test_force_closure_degenerate_contacts_hull_fallback() -> None:
     ]
     q_deg = compute_grasp_quality(degenerate_contacts, friction_coefficient=0.5)
     assert q_deg == 0.0
-
 
 def test_aggregate_evaluation_results_partial_records() -> None:
     """Verify aggregation results on partial evaluation records and missing keys."""
@@ -507,7 +491,6 @@ def test_aggregate_evaluation_results_partial_records() -> None:
     agg = aggregate_evaluation_results(per_obj)
     assert "success_rate" in agg
     assert agg["success_rate"] == 0.0
-
 
 def test_force_closure_enclosing_origin_6d_hull() -> None:
     """Verify that six opposing contact points enclosing the coordinate origin yield positive grasp quality."""
@@ -524,7 +507,6 @@ def test_force_closure_enclosing_origin_6d_hull() -> None:
     quality = compute_grasp_quality(contacts, 0.5)
     assert quality > 0.0
 
-
 def test_load_contact_set_1d_array(tmp_path: Path) -> None:
     """Verify that load_contact_set properly unpacks 1D arrays or scalar object payloads from disk."""
     payload = np.empty((), dtype=object)
@@ -534,7 +516,6 @@ def test_load_contact_set_1d_array(tmp_path: Path) -> None:
     loaded = load_contact_set(path)
     assert len(loaded) == 1
     assert "position" in loaded[0]
-
 
 def test_evaluate_generated_grasps_validations_and_contact_path(tmp_path: Path) -> None:
     """Verify validation checks and file loading in the main generate_grasps evaluation pipeline."""
@@ -565,7 +546,6 @@ def test_evaluate_generated_grasps_validations_and_contact_path(tmp_path: Path) 
     results = evaluate_generated_grasps(np.eye(4), obj_pc, grip_pc, contact_path=contact_path)
     assert len(results) == 1
 
-
 def test_evaluate_generated_grasps_all_colliding_filtered() -> None:
     """Verify that all colliding grasps are filtered out when collision checking is enabled."""
     obj_pc = np.zeros((10, 3), dtype=np.float32)
@@ -575,11 +555,9 @@ def test_evaluate_generated_grasps_all_colliding_filtered() -> None:
     results = evaluate_generated_grasps(grasps, obj_pc, grip_pc, clearance=0.05, filter_collisions=True)
     assert results == []
 
-
 def test_write_evaluation_report_tb_and_exceptions(tmp_path: Path) -> None:
     """Verify that write_evaluation_report writes JSONL outputs, logs to TensorBoard, and validates paths."""
-    from grasping_ai.pipelines.evaluate import write_evaluation_report
-
+    
     with pytest.raises(TypeError, match=r"report_path must be a pathlib\.Path"):
         write_evaluation_report("not_a_path", {})  # type: ignore[arg-type]
 
@@ -597,7 +575,6 @@ def test_write_evaluation_report_tb_and_exceptions(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Failed to write JSONL records"):
         write_evaluation_report(dir_path, {})
 
-
 def test_jsonl_io_validation_and_error_paths(tmp_path: Path) -> None:
     """Validate JSONL read/write helpers and their error handling.
 
@@ -607,8 +584,7 @@ def test_jsonl_io_validation_and_error_paths(tmp_path: Path) -> None:
     Returns:
         None. Asserts type, parse, and mapping validation failures are raised.
     """
-    from grasping_ai.pipelines.evaluate import write_jsonl_records
-
+    
     with pytest.raises(TypeError, match=r"output_path must be a pathlib\.Path"):
         write_jsonl_records("bad", [])  # type: ignore[arg-type]
 
@@ -646,15 +622,9 @@ def test_jsonl_io_validation_and_error_paths(tmp_path: Path) -> None:
     assert multi_records[0]["record_type"] == "object"
     assert multi_records[1]["record_type"] == "summary"
 
-
 def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:
     """Verify force closure judge evaluations for rank-deficient systems and loaded multi-item contact files."""
-    from grasping_ai.evaluation.force_closure import (
-        build_force_closure_judge,
-        compute_grasp_quality,
-        load_contact_set,
-    )
-
+    
     c1 = [{"position": np.array([0.01, 0.0, 0.0]), "normal": np.array([-1.0, 0.0, 0.0])}]
     q1 = compute_grasp_quality(c1, friction_coefficient=0.5)
     assert q1 == 0.0
@@ -721,16 +691,11 @@ def test_force_closure_additional_coverage(monkeypatch, tmp_path: Path) -> None:
     q_err = compute_grasp_quality(c_valid, friction_coefficient=0.5)
     assert q_err == 0.0
 
-
 def test_force_closure_full_branch_coverage(monkeypatch) -> None:
     """Verify optimizer branch failures and exceptions inside the force closure linear programming solver."""
     import scipy.optimize
 
-    from grasping_ai.evaluation.force_closure import (
-        build_force_closure_judge,
-        compute_grasp_quality,
-    )
-
+    
     c_3pts = [
         {"position": np.array([1.0, 0.0, 0.0]), "normal": np.array([0.0, 1.0, 0.0])},
         {"position": np.array([0.0, 1.0, 0.0]), "normal": np.array([0.0, 0.0, 1.0])},
@@ -752,7 +717,6 @@ def test_force_closure_full_branch_coverage(monkeypatch) -> None:
 
     monkeypatch.setattr(scipy.optimize, "linprog", raise_err)
     assert not judge(c_3pts)
-
 
 def test_evaluate_additional_branch_coverage(tmp_path: Path) -> None:
     """Verify evaluation and reporting branches when all configurations trigger collisions."""

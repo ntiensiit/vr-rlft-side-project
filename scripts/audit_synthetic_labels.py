@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+
+from grasping_ai.data.pointcloud_dataset import iterate_grasp_dataset
+
+from grasping_ai.evaluation.collision import (
+    build_collision_checker,
+    filter_collision_free_grasps,
+    generate_analytical_contacts,
+)
+
+from grasping_ai.evaluation.force_closure import compute_grasp_quality
+
 import json
 from pathlib import Path
 
@@ -10,23 +22,12 @@ import numpy as np
 from loguru import logger
 from omegaconf import DictConfig
 
-from grasping_ai.config.config import SCRIPTS_CONFIG_PATH, config_value
-from grasping_ai.data.pointcloud_dataset import iterate_grasp_dataset
-from grasping_ai.evaluation.collision import (
-    build_collision_checker,
-    filter_collision_free_grasps,
-    generate_analytical_contacts,
-)
-from grasping_ai.evaluation.force_closure import compute_grasp_quality
-
-
 def _default_gripper_point_cloud() -> np.ndarray:
     x = np.linspace(-0.03, 0.03, 4)
     y = np.linspace(-0.02, 0.02, 3)
     z = np.linspace(-0.04, 0.04, 5)
     gripper_point_cloud = np.stack(np.meshgrid(x, y, z, indexing="ij"), axis=-1).reshape(-1, 3)
     return gripper_point_cloud.astype(np.float32)
-
 
 def audit_synthetic_labels(
     dataset_root: Path | str,
@@ -101,30 +102,27 @@ def audit_synthetic_labels(
 
     return records
 
-
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/audit_synthetic_labels")
 def main(cfg: DictConfig) -> None:
+    yaml_config = FlattenedYAMLConfig(cfg)
     report = audit_synthetic_labels(
-        dataset_root=config_value(cfg, "paths", "dataset_root", value_type=Path, required=True),
-        friction_coefficient=config_value(
-            cfg,
+        dataset_root=yaml_config.value("paths", "dataset_root", value_type=Path, required=True),
+        friction_coefficient=yaml_config.value(
             "synthetic",
             "friction_coefficient",
             value_type=float,
-            default=config_value(cfg, "metrics", "friction_coefficient", value_type=float),
+            default=yaml_config.value("metrics", "friction_coefficient", value_type=float),
         ),
-        collision_clearance=config_value(
-            cfg,
+        collision_clearance=yaml_config.value(
             "synthetic",
             "collision_clearance",
             value_type=float,
-            default=config_value(cfg, "metrics", "collision_clearance", value_type=float),
+            default=yaml_config.value("metrics", "collision_clearance", value_type=float),
         ),
-        output_path=config_value(cfg, "output", value_type=Path, script_or=True),
+        output_path=yaml_config.value("output", value_type=Path, script_or=True),
     )
     for entry in report:
         logger.info("{}", json.dumps(entry))
-
 
 if __name__ == "__main__":
     main()

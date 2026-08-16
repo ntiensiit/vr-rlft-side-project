@@ -1,3 +1,10 @@
+from grasping_ai import (
+    FlattenedYAMLConfig,
+    init_mlflow,
+    run_flow_training_pipeline,
+    setup_logging,
+)
+
 # %% [markdown]
 # # Flow-Matching Grasp Training
 #
@@ -20,6 +27,7 @@ try:
 
     in_colab = True
 except ImportError:
+    google.colab = None  # pragma: no cover
     in_colab = False
 
 if in_colab:
@@ -55,9 +63,7 @@ root = bootstrap_notebook()
 # Hydra overrides select `model/flow.yaml`, `training/flow.yaml`, and `evaluation/flow.yaml`.
 
 # %%
-from grasping_ai.config.config import config_value
-from grasping_ai.pipelines.train_flow import run_flow_training_pipeline
-from grasping_ai.utils.logging_utils import init_mlflow, setup_logging
+
 from notebook_helpers import (
     build_supervised_train_kwargs,
     config_dir_relative,
@@ -79,6 +85,7 @@ CONFIG_NAME = "training/flow"
 config_dir_arg = config_dir_relative(CONFIG_DIR, root)
 
 cfg = load_notebook_config(CONFIG_DIR, CONFIG_NAME)
+yaml_config = FlattenedYAMLConfig(cfg)
 object_ids = object_ids_from_config(cfg)
 seed, device = configure_seeds_and_device(cfg)
 learning_rate, num_epochs, batch_size = supervised_hyperparameters(cfg)
@@ -115,7 +122,7 @@ print("records:", sorted(p.name for p in dataset_root.glob("*.npz")))
 # %%
 setup_logging(module_name="train_flow")
 use_mlflow = init_mlflow(cfg)
-checkpoint_path = config_value(cfg, "flow", "checkpoint", value_type=Path)
+checkpoint_path = yaml_config.value( "flow", "checkpoint", value_type=Path)
 checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
 train_kwargs = build_supervised_train_kwargs(
@@ -148,4 +155,4 @@ run_with_optional_mlflow(
 # ## 5. Results
 
 # %%
-print_checkpoint_summary(checkpoint_path, config_value(cfg, "flow", "tensorboard", value_type=Path))
+print_checkpoint_summary(checkpoint_path, yaml_config.value( "flow", "tensorboard", value_type=Path))

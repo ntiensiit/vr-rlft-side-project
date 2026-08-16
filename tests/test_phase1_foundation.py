@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
+from grasping_ai.perception.geometry import (
+    apply_transform,
+    grasp_pose_to_transform,
+    identity_transform,
+    invert_transform,
+    make_transform,
+    rotation_matrix_from_axis_angle,
+    rotation_matrix_to_axis_angle,
+)
+
 import os
 
 import hypothesis.strategies as st
@@ -13,21 +23,10 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis.extra.numpy import arrays
 
 import grasping_ai
-from grasping_ai.perception.geometry import (
-    apply_transform,
-    grasp_pose_to_transform,
-    identity_transform,
-    invert_transform,
-    make_transform,
-    rotation_matrix_from_axis_angle,
-    rotation_matrix_to_axis_angle,
-)
-
 
 def test_package_imports():
     """Verify that grasping_ai is importable."""
     assert grasping_ai.__name__ == "grasping_ai"
-
 
 def test_math_dependencies_available():
     """Verify that core math libraries can be imported."""
@@ -38,12 +37,10 @@ def test_math_dependencies_available():
     assert np.__version__ is not None
     assert theseus.__version__ is not None
 
-
 def test_base_config_file_exists():
     """Verify that configs/base.yaml exists."""
     config_path = os.path.join("configs", "base.yaml")
     assert os.path.isfile(config_path)
-
 
 def test_base_config_contains_contract_keys():
     """Verify base.yaml contains the required contract keys by plain text."""
@@ -55,20 +52,17 @@ def test_base_config_contains_contract_keys():
     assert "output_dir:" in content
     assert "paths:" in content
 
-
 def test_pyproject_preserves_src_package_layout():
     """Verify pyproject.toml preserves src package layout."""
     with open("pyproject.toml", encoding="utf-8") as f:
         content = f.read()
     assert 'packages = ["src"]' in content or "packages = ['src']" in content or '"src"' in content
 
-
 def test_se3_primitive_identity_behavior():
     """Verify that identity_transform returns identity matrix."""
     eye = identity_transform()
     assert eye.shape == (4, 4)
     assert np.allclose(eye, np.eye(4))
-
 
 def test_se3_primitive_invalid_shape():
     """Verify type and shape errors raise appropriate exceptions."""
@@ -104,14 +98,12 @@ def test_se3_primitive_invalid_shape():
     with pytest.raises(TypeError, match="numpy array"):
         apply_transform(np.zeros((10, 3)), "invalid")
 
-
 def test_se3_primitive_non_finite_input():
     """Verify non-finite inputs behavior (NaN or inf)."""
     with pytest.raises(ValueError, match="unit vector"):
         rotation_matrix_from_axis_angle(np.array([np.nan, 0.0, 0.0]), 0.0)
     with pytest.raises(ValueError, match="unit vector"):
         rotation_matrix_from_axis_angle(np.array([np.inf, 0.0, 0.0]), 0.0)
-
 
 def test_se3_primitive_no_global_side_effects():
     """Verify that calling functions twice with different inputs has no side effects."""
@@ -122,7 +114,6 @@ def test_se3_primitive_no_global_side_effects():
     r1_second = rotation_matrix_from_axis_angle(axis1, 0.5)
     assert np.allclose(r1, r1_second)
     assert not np.allclose(r1, r2)
-
 
 def test_geometry_rotation_matrix_axis_angle():
     """Test rotation_matrix_from_axis_angle and rotation_matrix_to_axis_angle conversion."""
@@ -139,7 +130,6 @@ def test_geometry_rotation_matrix_axis_angle():
     else:
         assert np.allclose(rec_axis, -axis)
         assert np.allclose(rec_angle, -angle)
-
 
 def test_geometry_make_and_invert_transform():
     """Test make_transform, invert_transform and grasp_pose_to_transform."""
@@ -158,7 +148,6 @@ def test_geometry_make_and_invert_transform():
     identity = np.matmul(t, t_inv)
     assert np.allclose(identity, np.eye(4))
 
-
 def test_geometry_apply_transform():
     """Test apply_transform on a set of points."""
     points = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
@@ -170,9 +159,7 @@ def test_geometry_apply_transform():
     expected = points + translation
     assert np.allclose(transformed, expected)
 
-
 # --- Property-Based Testing (Hypothesis) ---
-
 
 @st.composite
 def unit_vectors(draw):
@@ -189,7 +176,6 @@ def unit_vectors(draw):
         return np.array([1.0, 0.0, 0.0])
     return vec / norm
 
-
 @st.composite
 def rotation_matrices(draw):
     """Generate a valid 3x3 rotation matrix using random axis and angle."""
@@ -197,13 +183,11 @@ def rotation_matrices(draw):
     angle = draw(st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False))
     return rotation_matrix_from_axis_angle(axis, angle)
 
-
 translations = arrays(
     np.float64,
     (3,),
     elements=st.floats(min_value=-1000.0, max_value=1000.0, allow_nan=False, allow_infinity=False),
 )
-
 
 @st.composite
 def point_clouds(draw):
@@ -222,7 +206,6 @@ def point_clouds(draw):
         ),
     )
 
-
 @given(
     axis=unit_vectors(),
     angle=st.floats(min_value=-2 * np.pi, max_value=2 * np.pi, allow_nan=False, allow_infinity=False),
@@ -237,7 +220,6 @@ def test_property_rotation_matrix_validity(axis, angle):
     # Check determinant is ~ 1.0
     assert np.isclose(np.linalg.det(r), 1.0, atol=1e-6)
 
-
 @given(
     axis=unit_vectors(),
     angle=st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False),
@@ -250,7 +232,6 @@ def test_property_rotation_matrix_axis_angle_roundtrip(axis, angle):
     # Reconstruct matrix from recovered axis/angle and check equality with r
     r_rec = rotation_matrix_from_axis_angle(rec_axis, rec_angle)
     assert np.allclose(r, r_rec, atol=1e-6)
-
 
 @given(rotation=rotation_matrices(), translation=translations)
 @settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
@@ -272,7 +253,6 @@ def test_property_make_and_invert_transform(rotation, translation):
     assert np.allclose(np.matmul(t, t_inv), np.eye(4), atol=1e-6)
     assert np.allclose(np.matmul(t_inv, t), np.eye(4), atol=1e-6)
 
-
 @given(points=point_clouds(), rotation=rotation_matrices(), translation=translations)
 @settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
 def test_property_apply_transform(points, rotation, translation):
@@ -289,7 +269,6 @@ def test_property_apply_transform(points, rotation, translation):
     t_inv = invert_transform(t)
     reverted = apply_transform(transformed, t_inv)
     assert np.allclose(reverted, points, atol=1e-6)
-
 
 def test_geometry_additional_validation_branches() -> None:
     """Verify validation checks on invalid rotations, translations, axes, angles, and transform shapes."""

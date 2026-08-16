@@ -1,3 +1,9 @@
+from grasping_ai import (
+    FlattenedYAMLConfig,
+    init_mlflow,
+    setup_logging,
+)
+
 # %% [markdown]
 # # Flow-Matching Grasp Evaluation
 #
@@ -20,6 +26,7 @@ try:
 
     in_colab = True
 except ImportError:
+    google.colab = None  # pragma: no cover
     in_colab = False
 
 if in_colab:
@@ -56,7 +63,11 @@ root = bootstrap_notebook()
 import json
 import numpy as np
 
-from grasping_ai.config.config import config_get, config_value
+try:
+    import mlflow
+except ImportError:
+    mlflow = None  # pragma: no cover
+
 from notebook_helpers import (
     config_dir_relative,
     load_notebook_config,
@@ -76,13 +87,14 @@ config_dir_arg = config_dir_relative(CONFIG_DIR, root)
 FLOW_CONFIG_NAME = "evaluation/flow"
 
 cfg = load_notebook_config(CONFIG_DIR, "config", overrides=["evaluation=flow", "training=flow", "model=flow"])
+yaml_config = FlattenedYAMLConfig(cfg)
 all_object_ids = object_ids_from_config(cfg)
 object_id = selected_object_id(cfg)
 seed, device = configure_seeds_and_device(cfg)
 experiment = notebook_experiment(cfg)
 
-exports_dir = config_value(cfg, "paths", "exports", value_type=Path)
-reports_dir = config_value(cfg, "paths", "reports", value_type=Path)
+exports_dir = yaml_config.value( "paths", "exports", value_type=Path)
+reports_dir = yaml_config.value( "paths", "reports", value_type=Path)
 exports_dir.mkdir(parents=True, exist_ok=True)
 reports_dir.mkdir(parents=True, exist_ok=True)
 
@@ -111,20 +123,20 @@ observation_path = observations_dir / f"{object_id}.npy"
 gripper_point_cloud = np.load(observations_dir / "gripper.npy")
 object_point_cloud = np.load(observation_path)
 
-checkpoint_path = config_value(cfg, "flow", "checkpoint", value_type=Path)
+checkpoint_path = yaml_config.value( "flow", "checkpoint", value_type=Path)
 exists = checkpoint_path.is_file()
 print("flow", {"path": str(checkpoint_path), "exists": exists})
 if not exists:
     raise FileNotFoundError(f"Missing flow checkpoint: {checkpoint_path}")
 
-close_default = config_get(cfg, "robot", "gripper", "close_command") or [0.0]
+close_default = yaml_config.get_path( "robot", "gripper", "close_command") or [0.0]
 gripper_close_command = np.asarray(close_default, dtype=np.float64)
-num_simulation_steps = int(config_get(cfg, "num_steps"))
-friction_coefficient = config_value(cfg, "metrics", "friction_coefficient", value_type=float, default=0.5)
-lift_height_threshold = config_value(cfg, "metrics", "lift_height_threshold", value_type=float, default=0.05)
-contact_clearance = config_value(cfg, "metrics", "collision_clearance", value_type=float, default=0.005)
-wrench_regularization = config_value(cfg, "metrics", "wrench_regularization", value_type=float, default=1.0)
-flow_filter_collisions = config_value(cfg, "evaluation", "filter_collisions", value_type=bool, default=False)
+num_simulation_steps = int(yaml_config.get_path( "num_steps"))
+friction_coefficient = yaml_config.value( "metrics", "friction_coefficient", value_type=float, default=0.5)
+lift_height_threshold = yaml_config.value( "metrics", "lift_height_threshold", value_type=float, default=0.05)
+contact_clearance = yaml_config.value( "metrics", "collision_clearance", value_type=float, default=0.005)
+wrench_regularization = yaml_config.value( "metrics", "wrench_regularization", value_type=float, default=1.0)
+flow_filter_collisions = yaml_config.value( "evaluation", "filter_collisions", value_type=bool, default=False)
 
 eval_common = {
     "object_id": object_id,
@@ -146,7 +158,6 @@ eval_common = {
 # ## 4. Flow inference and evaluation
 
 # %%
-from grasping_ai.utils.logging_utils import init_mlflow, setup_logging
 
 setup_logging(module_name="evaluate_flow")
 use_mlflow = init_mlflow(cfg)
@@ -177,8 +188,6 @@ comparison = {
 print(json.dumps(comparison, indent=2, default=str))
 
 if use_mlflow:
-    import mlflow
-
     with mlflow.start_run(run_name=experiment):
         mlflow.log_param("object_id", object_id)
         for key, val in flow_aggregated.items():

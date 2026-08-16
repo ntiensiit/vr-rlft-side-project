@@ -2,6 +2,37 @@
 
 from __future__ import annotations
 
+from grasping_ai.inference.policy_runner import (
+    build_rl_policy_runner,
+    load_rl_policy_checkpoint,
+    run_policy_step,
+)
+
+from grasping_ai.models.rl_policy import (
+    build_policy_network,
+    build_sb3_net_arch,
+    build_value_network,
+    copy_sb3_policy_weights,
+    read_rl_policy_metadata,
+    RL_CHECKPOINT_FORMAT_VERSION,
+    RL_POLICY_ARCHITECTURE,
+    save_rl_policy_checkpoint,
+    select_action,
+)
+
+from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
+
+from grasping_ai.simulation.mujoco_env import (
+    MuJoCoGraspingEnv,
+    RewardConfig,
+)
+
+from grasping_ai.simulation.scene import build_scene_xml
+
+from grasping_ai.simulation.ycb import resolve_ycb_object_directory
+
+from grasping_ai.training.checkpoint_io import read_model_checkpoint_metadata
+
 import os
 import tempfile
 from pathlib import Path
@@ -11,26 +42,6 @@ import pytest
 import torch
 
 import grasping_ai
-from grasping_ai.inference.policy_runner import (
-    build_rl_policy_runner,
-    load_rl_policy_checkpoint,
-    run_policy_step,
-)
-from grasping_ai.models.rl_policy import (
-    RL_CHECKPOINT_FORMAT_VERSION,
-    RL_POLICY_ARCHITECTURE,
-    build_policy_network,
-    build_sb3_net_arch,
-    build_value_network,
-    copy_sb3_policy_weights,
-    read_rl_policy_metadata,
-    save_rl_policy_checkpoint,
-    select_action,
-)
-from grasping_ai.pipelines.train_rl import (
-    run_rl_training_pipeline,
-)
-
 
 def _write_ycb_object_xml(tmp_path: Path) -> Path:
     """Helper function to write a minimal YCB object MJCF XML file for testing."""
@@ -50,11 +61,9 @@ def _write_ycb_object_xml(tmp_path: Path) -> Path:
     path.write_text(xml_content, encoding="utf-8")
     return path
 
-
 def test_phase1_package_import_remains_stable():
     """Verify that grasping_ai is importable."""
     assert grasping_ai.__name__ == "grasping_ai"
-
 
 def test_stable_baselines_dependency_available():
     """Verify that Stable-Baselines3 can be imported."""
@@ -62,13 +71,11 @@ def test_stable_baselines_dependency_available():
 
     assert stable_baselines3.__version__ is not None
 
-
 def test_training_config_files_exist():
     """Verify training config default alias and method variants exist."""
     assert os.path.isfile(os.path.join("configs", "training", "default.yaml"))
     assert os.path.isfile(os.path.join("configs", "training", "diffusion.yaml"))
     assert os.path.isfile(os.path.join("configs", "training", "flow.yaml"))
-
 
 def test_policy_network_forward_shape():
     """Verify policy network output has correct shape."""
@@ -77,7 +84,6 @@ def test_policy_network_forward_shape():
     out = policy(obs)
     assert out.shape == (3, 2)
 
-
 def test_value_network_forward_shape():
     """Verify value network output has correct shape."""
     value_net = build_value_network(4, 16, 2)
@@ -85,14 +91,12 @@ def test_value_network_forward_shape():
     out = value_net(obs)
     assert out.shape == (3, 1)
 
-
 def test_policy_network_rejects_invalid_dims():
     """Verify policy network raises on invalid dimensions."""
     with pytest.raises(ValueError):
         build_policy_network(0, 2, 16, 2)
     with pytest.raises(ValueError):
         build_policy_network(4, -1, 16, 2)
-
 
 def test_select_action_shape():
     """Verify select_action produces correct output shape."""
@@ -103,7 +107,6 @@ def test_select_action_shape():
     action = select_action(policy, obs, rng)
     assert action.shape == (3, 2)
 
-
 def test_select_action_rejects_invalid_observation():
     """Verify select_action raises on bad observation shape."""
     policy = build_policy_network(4, 2, 16, 2)
@@ -111,7 +114,6 @@ def test_select_action_rejects_invalid_observation():
     rng = torch.Generator()
     with pytest.raises(ValueError, match="observation must have shape"):
         select_action(policy, obs_1d, rng)
-
 
 def test_run_rl_pipeline_rejects_missing_robot_xml():
     """Verify pipeline raises on missing robot XML."""
@@ -129,7 +131,6 @@ def test_run_rl_pipeline_rejects_missing_robot_xml():
             gamma=0.99,
             device="cpu",
         )
-
 
 def test_run_rl_pipeline_rejects_missing_ycb_root_when_objects_requested(
     panda_robot_xml: Path,
@@ -153,7 +154,6 @@ def test_run_rl_pipeline_rejects_missing_ycb_root_when_objects_requested(
             gamma=0.99,
             device="cpu",
         )
-
 
 def test_run_rl_pipeline_validates_observation_dim(panda_robot_xml: Path):
     """Verify pipeline raises on observation dim mismatch.
@@ -179,7 +179,6 @@ def test_run_rl_pipeline_validates_observation_dim(panda_robot_xml: Path):
             device="cpu",
         )
 
-
 def test_run_rl_pipeline_validates_action_dim(panda_robot_xml: Path):
     """Verify pipeline raises on action dim mismatch.
 
@@ -204,7 +203,6 @@ def test_run_rl_pipeline_validates_action_dim(panda_robot_xml: Path):
             device="cpu",
         )
 
-
 def test_run_rl_pipeline_performs_minimal_training_and_saves_checkpoint(
     panda_robot_xml: Path,
 ):
@@ -226,7 +224,6 @@ def test_run_rl_pipeline_performs_minimal_training_and_saves_checkpoint(
             device="cpu",
         )
         assert ckpt_path.exists()
-
 
 def test_rl_checkpoint_is_loadable_or_discoverable(panda_robot_xml: Path):
     """Verify saved checkpoint can be loaded back."""
@@ -257,13 +254,9 @@ def test_rl_checkpoint_is_loadable_or_discoverable(panda_robot_xml: Path):
         assert action.shape == (8,)
         assert np.isfinite(action).all()
 
-
 def test_run_rl_pipeline_loads_requested_object(panda_robot_xml: Path):
     """Verify the pipeline loads the requested object into the environment."""
-    from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
-    from grasping_ai.simulation.scene import build_scene_xml
-    from grasping_ai.simulation.ycb import resolve_ycb_object_directory
-
+            
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         object_xml = _write_ycb_object_xml(tmp_path)
@@ -303,12 +296,9 @@ def test_run_rl_pipeline_loads_requested_object(panda_robot_xml: Path):
         )
         assert ckpt_path.exists()
 
-
 def test_rl_pipeline_tracks_object_and_enables_grasp_rewards(monkeypatch, panda_robot_xml: Path):
     """Verify the RL pipeline propagates the object name and enables grasp rewards."""
-    from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
-    from grasping_ai.simulation.ycb import resolve_ycb_object_directory
-
+        
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         _write_ycb_object_xml(tmp_path)
@@ -348,7 +338,6 @@ def test_rl_pipeline_tracks_object_and_enables_grasp_rewards(monkeypatch, panda_
         assert reward_config.lift_reward_weight > 0.0
         assert reward_config.grasp_success_bonus > 0.0
 
-
 def test_save_rl_policy_checkpoint_writes_metadata():
     """Verify that save_rl_policy_checkpoint writes valid metadata and formats state dict properly."""
     policy = build_policy_network(4, 2, 16, 2)
@@ -375,8 +364,7 @@ def test_save_rl_policy_checkpoint_writes_metadata():
         assert checkpoint["seed"] == 42
         assert "model_state_dict" in checkpoint
 
-        from grasping_ai.training.checkpoint_io import read_model_checkpoint_metadata
-
+        
         metadata = read_model_checkpoint_metadata(checkpoint_path, "cpu")
         assert metadata["kind"] == "rl_policy"
         assert metadata["observation_dim"] == 4
@@ -385,7 +373,6 @@ def test_save_rl_policy_checkpoint_writes_metadata():
         assert metadata["num_layers"] == 2
         assert metadata["epoch"] == 5
         assert metadata["seed"] == 42
-
 
 def test_read_rl_policy_metadata():
     """Verify that read_rl_policy_metadata successfully parses dimensions and layers from standard checkpoints."""
@@ -405,7 +392,6 @@ def test_read_rl_policy_metadata():
         metadata = read_rl_policy_metadata(checkpoint)
         assert metadata == (3, 1, 8, 2)
 
-
 class _FakeSB3Policy(torch.nn.Module):
     """Minimal SB3 MlpPolicy stand-in for weight-copy tests."""
 
@@ -420,7 +406,6 @@ class _FakeSB3Policy(torch.nn.Module):
         self.mlp_extractor = torch.nn.Module()
         self.mlp_extractor.policy_net = torch.nn.Sequential(*policy_layers)
         self.action_net = torch.nn.Linear(hidden_dim, action_dim)
-
 
 def test_copy_sb3_policy_weights_copies_all_hidden_layers() -> None:
     """Verify dynamic SB3-to-legacy weight copy for variable hidden depth."""
@@ -439,18 +424,15 @@ def test_copy_sb3_policy_weights_copies_all_hidden_layers() -> None:
         assert torch.allclose(sb3_policy.action_net.weight, legacy_output.weight)
         assert torch.allclose(sb3_policy.action_net.bias, legacy_output.bias)
 
-
 def test_build_sb3_net_arch_matches_policy_depth() -> None:
     """Verify SB3 net_arch depth tracks policy_num_layers."""
     assert build_sb3_net_arch(64, 3) == {"pi": [64, 64, 64], "vf": [64, 64, 64]}
-
 
 def test_read_rl_policy_metadata_legacy_checkpoint_returns_none():
     """Verify that read_rl_policy_metadata returns None for legacy checkpoints lacking explicit metadata headers."""
     assert read_rl_policy_metadata({}) is None
     assert read_rl_policy_metadata({"model_state_dict": {}}) is None
     assert read_rl_policy_metadata("not-a-dict") is None  # type: ignore[arg-type]
-
 
 def test_runner_loads_standard_checkpoint():
     """Verify that the policy runner can load and execute inference on standard checkpoints with metadata."""
@@ -473,7 +455,6 @@ def test_runner_loads_standard_checkpoint():
         assert action.shape == (2,)
         assert np.isfinite(action).all()
 
-
 def test_runner_rejects_dimension_mismatch():
     """Verify that the policy runner raises ValueError if observation or action dimensions mismatch the checkpoint metadata."""
     policy = build_policy_network(4, 2, 16, 2)
@@ -494,7 +475,6 @@ def test_runner_rejects_dimension_mismatch():
         with pytest.raises(ValueError, match="action_dim"):
             build_rl_policy_runner(checkpoint, 4, 3, "cpu")
 
-
 def test_runner_loads_legacy_checkpoint_without_metadata():
     """Verify that policy runner can load legacy checkpoints that lack explicit metadata using inferred sizes."""
     # A legacy checkpoint (model_state_dict only) is still loadable by
@@ -506,7 +486,6 @@ def test_runner_loads_legacy_checkpoint_without_metadata():
     action = runner(obs)
     assert action.shape == (2,)
 
-
 def test_save_rl_policy_checkpoint_validation():
     """Verify that saving checkpoints validates path types, observation, and action dimensions strictly."""
     policy = build_policy_network(4, 2, 16, 2)
@@ -516,7 +495,6 @@ def test_save_rl_policy_checkpoint_validation():
         save_rl_policy_checkpoint(policy, Path("p.pt"), 1, 4, -1, 16, 2)
     with pytest.raises(TypeError, match="policy_checkpoint_path"):
         save_rl_policy_checkpoint(policy, "p.pt", 1, 4, 2, 16, 2)  # type: ignore[arg-type]
-
 
 def test_select_action_noise_scale_controls_exploration():
     """Verify that select_action noise scale controls stochastic exploration vs deterministic policy execution."""
@@ -530,7 +508,6 @@ def test_select_action_noise_scale_controls_exploration():
     deterministic = select_action(policy, obs, torch.Generator().manual_seed(1), noise_scale=0.0)
     assert torch.allclose(deterministic, policy(obs))
 
-
 def test_select_action_rejects_negative_noise_scale():
     """Verify that negative noise scale values raise a ValueError in select_action."""
     policy = build_policy_network(4, 2, 16, 2)
@@ -538,7 +515,6 @@ def test_select_action_rejects_negative_noise_scale():
     rng = torch.Generator()
     with pytest.raises(ValueError, match="non-negative"):
         select_action(policy, obs, rng, noise_scale=-0.1)
-
 
 def test_build_rl_policy_runner_additional_branches(tmp_path: Path) -> None:
     """Verify that build_rl_policy_runner handles stochastic execution, action bounds, and shape validations correctly."""
@@ -576,7 +552,6 @@ def test_build_rl_policy_runner_additional_branches(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="observation must have shape"):
         stochastic_runner(np.zeros(3))
 
-
 def test_load_rl_policy_checkpoint_validations(tmp_path: Path) -> None:
     """Verify that load_rl_policy_checkpoint raises appropriate errors for invalid checkpoint paths or missing files."""
     with pytest.raises(TypeError, match="checkpoint_path must be"):
@@ -585,7 +560,6 @@ def test_load_rl_policy_checkpoint_validations(tmp_path: Path) -> None:
     non_existent = tmp_path / "missing.pt"
     with pytest.raises(FileNotFoundError, match="Checkpoint file not found"):
         load_rl_policy_checkpoint(non_existent, "cpu")
-
 
 def test_run_policy_step_execution() -> None:
     """Verify that run_policy_step correctly invokes policy runners on numpy observation vectors."""
@@ -597,7 +571,6 @@ def test_run_policy_step_execution() -> None:
     action = run_policy_step(dummy_runner, obs)
     assert action.shape == (2,)
     assert np.allclose(action, [0.1, -0.1])
-
 
 def test_rl_policy_additional_validations(tmp_path: Path) -> None:
     """Verify metadata reading, value network construction, and parameter boundary validations in RL policy components."""
@@ -645,15 +618,13 @@ def test_rl_policy_additional_validations(tmp_path: Path) -> None:
     with pytest.raises(TypeError, match=r"rng must be a torch\.Generator"):
         select_action(policy, obs, "not_a_generator")  # type: ignore[arg-type]
 
-
 def test_run_rl_training_pipeline_integration(tmp_path: Path, panda_robot_xml: Path) -> None:
     """Verify end-to-end execution of the RL training pipeline and subsequent checkpoint metadata persistence."""
     ycb_dir = tmp_path / "ycb"
     ycb_dir.mkdir()
     policy_ckpt = tmp_path / "trained_policy.pt"
 
-    from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
-
+    
     env = MuJoCoGraspingEnv(panda_robot_xml)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
@@ -678,7 +649,6 @@ def test_run_rl_training_pipeline_integration(tmp_path: Path, panda_robot_xml: P
     ckpt = torch.load(policy_ckpt, map_location="cpu")
     assert ckpt["observation_dim"] == obs_dim
     assert ckpt["action_dim"] == act_dim
-
 
 def test_run_rl_training_pipeline_validation_errors(tmp_path: Path, panda_robot_xml: Path) -> None:
     """Verify validation checks on inputs (invalid paths, out of range values) for the RL training pipeline parameters."""
@@ -852,7 +822,6 @@ def test_run_rl_training_pipeline_validation_errors(tmp_path: Path, panda_robot_
             0.99,
             "cpu",
         )
-
 
 def test_run_rl_training_pipeline_config_exception(tmp_path: Path, panda_robot_xml: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify train_rl pipeline fallback RewardConfig is loaded when yaml load fails."""

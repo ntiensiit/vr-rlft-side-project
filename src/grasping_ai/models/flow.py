@@ -2,21 +2,28 @@
 
 from __future__ import annotations
 
+from grasping_ai.models.equivariant_encoder import (
+    build_equivariant_encoder,
+    encode_point_cloud,
+    pool_object_features,
+)
+
+from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
+
+from grasping_ai.models.mlp import build_mish_mlp
+
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
 import torch
-
-from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
-from grasping_ai.models.mlp import build_mish_mlp
-from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 FlowField = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 FlowIntegrator = Callable[[FlowField, torch.Tensor, torch.Tensor], torch.Tensor]
-
 
 class FlowFieldNet(torch.nn.Module):
     """Neural network predicting flow velocity conditioned on features."""
@@ -30,7 +37,6 @@ class FlowFieldNet(torch.nn.Module):
         """Forward pass predicting velocity."""
         inputs = torch.cat([x, conditioning], dim=-1)
         return self.mlp(inputs)
-
 
 class FlowGeneratorModel(torch.nn.Module):
     """Complete generative model holding encoder and flow field.
@@ -55,8 +61,7 @@ class FlowGeneratorModel(torch.nn.Module):
         self.feature_dim = feature_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-        from grasping_ai.models.equivariant_encoder import build_equivariant_encoder
-
+        
         self.encoder = build_equivariant_encoder(feature_dim, num_layers)
         self.flow_field = FlowFieldNet(feature_dim, hidden_dim, num_layers)
 
@@ -76,14 +81,9 @@ class FlowGeneratorModel(torch.nn.Module):
         Returns:
             Pooled conditioning features with shape ``(B, feature_dim)``.
         """
-        from grasping_ai.models.equivariant_encoder import (
-            encode_point_cloud,
-            pool_object_features,
-        )
-
+        
         features = encode_point_cloud(self.encoder, point_clouds)
         return pool_object_features(features)
-
 
 def build_flow_field(feature_dim: int, hidden_dim: int, num_layers: int) -> FlowField:
     """Construct a continuous flow field for grasp-pose generation.
@@ -98,7 +98,6 @@ def build_flow_field(feature_dim: int, hidden_dim: int, num_layers: int) -> Flow
         same shape as ``x``.
     """
     return FlowFieldNet(feature_dim, hidden_dim, num_layers)
-
 
 def build_flow_integrator(num_steps: int) -> FlowIntegrator:
     """Construct a numerical integrator for sampling along the flow field.
@@ -124,7 +123,6 @@ def build_flow_integrator(num_steps: int) -> FlowIntegrator:
         return x
 
     return integrator
-
 
 def sample_grasps_with_flow(
     integrator: FlowIntegrator,
@@ -155,7 +153,6 @@ def sample_grasps_with_flow(
         lambda initial_states, cond_flat: integrator(flow_field, initial_states, cond_flat),
     )
 
-
 def load_flow_model_from_state(
     checkpoint: dict[str, object],
     feature_dim: int,
@@ -172,7 +169,6 @@ def load_flow_model_from_state(
     model.to(torch.device(device))
     model.eval()
     return model
-
 
 def load_flow_model_checkpoint(
     checkpoint_path: Path,

@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
 from collections.abc import Callable
 
 import numpy as np
 
-from grasping_ai.utils.constants import WRENCH_DIM
+WRENCH_DIM = int(FLATTENED_YAML_CONFIG.get("wrench.dim", 6))
 
 StabilityJudge = Callable[[np.ndarray], bool]
 LiftOutcomeJudge = Callable[[float, float], bool]
-
 
 def build_stability_judge(max_linear_velocity: float, max_angular_velocity: float) -> StabilityJudge:
     """Build a callable that judges whether an executed grasp is stable.
@@ -45,7 +46,6 @@ def build_stability_judge(max_linear_velocity: float, max_angular_velocity: floa
 
     return judge
 
-
 def evaluate_stability(judge: StabilityJudge, object_velocity: np.ndarray) -> bool:
     """Evaluate whether an object velocity indicates a stable grasp.
 
@@ -57,7 +57,6 @@ def evaluate_stability(judge: StabilityJudge, object_velocity: np.ndarray) -> bo
         ``True`` if the grasp is stable, otherwise ``False``.
     """
     return judge(object_velocity)
-
 
 def build_lift_outcome_judge(lift_height_threshold: float) -> LiftOutcomeJudge:
     """Build a callable that judges whether a grasp succeeded as a lift.
@@ -84,7 +83,6 @@ def build_lift_outcome_judge(lift_height_threshold: float) -> LiftOutcomeJudge:
 
     return judge
 
-
 def evaluate_lift_success(judge: LiftOutcomeJudge, initial_height: float, final_height: float) -> bool:
     """Evaluate whether a lift attempt succeeded.
 
@@ -97,7 +95,6 @@ def evaluate_lift_success(judge: LiftOutcomeJudge, initial_height: float, final_
         ``True`` if the lift succeeded, otherwise ``False``.
     """
     return judge(initial_height, final_height)
-
 
 def aggregate_grasp_success_rate(per_object_success: dict[str, bool]) -> float:
     """Aggregate per-object grasp success flags into an overall success rate.

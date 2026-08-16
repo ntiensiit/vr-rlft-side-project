@@ -2,27 +2,42 @@
 
 from __future__ import annotations
 
+from grasping_ai.data.training_pairs import (
+    build_supervised_training_pairs,
+    validate_grasp_dataset,
+)
+
+from grasping_ai.models.flow import (
+    FlowGeneratorModel,
+    load_flow_model_checkpoint,
+)
+
+from grasping_ai.pipelines.supervised_training import iter_supervised_training_batches
+
+from grasping_ai.training import (
+    trainer as training_trainer,
+)
+
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+
+from grasping_ai.training.losses import build_flow_matching_loss
+
+from grasping_ai.training.trainer import (
+    BatchSource,
+    build_adam_optimizer,
+    SupervisedTrainingStep,
+)
+
+from grasping_ai.utils.path_validation import require_path
+
 from functools import partial
 from typing import TYPE_CHECKING
 
 import torch
 
-from grasping_ai.data.training_pairs import (
-    build_supervised_training_pairs,
-    validate_grasp_dataset,
-)
-from grasping_ai.models.flow import FlowGeneratorModel, load_flow_model_checkpoint
-from grasping_ai.pipelines.supervised_training import iter_supervised_training_batches
-from grasping_ai.training import trainer as training_trainer
-from grasping_ai.training.checkpoint_io import load_torch_checkpoint
-from grasping_ai.training.losses import build_flow_matching_loss
-from grasping_ai.training.trainer import BatchSource, SupervisedTrainingStep, build_adam_optimizer
-from grasping_ai.utils.path_validation import require_path
-
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
-
 
 def build_flow_training_components(
     feature_dim: int,
@@ -47,7 +62,6 @@ def build_flow_training_components(
     model.to(device)
     optimizer = build_adam_optimizer(model.parameters(), learning_rate)
     return model, optimizer
-
 
 def build_flow_training_step(
     model: FlowGeneratorModel,
@@ -86,7 +100,6 @@ def build_flow_training_step(
         return loss_fn(predicted_velocity, target_velocity)
 
     return training_trainer.build_supervised_training_step(model, optimizer, device, flow_forward)
-
 
 def run_flow_training_pipeline(
     dataset_root: Path,
@@ -219,7 +232,6 @@ def run_flow_training_pipeline(
         metadata=metadata,
         seed=seed,
     )
-
 
 __all__ = [
     "build_flow_training_components",

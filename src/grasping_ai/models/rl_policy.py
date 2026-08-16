@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from grasping_ai.models.mlp import build_tanh_mlp
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
+from grasping_ai.utils.path_validation import require_path
+
 from typing import TYPE_CHECKING, Any
 
 import torch
 
-from grasping_ai.models.mlp import build_tanh_mlp
-from grasping_ai.utils.constants import POINT_CLOUD_NDIM
-from grasping_ai.utils.path_validation import require_path
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -18,7 +22,6 @@ ValueNetwork = torch.nn.Sequential
 
 RL_CHECKPOINT_FORMAT_VERSION = 1
 RL_POLICY_ARCHITECTURE = "mlp"
-
 
 def save_rl_policy_checkpoint(
     policy: torch.nn.Module,
@@ -78,7 +81,6 @@ def save_rl_policy_checkpoint(
     policy_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(checkpoint, policy_checkpoint_path)
 
-
 def read_rl_policy_metadata(
     checkpoint: dict[str, object],
 ) -> tuple[int, int, int, int] | None:
@@ -107,7 +109,6 @@ def read_rl_policy_metadata(
     except (TypeError, ValueError):
         return None
 
-
 def _sequential_linear_layers(module: torch.nn.Module) -> list[torch.nn.Linear]:
     """Return ``Linear`` submodules in ``Sequential`` child order.
 
@@ -123,7 +124,6 @@ def _sequential_linear_layers(module: torch.nn.Module) -> list[torch.nn.Linear]:
     if not isinstance(module, torch.nn.Sequential):
         raise TypeError("module must be a torch.nn.Sequential instance")
     return [child for child in module if isinstance(child, torch.nn.Linear)]
-
 
 def build_sb3_net_arch(hidden_dim: int, num_layers: int) -> dict[str, list[int]]:
     """Build SB3 ``net_arch`` matching ``build_policy_network`` depth.
@@ -145,7 +145,6 @@ def build_sb3_net_arch(hidden_dim: int, num_layers: int) -> dict[str, list[int]]
         raise ValueError("num_layers must be positive")
     hidden_layers = [hidden_dim] * num_layers
     return {"pi": hidden_layers, "vf": hidden_layers}
-
 
 def copy_sb3_policy_weights(
     sb3_policy: torch.nn.Module,
@@ -205,7 +204,6 @@ def copy_sb3_policy_weights(
     legacy_output.weight.data.copy_(action_net.weight.data)
     legacy_output.bias.data.copy_(action_net.bias.data)
 
-
 def build_policy_network(observation_dim: int, action_dim: int, hidden_dim: int, num_layers: int) -> PolicyNetwork:
     """Construct a policy network mapping observations to action distributions.
 
@@ -231,7 +229,6 @@ def build_policy_network(observation_dim: int, action_dim: int, hidden_dim: int,
 
     return build_tanh_mlp(observation_dim, hidden_dim, action_dim, num_layers)
 
-
 def build_value_network(observation_dim: int, hidden_dim: int, num_layers: int) -> ValueNetwork:
     """Construct a value network for actor-critic style algorithms.
 
@@ -251,7 +248,6 @@ def build_value_network(observation_dim: int, hidden_dim: int, num_layers: int) 
         raise ValueError("num_layers must be positive")
 
     return build_tanh_mlp(observation_dim, hidden_dim, 1, num_layers)
-
 
 def select_action(
     policy: PolicyNetwork,

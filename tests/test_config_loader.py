@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-from omegaconf import DictConfig, OmegaConf
-
 from grasping_ai.config.config import (
     compose_config,
     config_get,
@@ -15,6 +10,10 @@ from grasping_ai.config.config import (
     load_project_yaml_config,
 )
 
+from pathlib import Path
+
+import pytest
+from omegaconf import DictConfig, OmegaConf
 
 def test_load_project_yaml_config_merges_layers() -> None:
     """Verify that load_project_yaml_config merges all configuration layers correctly."""
@@ -26,7 +25,6 @@ def test_load_project_yaml_config_merges_layers() -> None:
     assert config_get(cfg, "rl", "learning_rate") == 0.0003
     assert config_get(cfg, "rl", "observation_dim") == 31
 
-
 def test_load_project_yaml_config_composes_evaluation_groups() -> None:
     """Verify that evaluation defaults compose common metrics and method settings."""
     cfg = load_project_yaml_config(Path("configs"))
@@ -34,14 +32,12 @@ def test_load_project_yaml_config_composes_evaluation_groups() -> None:
     assert config_get(cfg, "limits", "max_linear_velocity") == 0.05
     assert config_get(cfg, "evaluation", "method") == "diffusion"
 
-
 def test_load_project_yaml_config_applies_evaluation_override() -> None:
     """Verify that evaluation=rl selects RL rollout settings."""
     cfg = load_project_yaml_config(Path("configs"), overrides=["evaluation=rl"])
     assert config_get(cfg, "evaluation", "method") == "rl"
     assert config_get(cfg, "evaluation", "episodes") == 5
     assert config_get(cfg, "metrics", "friction_coefficient") == 0.5
-
 
 def test_load_project_yaml_config_applies_training_override() -> None:
     """Verify that training=flow selects the flow supervised config group."""
@@ -52,7 +48,6 @@ def test_load_project_yaml_config_applies_training_override() -> None:
     assert config_get(cfg, "default_method") == "flow"
     assert config_get(cfg, "supervised", "batch_size") == 2
 
-
 def test_load_project_yaml_config_applies_hydra_overrides() -> None:
     """Verify that load_project_yaml_config applies Hydra overrides correctly."""
     cfg = load_project_yaml_config(
@@ -60,7 +55,6 @@ def test_load_project_yaml_config_applies_hydra_overrides() -> None:
         overrides=["seed=100"],
     )
     assert cfg["seed"] == 100
-
 
 def test_config_value_path_and_list_helpers() -> None:
     """Verify typed config_value helpers retrieve paths and string lists."""
@@ -71,7 +65,6 @@ def test_config_value_path_and_list_helpers() -> None:
         "004_sugar_box",
         "006_mustard_bottle",
     ]
-
 
 def test_load_project_yaml_config_skips_missing_layers(tmp_path: Path) -> None:
     """Compose only defaults that exist when ``config.yaml`` is present."""
@@ -85,13 +78,11 @@ def test_load_project_yaml_config_skips_missing_layers(tmp_path: Path) -> None:
     cfg = load_project_yaml_config(config_dir)
     assert cfg["seed"] == 7
 
-
 def test_load_project_yaml_config_uses_named_entrypoint() -> None:
     """Verify that config_name selects a full preset composition."""
     cfg = load_project_yaml_config(Path("configs"), config_name="training/flow")
     assert config_get(cfg, "default_method") == "flow"
     assert config_get(cfg, "supervised", "batch_size") == 2
-
 
 def test_load_project_yaml_config_includes_notebook_settings() -> None:
     """Verify that notebook entrypoints compose shared notebook run settings."""
@@ -103,18 +94,15 @@ def test_load_project_yaml_config_includes_notebook_settings() -> None:
     assert config_get(cfg, "notebook", "mount_drive") is False
     assert config_get(cfg, "notebook", "drive_storage_dir") == "vr-rlft-side-project"
 
-
 def test_load_project_yaml_config_invalid_name_raises() -> None:
     """Verify that an invalid config entrypoint name raises FileNotFoundError."""
     with pytest.raises(FileNotFoundError, match="Hydra config entrypoint not found"):
         load_project_yaml_config(Path("configs"), config_name="nonexistent_config")
 
-
 def test_config_get_returns_default_for_missing_path() -> None:
     """Return the configured default for absent nested keys."""
     cfg = OmegaConf.create({})
     assert config_get(cfg, "missing", default=42) == 42
-
 
 def test_config_get_required_raises_for_missing_path() -> None:
     """Raise when a required nested key is absent."""
@@ -122,18 +110,15 @@ def test_config_get_required_raises_for_missing_path() -> None:
     with pytest.raises(ValueError, match="Missing config key"):
         config_get(cfg, "missing", required=True)
 
-
 def test_config_value_path_returns_default_for_missing_value() -> None:
     """Return the default when a path-valued key is absent."""
     cfg = OmegaConf.create({})
     assert config_value(cfg, "missing", value_type=Path, default=Path("fallback")) == Path("fallback")
 
-
 def test_config_value_path_returns_default_for_none_value() -> None:
     """Return the default when a path-valued key is explicitly ``None``."""
     cfg = OmegaConf.create({"paths": {"root": None}})
     assert config_value(cfg, "paths", "root", value_type=Path, default=Path("x")) == Path("x")
-
 
 def test_config_value_path_rejects_empty_string() -> None:
     """Reject empty path strings in config mappings."""
@@ -141,19 +126,16 @@ def test_config_value_path_rejects_empty_string() -> None:
     with pytest.raises(ValueError, match="must be a non-empty string path"):
         config_value(cfg, "paths", "root", value_type=Path)
 
-
 def test_config_value_path_rejects_non_string_value() -> None:
     """Reject non-string path values in config mappings."""
     cfg = OmegaConf.create({"paths": {"root": 1}})
     with pytest.raises(ValueError, match="must be a non-empty string path"):
         config_value(cfg, "paths", "root", value_type=Path)
 
-
 def test_config_value_str_list_returns_default_for_missing_value() -> None:
     """Return the default when a string-list key is absent."""
     cfg = OmegaConf.create({})
     assert config_value(cfg, "objects", "ids", value_type=list[str], default=["a"]) == ["a"]
-
 
 def test_config_value_str_list_rejects_non_string_items() -> None:
     """Reject string-list config values that contain non-strings."""
@@ -161,12 +143,10 @@ def test_config_value_str_list_rejects_non_string_items() -> None:
     with pytest.raises(ValueError, match="must be a list of strings"):
         config_value(cfg, "objects", "ids", value_type=list[str])
 
-
 def test_config_value_float_list_returns_default_for_missing_value() -> None:
     """Return the default when a float-list key is absent."""
     cfg = OmegaConf.create({})
     assert config_value(cfg, "gripper", "close_command", value_type=list[float], default=[0.0]) == [0.0]
-
 
 def test_config_value_float_list_rejects_non_list() -> None:
     """Reject float-list config values that are not lists."""
@@ -174,13 +154,11 @@ def test_config_value_float_list_rejects_non_list() -> None:
     with pytest.raises(TypeError, match="must be a list of numbers"):
         config_value(cfg, "gripper", "close_command", value_type=list[float])
 
-
 def test_config_value_float_list_rejects_bool_items() -> None:
     """Reject bool entries in float-list config values."""
     cfg = OmegaConf.create({"gripper": {"close_command": [True]}})
     with pytest.raises(TypeError, match="must be a list of numbers"):
         config_value(cfg, "gripper", "close_command", value_type=list[float])
-
 
 def test_config_value_float_list_rejects_non_numeric_items() -> None:
     """Reject non-numeric entries in float-list config values."""
@@ -188,12 +166,10 @@ def test_config_value_float_list_rejects_non_numeric_items() -> None:
     with pytest.raises(TypeError, match="must be a list of numbers"):
         config_value(cfg, "gripper", "close_command", value_type=list[float])
 
-
 def test_config_value_float_list_converts_integers() -> None:
     """Convert integer list entries to floats."""
     cfg = OmegaConf.create({"g": {"v": [0, 1]}})
     assert config_value(cfg, "g", "v", value_type=list[float]) == [0.0, 1.0]
-
 
 def test_config_value_scalar_helpers() -> None:
     """Verify typed scalar config readers and validation errors."""
@@ -222,7 +198,6 @@ def test_config_value_scalar_helpers() -> None:
     with pytest.raises(TypeError, match="must be a boolean"):
         config_value(bad_bool_cfg, "f", "enabled", value_type=bool, default=True)
 
-
 def test_config_value_script_or_bool() -> None:
     """Verify script override resolution for booleans."""
     cfg = OmegaConf.create(
@@ -245,7 +220,6 @@ def test_config_value_script_or_bool() -> None:
         is False
     )
 
-
 def test_config_value_script_or_required_path() -> None:
     """Verify required script-or path resolution."""
     cfg = OmegaConf.create({"model": {"checkpoint": "artifacts/checkpoints/model.pt"}})
@@ -260,14 +234,12 @@ def test_config_value_script_or_required_path() -> None:
     )
     assert resolved == Path("artifacts/checkpoints/model.pt")
 
-
 def test_hydra_cfg_to_dict_resolves_interpolation() -> None:
     """Verify hydra_cfg_to_dict resolves interpolated values."""
     cfg = load_project_yaml_config(Path("configs"))
     cfg_dict = hydra_cfg_to_dict(cfg)
     assert isinstance(cfg_dict, dict)
     assert cfg_dict["seed"] == 42
-
 
 def test_compose_config_named_entrypoint() -> None:
     """Verify compose_config loads a named Hydra entrypoint."""

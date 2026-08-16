@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+from grasping_ai.simulation.mujoco_env import (
+    ContactReporter,
+    create_simulation,
+    load_mujoco_model,
+    read_body_pose,
+    set_actuator_controls,
+    SimulationStep,
+)
+
+from grasping_ai.utils.path_validation import (
+    require_optional_path,
+    require_path,
+)
+
 import os
 import re
 import tempfile
@@ -14,18 +28,7 @@ import mujoco  # type: ignore[import-untyped]
 import numpy as np
 from loguru import logger
 
-from grasping_ai.simulation.mujoco_env import (
-    ContactReporter,
-    SimulationStep,
-    create_simulation,
-    load_mujoco_model,
-    read_body_pose,
-    set_actuator_controls,
-)
-from grasping_ai.utils.path_validation import require_optional_path, require_path
-
 SceneCommand = Callable[[], None]
-
 
 def _resolve_scene_output_dir(output_dir: Path | None) -> Path:
     """Return a writable directory for assembled scene XML artifacts.
@@ -45,7 +48,6 @@ def _resolve_scene_output_dir(output_dir: Path | None) -> Path:
     temp_root = Path(tempfile.gettempdir()) / "grasping_ai_scenes"
     temp_root.mkdir(parents=True, exist_ok=True)
     return temp_root
-
 
 def _xml_with_absolute_meshdir(xml_path: Path, out_dir: Path) -> Path:
     """Rewrite ``meshdir`` to an absolute path so includes from a temp scene resolve.
@@ -71,7 +73,6 @@ def _xml_with_absolute_meshdir(xml_path: Path, out_dir: Path) -> Path:
     dest = Path(path_str)
     dest.write_text(rewritten, encoding="utf-8")
     return dest
-
 
 def build_scene_xml(
     robot_xml_path: Path,
@@ -108,7 +109,6 @@ def build_scene_xml(
     if table_xml_path is not None and not table_xml_path.is_file():
         raise FileNotFoundError(f"Table XML path '{table_xml_path}' does not exist")
 
-
     logger.info(
         "Assembling scene XML with robot: {}, object: {} (name={}), table: {}",
         robot_xml_path,
@@ -139,7 +139,6 @@ def build_scene_xml(
 
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
-
 
 def _rename_object_body(object_xml_path: Path, object_name: str, out_dir: Path) -> Path:
     """Write a copy of an object XML with its first body renamed.
@@ -175,7 +174,6 @@ def _rename_object_body(object_xml_path: Path, object_name: str, out_dir: Path) 
     modified_object_xml_path = Path(obj_path_str)
     tree.write(modified_object_xml_path, encoding="utf-8", xml_declaration=True)
     return modified_object_xml_path
-
 
 def attach_object_to_scene(
     state: object,
@@ -263,7 +261,6 @@ def attach_object_to_scene(
     state_dict["model"] = new_model
     state_dict["data"] = new_data
 
-
 def step_scene(step: SimulationStep, dt: float, num_steps: int) -> None:
     """Advance a scene by a fixed number of simulation steps.
 
@@ -285,7 +282,6 @@ def step_scene(step: SimulationStep, dt: float, num_steps: int) -> None:
 
     for _ in range(num_steps):
         step(dt)
-
 
 def collect_contacts(contacts: ContactReporter, body_names: set[str]) -> list[dict[str, object]]:
     """Filter contact reports to only those involving the supplied body names.
@@ -312,7 +308,6 @@ def collect_contacts(contacts: ContactReporter, body_names: set[str]) -> list[di
         if c_body_names.intersection(body_names):
             filtered.append(dict(c))
     return filtered
-
 
 class MuJoCoScene:
     """Composed MuJoCo scene with snapshot-based reset.

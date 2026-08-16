@@ -2,20 +2,29 @@
 
 from __future__ import annotations
 
+from grasping_ai.inference.policy_runner import (
+    build_rl_policy_runner,
+    load_rl_policy_checkpoint,
+)
+
+from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
+
+from grasping_ai.simulation.mujoco_env import (
+    create_simulation,
+    load_mujoco_model,
+    MuJoCoGraspingEnv,
+    RewardConfig,
+    set_actuator_controls,
+)
+
+from grasping_ai.simulation.scene import build_scene_xml
+
 from typing import TYPE_CHECKING
 
 import gymnasium as gym
 import numpy as np
 import pytest
 from gymnasium.utils.env_checker import check_env
-
-from grasping_ai.inference.policy_runner import (
-    build_rl_policy_runner,
-    load_rl_policy_checkpoint,
-)
-from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
-from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
-from grasping_ai.simulation.scene import build_scene_xml
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -31,14 +40,12 @@ MINIMAL_UNACTUATED_ROBOT_XML = """\
 </mujoco>
 """
 
-
 @pytest.fixture
 def minimal_unactuated_robot_xml(tmp_path: Path) -> Path:
     """Fixture to write and provide a path to a minimal MuJoCo robot XML without actuators."""
     path = tmp_path / "unactuated_robot.xml"
     path.write_text(MINIMAL_UNACTUATED_ROBOT_XML, encoding="utf-8")
     return path
-
 
 OBJECT_XML = """\
 <mujoco model="object">
@@ -51,14 +58,12 @@ OBJECT_XML = """\
 </mujoco>
 """
 
-
 @pytest.fixture
 def scene_xml(tmp_path: Path, panda_robot_xml: Path) -> Path:
     """Fixture to construct a scene XML merging a Franka Panda robot and a sphere object."""
     object_path = tmp_path / "object.xml"
     object_path.write_text(OBJECT_XML, encoding="utf-8")
     return build_scene_xml(panda_robot_xml, object_path, None)
-
 
 def test_env_initialization(panda_robot_xml):
     """Verify that the gymnasium environment initializes with correct action and observation space dimensions."""
@@ -74,12 +79,10 @@ def test_env_initialization(panda_robot_xml):
     assert env.action_space.low.shape == (8,)
     assert env.action_space.high.shape == (8,)
 
-
 def test_env_initialization_no_actuators(minimal_unactuated_robot_xml):
     """Verify that environment initialization raises a ValueError if the MuJoCo model has zero actuators."""
     with pytest.raises(ValueError, match="zero actuators"):
         MuJoCoGraspingEnv(minimal_unactuated_robot_xml)
-
 
 def test_env_reset(panda_robot_xml):
     """Verify that resetting the environment returns the initial observation vector and info dictionary."""
@@ -91,14 +94,12 @@ def test_env_reset(panda_robot_xml):
     assert obs.dtype == np.float32
     assert isinstance(info, dict)
 
-
 def test_env_reset_determinism(panda_robot_xml):
     """Verify that env reset is deterministic when using the same random seed."""
     env = MuJoCoGraspingEnv(panda_robot_xml)
     obs1, _ = env.reset(seed=42)
     obs2, _ = env.reset(seed=42)
     assert np.allclose(obs1, obs2)
-
 
 def test_env_step_valid(panda_robot_xml):
     """Verify that taking a step in the environment with a valid action updates the state and returns rewards."""
@@ -115,7 +116,6 @@ def test_env_step_valid(panda_robot_xml):
     assert isinstance(truncated, bool)
     assert isinstance(info, dict)
 
-
 def test_env_step_non_finite_rejection(panda_robot_xml):
     """Verify that non-finite step values (NaN/inf) are explicitly rejected with a ValueError."""
     env = MuJoCoGraspingEnv(panda_robot_xml)
@@ -126,7 +126,6 @@ def test_env_step_non_finite_rejection(panda_robot_xml):
 
     with pytest.raises(ValueError, match="finite values"):
         env.step(np.array([np.inf], dtype=np.float32))
-
 
 def test_env_step_terminal_returns_terminal_observation_without_reset(panda_robot_xml, monkeypatch):
     """Verify a non-finite transition returns the terminal observation unchanged."""
@@ -154,7 +153,6 @@ def test_env_step_terminal_returns_terminal_observation_without_reset(panda_robo
     assert not np.isfinite(obs).all()
     assert reset_calls == []
 
-
 def test_env_step_padding_truncation(panda_robot_xml):
     """Verify that action arrays are automatically padded or truncated to match action space limits."""
     env = MuJoCoGraspingEnv(panda_robot_xml)
@@ -168,7 +166,6 @@ def test_env_step_padding_truncation(panda_robot_xml):
     obs, _reward, _terminated, _truncated, _info = env.step(np.array([], dtype=np.float32))
     assert np.isfinite(obs).all()
 
-
 def test_default_reward_preserves_legacy_behavior(panda_robot_xml):
     """Verify that the default reward computation matches legacy scaling (action cost + survival bonus)."""
     env = MuJoCoGraspingEnv(panda_robot_xml)
@@ -178,7 +175,6 @@ def test_default_reward_preserves_legacy_behavior(panda_robot_xml):
     assert terminated is False
     assert truncated is False
 
-
 def test_contact_reward_term(scene_xml):
     """Verify that the reward correctly adds contact bonuses when tracked objects are touched."""
     env = MuJoCoGraspingEnv(scene_xml, object_name="object", reward_config=RewardConfig(contact_reward=0.5))
@@ -187,7 +183,6 @@ def test_contact_reward_term(scene_xml):
     _obs, reward, terminated, _truncated, _info = env.step(np.array([0.0], dtype=np.float32))
     assert reward == pytest.approx(1.0 + 0.5)
     assert terminated is False
-
 
 def test_lift_and_grasp_success_rewards(scene_xml):
     """Verify that lifting the object above thresholds triggers lift reward weights and grasp success bonuses."""
@@ -214,7 +209,6 @@ def test_lift_and_grasp_success_rewards(scene_xml):
     _obs, reward3, _term, _trunc, _info = env.step(np.array([0.0], dtype=np.float32))
     assert reward3 == pytest.approx(1.0 + 2.0 * 0.08)
 
-
 def test_drop_below_threshold_terminates(scene_xml):
     """Verify that dropping the object too far below its initial height triggers terminal flags."""
     env = MuJoCoGraspingEnv(
@@ -229,14 +223,12 @@ def test_drop_below_threshold_terminates(scene_xml):
     assert terminated is True
     assert truncated is False
 
-
 def test_env_validates_reward_configuration(scene_xml):
     """Verify that MuJoCoGraspingEnv validates custom RewardConfig and object name argument types."""
     with pytest.raises(TypeError, match="reward_config"):
         MuJoCoGraspingEnv(scene_xml, object_name="object", reward_config="bad")  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="object_name"):
         MuJoCoGraspingEnv(scene_xml, object_name=123)  # type: ignore[arg-type]
-
 
 def test_non_finite_terminal_uses_config(panda_robot_xml, monkeypatch):
     """Verify that non-finite observations do not trigger termination if config disables it."""
@@ -249,12 +241,10 @@ def test_non_finite_terminal_uses_config(panda_robot_xml, monkeypatch):
     _obs, _reward, terminated, _truncated, _info = env.step(np.array([0.0], dtype=np.float32))
     assert terminated is False
 
-
 def test_env_step_routes_through_shared_command_path(panda_robot_xml, monkeypatch):
     """Verify that step actions route control commands directly to MuJoCo actuators."""
     import grasping_ai.simulation.mujoco_env as mujoco_env_module
-    from grasping_ai.simulation.mujoco_env import set_actuator_controls
-
+    
     calls: list[np.ndarray] = []
 
     def spy_set_actuator_controls(state, ctrl):
@@ -272,13 +262,11 @@ def test_env_step_routes_through_shared_command_path(panda_robot_xml, monkeypatc
     expected[0] = 0.5
     assert np.allclose(calls[0], expected)
 
-
 @pytest.mark.filterwarnings("ignore")
 def test_gymnasium_env_compliance(panda_robot_xml):
     """Verify gymnasium compliance checks pass on the MuJoCo grasping environment."""
     env = MuJoCoGraspingEnv(panda_robot_xml)
     check_env(env)
-
 
 def test_sb3_training_and_inference_compatibility(panda_robot_xml, tmp_path):
     """Train a tiny Panda RL policy and run a one-step inference call.
@@ -325,17 +313,11 @@ def test_sb3_training_and_inference_compatibility(panda_robot_xml, tmp_path):
     assert action.shape == (8,)
     assert np.isfinite(action).all()
 
-
 def test_mujoco_env_additional_coverage(tmp_path: Path) -> None:
     """Verify model loading failures, XML errors, and custom control ranges in MuJoCo grasping environment."""
     import mujoco
 
-    from grasping_ai.simulation.mujoco_env import (
-        MuJoCoGraspingEnv,
-        create_simulation,
-        load_mujoco_model,
-    )
-
+    
     corrupt_xml = tmp_path / "corrupt.xml"
     corrupt_xml.write_text("<invalid_xml_tag", encoding="utf-8")
     with pytest.raises(ValueError, match="Failed to load MuJoCo model from XML"):

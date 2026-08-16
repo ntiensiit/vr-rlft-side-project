@@ -12,36 +12,31 @@ import wandb
 from loguru import logger
 from omegaconf import DictConfig
 
-from grasping_ai.config.config import (
-    SCRIPTS_CONFIG_PATH,
-    config_get,
-    config_value,
-    hydra_cfg_to_dict,
-)
+from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
 from grasping_ai.pipelines.evaluate import write_jsonl_records
 
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/run_artifacts")
 def main(cfg: DictConfig) -> None:
     """Run reproducible supervised and RL artifact chains and write a manifest."""
-    cfg_dict = hydra_cfg_to_dict(cfg)
+    yaml_config = FlattenedYAMLConfig(cfg)
+    cfg_dict = yaml_config.source
     root = Path(__file__).resolve().parents[1]
-    artifacts = config_value(cfg, "output_dir", "artifacts", "root", value_type=Path, script_or=True, required=True)
+    artifacts = yaml_config.value("output_dir", "artifacts", "root", value_type=Path, script_or=True, required=True)
     if not artifacts.is_absolute():
         artifacts = root / artifacts
 
     env_vars = {
         **os.environ,
         "PYTHONPATH": str(root / "src"),
-        "PYTHONPYCACHEPREFIX": str(root / config_value(cfg, "artifacts", "pycache_dir", value_type=object)),
+        "PYTHONPYCACHEPREFIX": str(root / yaml_config.value("artifacts", "pycache_dir", value_type=object)),
     }
     log: list[dict[str, object]] = []
 
     prepare_data_mode = str(
-        config_value(cfg, "prepare_data_mode", "artifact_chain", "prepare_data_mode", value_type=object, script_or=True)
+        yaml_config.value("prepare_data_mode", "artifact_chain", "prepare_data_mode", value_type=object, script_or=True)
     )
-    evaluate_multi_object = config_value(
-        cfg,
+    evaluate_multi_object = yaml_config.value(
         "evaluate_multi_object",
         "artifact_chain",
         "evaluate_multi_object",
@@ -71,15 +66,15 @@ def main(cfg: DictConfig) -> None:
         subprocess.run(cmd, cwd=root, env=env_vars, check=True, capture_output=False)
         log.append({"command": "python " + " ".join(cmd[1:]), "cwd": "."})
 
-    data_processed = config_value(cfg, "paths", "dataset_root", value_type=Path, required=True)
-    mjcf_root = config_value(cfg, "paths", "ycb_mjcf", value_type=Path, required=True)
+    data_processed = yaml_config.value("paths", "dataset_root", value_type=Path, required=True)
+    mjcf_root = yaml_config.value("paths", "ycb_mjcf", value_type=Path, required=True)
     if not data_processed.is_absolute():
         data_processed = root / data_processed
     if not mjcf_root.is_absolute():
         mjcf_root = root / mjcf_root
 
     root_resolved = root.resolve()
-    retained_cfg = config_get(cfg, "artifacts", "retained")
+    retained_cfg = yaml_config.get_path("artifacts", "retained")
     if not isinstance(retained_cfg, dict):
         msg = "artifacts.retained must be a mapping"
         raise TypeError(msg)
@@ -98,10 +93,10 @@ def main(cfg: DictConfig) -> None:
         p.resolve().relative_to(root_resolved).as_posix()
         for p in retained_paths
     )
-    manifest_cfg = config_value(cfg, "artifacts", "manifest", value_type=Path, required=True)
+    manifest_cfg = yaml_config.value("artifacts", "manifest", value_type=Path, required=True)
     manifest_path = manifest_cfg if manifest_cfg.is_absolute() else artifacts / manifest_cfg.name
-    config_dir_arg = str(config_value(cfg, "artifacts", "config_dir", value_type=object, required=True))
-    chain_cfg = config_get(cfg, "artifacts", "chain")
+    config_dir_arg = str(yaml_config.value("artifacts", "config_dir", value_type=object, required=True))
+    chain_cfg = yaml_config.get_path("artifacts", "chain")
     if not isinstance(chain_cfg, dict):
         msg = "artifacts.chain must be a mapping"
         raise TypeError(msg)
@@ -119,11 +114,11 @@ def main(cfg: DictConfig) -> None:
     manifest_records.extend({"record_type": "retained_artifact", "path": rel} for rel in retained_artifacts)
     write_jsonl_records(manifest_path, manifest_records)
 
-    tracking_backend = str(config_get(cfg, "tracking", "backend", default="none")).lower()
+    tracking_backend = str(yaml_config.get_path("tracking", "backend", default="none")).lower()
     if tracking_backend == "wandb":
-        wandb_project = str(config_get(cfg, "tracking", "project", default="vr-rlft-side-project"))
-        wandb_entity = config_get(cfg, "tracking", "entity", default=None)
-        wandb_mode = str(config_get(cfg, "tracking", "mode", default="offline"))
+        wandb_project = str(yaml_config.get_path("tracking", "project", default="vr-rlft-side-project"))
+        wandb_entity = yaml_config.get_path("tracking", "entity", default=None)
+        wandb_mode = str(yaml_config.get_path("tracking", "mode", default="offline"))
         wandb_init: dict[str, object] = {
             "project": wandb_project,
             "job_type": str(wandb_cfg.get("job_type", "artifact-chain")),
@@ -173,13 +168,13 @@ def main(cfg: DictConfig) -> None:
         finally:
             wandb_run.finish()
 
-    observation_dim = config_value(cfg, "rl", "observation_dim", value_type=int)
-    action_dim = config_value(cfg, "rl", "action_dim", value_type=int)
-    rl_checkpoint = config_value(cfg, "rl", "checkpoint", value_type=Path, required=True)
+    observation_dim = yaml_config.value("rl", "observation_dim", value_type=int)
+    action_dim = yaml_config.value("rl", "action_dim", value_type=int)
+    rl_checkpoint = yaml_config.value("rl", "checkpoint", value_type=Path, required=True)
     if not rl_checkpoint.is_absolute():
         rl_checkpoint = root / rl_checkpoint
     rl_checkpoint_arg = rl_checkpoint.resolve().relative_to(root_resolved).as_posix()
-    infer_cfg = config_value(cfg, "artifacts", "rl_inference_smoke", value_type=Path, required=True)
+    infer_cfg = yaml_config.value("artifacts", "rl_inference_smoke", value_type=Path, required=True)
     infer_path = infer_cfg if infer_cfg.is_absolute() else artifacts / infer_cfg.name
     infer_path_arg = infer_path.resolve().relative_to(root_resolved).as_posix()
     infer_script = (

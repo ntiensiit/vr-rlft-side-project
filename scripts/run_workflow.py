@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
+from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+
+from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
+
+from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
+
+from grasping_ai.pipelines.evaluate import read_jsonl_records
+
+from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
+
 import os
 import subprocess
 import sys
@@ -11,17 +21,6 @@ import hydra
 import numpy as np
 from loguru import logger
 from omegaconf import DictConfig
-
-from grasping_ai.config.config import (
-    SCRIPTS_CONFIG_PATH,
-    config_get,
-    config_value,
-)
-from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
-from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
-from grasping_ai.pipelines.evaluate import read_jsonl_records
-from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
-
 
 def run_workflow_main(
     checkpoint_path: Path,
@@ -335,72 +334,71 @@ def run_workflow_main(
     for key, value in summary.items():
         logger.info("  {} = {:.4f}", key, value)
 
-
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/run_workflow")
 def main(cfg: DictConfig) -> None:
-    method = str(config_value(cfg, "method", "evaluation", "method", value_type=object, script_or=True))
-    checkpoint = config_value(cfg, "checkpoint", "model", "checkpoint", value_type=Path, script_or=True)
+    yaml_config = FlattenedYAMLConfig(cfg)
+    method = str(yaml_config.value("method", "evaluation", "method", value_type=object, script_or=True))
+    checkpoint = yaml_config.value("checkpoint", "model", "checkpoint", value_type=Path, script_or=True)
     if checkpoint is None:
         raise ValueError("model.checkpoint path is required")
 
-    output_dir = config_value(cfg, "output_dir", "artifacts", "root", value_type=Path, script_or=True, required=True)
-    close_default = config_value(cfg, "robot", "gripper", "close_command", value_type=list[float]) or [0.0]
-    intermediate = config_get(cfg, "workflow", "intermediate")
+    output_dir = yaml_config.value("output_dir", "artifacts", "root", value_type=Path, script_or=True, required=True)
+    close_default = yaml_config.value("robot", "gripper", "close_command", value_type=list[float]) or [0.0]
+    intermediate = yaml_config.get_path("workflow", "intermediate")
     if not isinstance(intermediate, dict):
         msg = "workflow.intermediate must be a mapping"
         raise TypeError(msg)
-    rl_report = config_value(
-        cfg, "rl_rollout_report", "workflow", "rl_rollout_report", value_type=Path, script_or=True, required=True
+    rl_report = yaml_config.value(
+        "rl_rollout_report", "workflow", "rl_rollout_report", value_type=Path, script_or=True, required=True
     )
 
     run_workflow_main(
         checkpoint_path=checkpoint,
         output_dir=output_dir,
         method=method,
-        feature_dim=config_value(cfg, "architecture", "feature_dim", value_type=int),
-        num_steps=config_value(cfg, "model", "inference_steps", value_type=int),
-        num_grasps=config_value(cfg, "architecture", "num_grasps", value_type=int),
-        device=str(config_get(cfg, "device")),
-        seed=config_value(cfg, "seed", value_type=int),
-        gripper_point_cloud_path=config_value(
-            cfg, "gripper_point_cloud", "workflow", "gripper_point_cloud", value_type=Path, script_or=True, required=True
+        feature_dim=yaml_config.value("architecture", "feature_dim", value_type=int),
+        num_steps=yaml_config.value("model", "inference_steps", value_type=int),
+        num_grasps=yaml_config.value("architecture", "num_grasps", value_type=int),
+        device=str(yaml_config.get("device")),
+        seed=yaml_config.value("seed", value_type=int),
+        gripper_point_cloud_path=yaml_config.value(
+            "gripper_point_cloud", "workflow", "gripper_point_cloud", value_type=Path, script_or=True, required=True
         ),
         eval_object_key=str(
-            config_value(cfg, "eval_object_key", "workflow", "eval_object_key", value_type=object, script_or=True)
+            yaml_config.value("eval_object_key", "workflow", "eval_object_key", value_type=object, script_or=True)
         ),
         rl_rollout_report_name=rl_report.name,
         grasp_candidates_name=str(intermediate["grasp_candidates"]),
         simulation_outcomes_name=str(intermediate["simulation_outcomes"]),
         analytical_evaluation_name=str(intermediate["analytical_evaluation"]),
         object_point_cloud_name=str(
-            config_value(cfg, "object_point_cloud", "workflow", "object_point_cloud", value_type=object, script_or=True)
+            yaml_config.value("object_point_cloud", "workflow", "object_point_cloud", value_type=object, script_or=True)
         ),
-        point_cloud_sample_multiplier=config_value(
-            cfg, "point_cloud_sample_multiplier", "workflow", "point_cloud_sample_multiplier", value_type=int, script_or=True
+        point_cloud_sample_multiplier=yaml_config.value(
+            "point_cloud_sample_multiplier", "workflow", "point_cloud_sample_multiplier", value_type=int, script_or=True
         ),
-        pycache_dir=str(config_value(cfg, "pycache_dir", "workflow", "pycache_dir", value_type=object, script_or=True)),
-        observation_path=config_value(cfg, "observation", value_type=Path, script_or=True),
-        ycb_root_raw=config_value(cfg, "ycb_root", "paths", "ycb_root", value_type=Path, script_or=True),
-        ycb_root_mjcf=config_value(cfg, "ycb_mjcf", "paths", "ycb_mjcf", value_type=Path, script_or=True),
-        object_id=config_value(cfg, "object_id", value_type=object, script_or=True),
-        robot_xml_path=config_value(cfg, "robot_xml", "robot", "description", value_type=Path, script_or=True),
-        observation_dim=config_value(cfg, "observation_dim", value_type=object, script_or=True),
-        action_dim=config_value(cfg, "action_dim", value_type=object, script_or=True),
-        rl_policy_checkpoint_path=config_value(cfg, "rl_policy_checkpoint", value_type=Path, script_or=True),
-        rl_episodes=config_value(cfg, "rl_episodes", value_type=object, script_or=True),
-        rl_max_steps=config_value(cfg, "rl_max_steps", value_type=object, script_or=True),
-        table_xml_path=config_value(cfg, "table_xml", "env", "table_xml", value_type=Path, script_or=True),
-        num_simulation_steps=config_value(cfg, "num_steps", value_type=int),
+        pycache_dir=str(yaml_config.value("pycache_dir", "workflow", "pycache_dir", value_type=object, script_or=True)),
+        observation_path=yaml_config.value("observation", value_type=Path, script_or=True),
+        ycb_root_raw=yaml_config.value("ycb_root", "paths", "ycb_root", value_type=Path, script_or=True),
+        ycb_root_mjcf=yaml_config.value("ycb_mjcf", "paths", "ycb_mjcf", value_type=Path, script_or=True),
+        object_id=yaml_config.value("object_id", value_type=object, script_or=True),
+        robot_xml_path=yaml_config.value("robot_xml", "robot", "description", value_type=Path, script_or=True),
+        observation_dim=yaml_config.value("observation_dim", value_type=object, script_or=True),
+        action_dim=yaml_config.value("action_dim", value_type=object, script_or=True),
+        rl_policy_checkpoint_path=yaml_config.value("rl_policy_checkpoint", value_type=Path, script_or=True),
+        rl_episodes=yaml_config.value("rl_episodes", value_type=object, script_or=True),
+        rl_max_steps=yaml_config.value("rl_max_steps", value_type=object, script_or=True),
+        table_xml_path=yaml_config.value("table_xml", "env", "table_xml", value_type=Path, script_or=True),
+        num_simulation_steps=yaml_config.value("num_steps", value_type=int),
         gripper_close_command=close_default[0],
-        friction_coefficient=config_value(cfg, "metrics", "friction_coefficient", value_type=float),
-        lift_height_threshold=config_value(cfg, "metrics", "lift_height_threshold", value_type=float),
-        contact_clearance=config_value(cfg, "metrics", "collision_clearance", value_type=float),
-        wrench_regularization=config_value(cfg, "metrics", "wrench_regularization", value_type=float),
+        friction_coefficient=yaml_config.value("metrics", "friction_coefficient", value_type=float),
+        lift_height_threshold=yaml_config.value("metrics", "lift_height_threshold", value_type=float),
+        contact_clearance=yaml_config.value("metrics", "collision_clearance", value_type=float),
+        wrench_regularization=yaml_config.value("metrics", "wrench_regularization", value_type=float),
         grasp_pose_format=str(
-            config_value(cfg, "grasp_pose_format", "workflow", "grasp_pose_format", value_type=object, script_or=True)
+            yaml_config.value("grasp_pose_format", "workflow", "grasp_pose_format", value_type=object, script_or=True)
         ),
     )
-
 
 if __name__ == "__main__":
     main()

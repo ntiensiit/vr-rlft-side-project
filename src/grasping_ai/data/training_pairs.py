@@ -2,28 +2,36 @@
 
 from __future__ import annotations
 
+from grasping_ai.data.grasp_vector import se3_to_vec
+
+from grasping_ai.data.pointcloud_dataset import (
+    discover_dataset_files,
+    iterate_grasp_dataset,
+    load_grasp_sample,
+)
+
+from grasping_ai.data.transforms import (
+    compose_transforms,
+    make_random_rotation_jitter,
+    make_translation_jitter,
+)
+
+from grasping_ai.models.equivariant_encoder import (
+    compute_se3_frame,
+    invert_rigid_transform_batch,
+    world_transform_from_frame,
+)
+
+from grasping_ai.utils.path_validation import require_path
+
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 from loguru import logger
 
-from grasping_ai.data.grasp_vector import se3_to_vec
-from grasping_ai.data.pointcloud_dataset import (
-    discover_dataset_files,
-    iterate_grasp_dataset,
-    load_grasp_sample,
-)
-from grasping_ai.models.equivariant_encoder import (
-    compute_se3_frame,
-    invert_rigid_transform_batch,
-    world_transform_from_frame,
-)
-from grasping_ai.utils.path_validation import require_path
-
 if TYPE_CHECKING:
     from pathlib import Path
-
 
 def validate_grasp_dataset(dataset_root: Path) -> int:
     """Validate that a dataset root yields readable grasp samples.
@@ -43,7 +51,6 @@ def validate_grasp_dataset(dataset_root: Path) -> int:
     if count == 0:
         raise ValueError(f"Dataset at {dataset_root} contains no valid grasp samples")
     return count
-
 
 def build_supervised_training_pairs(
     dataset_root: Path,
@@ -108,12 +115,7 @@ def build_supervised_training_pairs(
                 raise ValueError(f"Record {record} has no grasp poses above min_grasp_score={min_grasp_score}")
 
         if augment_rng is not None:
-            from grasping_ai.data.transforms import (
-                compose_transforms,
-                make_random_rotation_jitter,
-                make_translation_jitter,
-            )
-
+            
             sample_transform = compose_transforms(
                 make_random_rotation_jitter(augment_rng),
                 make_translation_jitter(augment_rng, scale=0.01),

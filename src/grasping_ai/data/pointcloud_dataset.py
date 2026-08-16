@@ -2,26 +2,33 @@
 
 from __future__ import annotations
 
+from grasping_ai.perception.geometry import make_transform
+
+from grasping_ai.perception.pointcloud import build_kdtree
+
+from grasping_ai.simulation.ycb import (
+    find_ycb_mesh_file,
+    resolve_ycb_object_directory,
+)
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
+from grasping_ai.utils.path_validation import require_path
+
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import numpy as np
 from loguru import logger
 
-from grasping_ai.perception.geometry import make_transform
-from grasping_ai.perception.pointcloud import build_kdtree
-from grasping_ai.utils.constants import (
-    ALIGNMENT_DOT_THRESHOLD,
-    GRASP_DISTANCE_EPS,
-    POINT_CLOUD_NDIM,
-    ROTATION_DET_EPS,
-    SPATIAL_DIM,
-)
-from grasping_ai.utils.path_validation import require_path
+ALIGNMENT_DOT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("tolerances.alignment_dot_threshold", 0.9))
+GRASP_DISTANCE_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.grasp_distance_eps", 1e-4))
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+ROTATION_DET_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.rotation_det_eps", 1e-4))
+SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
-
 
 class GraspSample(TypedDict):
     """Single grasp-dataset record loaded from disk."""
@@ -30,7 +37,6 @@ class GraspSample(TypedDict):
     grasp_poses: np.ndarray | None
     scores: np.ndarray | None
     object_id: str | None
-
 
 def _validate_point_cloud(point_cloud: object) -> np.ndarray:
     """Validate a loaded point cloud array.
@@ -53,7 +59,6 @@ def _validate_point_cloud(point_cloud: object) -> np.ndarray:
         raise ValueError("point_cloud must contain only finite values")
     return point_cloud
 
-
 def _decode_object_id(object_id: object) -> str | None:
     """Decode an optional object identifier stored in an NPZ archive.
 
@@ -73,7 +78,6 @@ def _decode_object_id(object_id: object) -> str | None:
     if isinstance(object_id, str):
         return object_id
     return str(object_id)
-
 
 def save_grasp_sample(record_path: Path, sample: GraspSample) -> None:
     """Persist a grasp-pose dataset record as a pickle-free NPZ archive.
@@ -111,7 +115,6 @@ def save_grasp_sample(record_path: Path, sample: GraspSample) -> None:
     record_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(record_path, **cast("Any", archive_fields))
 
-
 def discover_dataset_files(dataset_root: Path) -> list[Path]:
     """List dataset record files under a dataset root directory.
 
@@ -132,7 +135,6 @@ def discover_dataset_files(dataset_root: Path) -> list[Path]:
         raise ValueError(f"No dataset record files (.npz) found under '{dataset_root}'")
     logger.info("Discovered {} dataset record files under {}", len(records), dataset_root)
     return records
-
 
 def _read_grasp_sample_archive(archive: np.lib.npyio.NpzFile) -> GraspSample:
     """Parse a loaded NPZ archive into a ``GraspSample``.
@@ -160,7 +162,6 @@ def _read_grasp_sample_archive(archive: np.lib.npyio.NpzFile) -> GraspSample:
         "scores": scores,
         "object_id": object_id,
     }
-
 
 def load_grasp_sample(record_path: Path) -> GraspSample:
     """Load a single grasp-pose dataset record from disk.
@@ -192,7 +193,6 @@ def load_grasp_sample(record_path: Path) -> GraspSample:
     except Exception as e:
         raise ValueError(f"Failed to load record file: {e}") from e
 
-
 def iterate_grasp_dataset(dataset_root: Path) -> Iterator[GraspSample]:
     """Iterate over all grasp-pose samples in a dataset directory.
 
@@ -207,7 +207,6 @@ def iterate_grasp_dataset(dataset_root: Path) -> Iterator[GraspSample]:
     records = discover_dataset_files(dataset_root)
     for record in records:
         yield load_grasp_sample(record)
-
 
 def resolve_ycb_object_id(ycb_root: Path, object_name: str) -> Path:
     """Resolve the on-disk path of a YCB object mesh file.
@@ -227,14 +226,12 @@ def resolve_ycb_object_id(ycb_root: Path, object_name: str) -> Path:
     if not ycb_root.is_dir():
         raise ValueError(f"YCB root '{ycb_root}' is not a directory")
 
-    from grasping_ai.simulation.ycb import find_ycb_mesh_file, resolve_ycb_object_directory
-
+    
     object_dir = resolve_ycb_object_directory(ycb_root, object_name)
     try:
         return find_ycb_mesh_file(object_dir)
     except FileNotFoundError:
         return object_dir
-
 
 def _antipodal_grasp_from_contacts(
     p_i: np.ndarray,
@@ -288,7 +285,6 @@ def _antipodal_grasp_from_contacts(
     if np.abs(det - 1.0) >= ROTATION_DET_EPS:
         return None
     return pose
-
 
 def _search_antipodal_grasps(
     points: np.ndarray,
@@ -359,7 +355,6 @@ def _search_antipodal_grasps(
                 break
 
     return valid_grasps
-
 
 def generate_analytical_grasps(
     points: np.ndarray,

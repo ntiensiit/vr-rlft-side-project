@@ -4,6 +4,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    import google.colab  # noqa: F401
+except ImportError:
+    google.colab = None  # pragma: no cover
+
 DEFAULT_REPO_BRANCH = "dev"
 DEFAULT_REPO_DIR = "vr-rlft-side-project"
 DEFAULT_REPO_URL = "https://github.com/ntiensiit/vr-rlft-side-project.git"
@@ -15,12 +20,7 @@ def is_colab_runtime() -> bool:
     Returns:
         ``True`` when ``google.colab`` can be imported, otherwise ``False``.
     """
-    try:
-        import google.colab  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    return google.colab is not None
 
 
 def resolve_project_root(start: Path | None = None) -> Path:

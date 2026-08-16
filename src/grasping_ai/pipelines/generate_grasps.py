@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
+from grasping_ai.utils.path_validation import require_path
+
 from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
 
-from grasping_ai.utils.constants import GRASP_OBJECT_BATCH_NDIM, GRASP_POSES_NDIM, SE3_MATRIX_SHAPE
-from grasping_ai.utils.path_validation import require_path
+GRASP_OBJECT_BATCH_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.object_batch_ndim", 4))
+GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
+SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
 
 if TYPE_CHECKING:
     from pathlib import Path
-
 
 def _parse_grasp_dict(data: dict[object, object]) -> dict[str, np.ndarray]:
     """Validate a pickled object-id to grasp-array mapping.
@@ -36,7 +40,6 @@ def _parse_grasp_dict(data: dict[object, object]) -> dict[str, np.ndarray]:
         parsed[key] = value
     return parsed
 
-
 def _parse_grasp_array(data: object) -> np.ndarray:
     """Validate a plain grasp pose array payload.
 
@@ -53,7 +56,6 @@ def _parse_grasp_array(data: object) -> np.ndarray:
         raise TypeError("Grasp file must contain a numpy array or object dictionary")
     return data
 
-
 def _numpy_pickle_payload(obj: object) -> np.ndarray:
     """Wrap an arbitrary Python object for ``np.save(..., allow_pickle=True)``.
 
@@ -66,7 +68,6 @@ def _numpy_pickle_payload(obj: object) -> np.ndarray:
     payload = np.empty((), dtype=object)
     payload[()] = obj
     return payload
-
 
 def load_generated_grasps(
     grasps_path: Path,
@@ -112,7 +113,6 @@ def load_generated_grasps(
         return grasps[0]
     return grasps
 
-
 def write_generated_grasps(
     output_path: Path,
     grasps_by_object: dict[str, np.ndarray],
@@ -136,7 +136,6 @@ def write_generated_grasps(
         logger.info("Saved generated grasps to: {}", output_path)
     except Exception as e:
         raise ValueError(f"Failed to write generated grasps: {e}") from e
-
 
 def write_generated_grasps_array(output_path: Path, grasp_poses: np.ndarray) -> None:
     """Persist a plain ``(K, 4, 4)`` grasp array.

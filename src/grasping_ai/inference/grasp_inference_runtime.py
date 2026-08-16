@@ -2,23 +2,28 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import numpy as np
-
 from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
+
 from grasping_ai.inference.grasp_generator import (
     build_diffusion_grasp_generator,
     build_flow_grasp_generator,
     generate_candidate_grasps,
     load_grasp_model_checkpoint,
 )
+
 from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
-from grasping_ai.utils.constants import POINT_CLOUD_NDIM, SPATIAL_DIM
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 
 if TYPE_CHECKING:
     from pathlib import Path
-
 
 def run_single_object_grasp_inference(
     checkpoint_path: Path,

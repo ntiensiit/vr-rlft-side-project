@@ -2,35 +2,37 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import numpy as np
-import pytest
+from grasping_ai.perception.geometry import invert_transform
 
 from grasping_ai.pipelines.simulate_grasp import (
     run_simulation_sweep,
     simulate_grasp,
 )
+
 from grasping_ai.robotics.gripper import (
     build_gripper_controller,
+    gripper_actuator_indices,
     load_gripper_model,
     make_close_command,
     make_open_command,
     panda_hand_to_contact_transform,
     panda_width_to_finger_joints,
 )
+
 from grasping_ai.robotics.kinematics import (
     build_forward_kinematics,
     build_inverse_kinematics,
     load_robot_model,
     solve_inverse_kinematics,
 )
+
 from grasping_ai.robotics.transforms import (
     convert_grasps_to_world_frame,
     invert_rigid_transform,
     transform_between_frames,
     transform_grasp_pose,
 )
+
 from grasping_ai.simulation.mujoco_env import (
     create_simulation,
     load_mujoco_model,
@@ -40,21 +42,29 @@ from grasping_ai.simulation.mujoco_env import (
     set_actuator_controls,
     set_joint_positions,
 )
+
 from grasping_ai.simulation.scene import (
-    MuJoCoScene,
     attach_object_to_scene,
     build_scene_xml,
     collect_contacts,
+    MuJoCoScene,
     step_scene,
 )
+
 from grasping_ai.simulation.ycb import (
+    build_ycb_object_name_classifier,
     find_ycb_mesh_file,
     find_ycb_mjcf,
     list_ycb_objects,
     resolve_ycb_object_directory,
+    tokenize_ycb_object_name,
     ycb_object_exists,
 )
 
+from pathlib import Path
+
+import numpy as np
+import pytest
 
 def test_mujoco_runtime_dependency_available():
     """Verify that mujoco package can be imported."""
@@ -62,25 +72,21 @@ def test_mujoco_runtime_dependency_available():
 
     assert mujoco.__version__ is not None
 
-
 def test_phase1_package_import_remains_stable():
     """Verify that the package remains importable."""
     import grasping_ai
 
     assert grasping_ai.__name__ == "grasping_ai"
 
-
 def test_simulation_config_file_exists():
     """Verify simulation configuration file existence."""
     path = Path("configs/env/default.yaml")
     assert path.is_file()
 
-
 def test_robot_config_files_exist():
     """Verify gripper config default alias and Franka Emika Panda variant exist."""
     assert Path("configs/gripper/default.yaml").is_file()
     assert Path("configs/gripper/franka_emika_panda.yaml").is_file()
-
 
 @pytest.fixture
 def minimal_gripper_xml(tmp_path):
@@ -105,7 +111,6 @@ def minimal_gripper_xml(tmp_path):
     path.write_text(xml_content, encoding="utf-8")
     return path
 
-
 @pytest.fixture
 def minimal_object_xml(tmp_path):
     """Fixture providing a path to a minimal MuJoCo object XML model for testing."""
@@ -122,7 +127,6 @@ def minimal_object_xml(tmp_path):
     path.write_text(xml_content, encoding="utf-8")
     return path
 
-
 SCENE_OBJECT_XML = """\
 <mujoco model="object">
     <worldbody>
@@ -134,14 +138,12 @@ SCENE_OBJECT_XML = """\
 </mujoco>
 """
 
-
 @pytest.fixture
 def scene_object_xml(tmp_path):
     """Fixture writing and providing a path to a scene object XML model with a freejoint."""
     path = tmp_path / "object.xml"
     path.write_text(SCENE_OBJECT_XML, encoding="utf-8")
     return path
-
 
 @pytest.fixture
 def ycb_root_with_object(tmp_path):
@@ -150,7 +152,6 @@ def ycb_root_with_object(tmp_path):
     obj_dir.mkdir(parents=True)
     (obj_dir / "mustard_bottle.xml").write_text(SCENE_OBJECT_XML, encoding="utf-8")
     return tmp_path / "ycb"
-
 
 def test_transform_between_frames():
     """Verify transforming point and points between frames."""
@@ -176,7 +177,6 @@ def test_transform_between_frames():
     with pytest.raises(ValueError):
         transform_between_frames(np.eye(3), pt)
 
-
 def test_transform_grasp_pose():
     """Test grasp pose composition."""
     g2w = np.eye(4)
@@ -188,11 +188,9 @@ def test_transform_grasp_pose():
     gr2w = transform_grasp_pose(g2w, gr2g)
     assert np.allclose(gr2w[:3, 3], [1.0, 2.0, 0.0])
 
-
 def test_panda_hand_to_contact_transform_round_trip() -> None:
     """Panda hand-to-contact transform is rigid and matches config offsets."""
-    from grasping_ai.perception.geometry import invert_transform
-
+    
     hand_to_contact = panda_hand_to_contact_transform()
     assert hand_to_contact.shape == (4, 4)
     assert np.isclose(np.linalg.det(hand_to_contact[:3, :3]), 1.0, atol=1e-6)
@@ -201,7 +199,6 @@ def test_panda_hand_to_contact_transform_round_trip() -> None:
     contact_to_hand = invert_transform(hand_to_contact)
     identity = hand_to_contact @ contact_to_hand
     assert np.allclose(identity, np.eye(4), atol=1e-6)
-
 
 def test_panda_width_to_finger_joints() -> None:
     """Width mapping matches Panda slide joint semantics."""
@@ -213,21 +210,17 @@ def test_panda_width_to_finger_joints() -> None:
     assert np.isclose(q1_min, 0.0015)
     assert np.isclose(q2_min, -0.0385)
 
-
 def test_deploy_robot_fingertip_friction() -> None:
     """Panda fingertip pad defaults use high friction from mj-grasp-sim."""
     text = Path("deploy/robot.xml").read_text(encoding="utf-8")
     assert text.count('friction="2.4 0.3 0.1"') >= 5
 
-
 def test_gripper_config_documents_panda_contact_offset() -> None:
     """Gripper config group records Panda base-to-contact constants."""
-    from grasping_ai.config.config import config_get, load_project_yaml_config
+    from grasping_ai.config import FLATTENED_YAML_CONFIG
 
-    cfg = load_project_yaml_config(Path("configs"))
-    position = config_get(cfg, "robot", "gripper", "base_to_contact", "position")
+    position = FLATTENED_YAML_CONFIG.get_path("robot", "gripper", "base_to_contact", "position")
     assert position == [0, 0, -0.102]
-
 
 def test_convert_grasps_to_world_frame():
     """Verify batch grasp conversions."""
@@ -247,7 +240,6 @@ def test_convert_grasps_to_world_frame():
     assert np.allclose(grasps_w[0, :3, 3], [0.1, 0.2, 1.3])
     assert np.allclose(grasps_w[1, :3, 3], [0.1, 0.2, 1.3])
 
-
 def test_invert_rigid_transform():
     """Verify inverse rigid transforms."""
     t = np.eye(4)
@@ -259,14 +251,12 @@ def test_invert_rigid_transform():
     identity = t @ t_inv
     assert np.allclose(identity, np.eye(4))
 
-
 def test_load_gripper_model(minimal_gripper_xml):
     """Test gripper loading and metadata mapping."""
     g_model = load_gripper_model(str(minimal_gripper_xml))
     assert isinstance(g_model, dict)
     assert g_model["nu"] == 1
     assert g_model["actuator_names"] == ["finger_actuator"]
-
 
 def test_make_open_close_commands(minimal_gripper_xml):
     """Verify open and close command generation."""
@@ -277,7 +267,6 @@ def test_make_open_close_commands(minimal_gripper_xml):
 
     assert np.allclose(open_cmd, [0.0])
     assert np.allclose(close_cmd, [0.04])
-
 
 def test_build_gripper_controller(minimal_gripper_xml):
     """Verify command limits, mapping, and application to ctrl array."""
@@ -302,7 +291,6 @@ def test_build_gripper_controller(minimal_gripper_xml):
     with pytest.raises(ValueError, match="shape"):
         controller(np.array([0.01, 0.02]))
 
-
 def test_load_robot_model(panda_robot_xml):
     """Load the Franka Panda MJCF and report nine generalized coordinates.
 
@@ -312,7 +300,6 @@ def test_load_robot_model(panda_robot_xml):
     r_model = load_robot_model(str(panda_robot_xml))
     assert isinstance(r_model, dict)
     assert r_model["nq"] == 9
-
 
 def test_franka_panda_model_uses_hand_end_effector(panda_robot_xml):
     """Verify Panda FK uses the ``hand`` body at the home keyframe.
@@ -331,7 +318,6 @@ def test_franka_panda_model_uses_hand_end_effector(panda_robot_xml):
     assert pose.shape == (4, 4)
     assert pose[2, 3] > 0.3
 
-
 def test_build_forward_kinematics(panda_robot_xml):
     """Verify Panda forward kinematics returns a rigid transform of the hand.
 
@@ -349,7 +335,6 @@ def test_build_forward_kinematics(panda_robot_xml):
     q_home = np.array([0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853, 0.04, 0.04])
     pose_home = fk(q_home)
     assert not np.allclose(pose_home[:3, 3], pose[:3, 3])
-
 
 def test_numerical_inverse_kinematics(panda_robot_xml):
     """Test IK solver convergence, reachability, and invalid inputs on Panda.
@@ -374,7 +359,6 @@ def test_numerical_inverse_kinematics(panda_robot_xml):
 
     with pytest.raises(ValueError, match="finite"):
         solve_inverse_kinematics(ik_solver, target_pose, np.full(9, np.nan))
-
 
 def test_robotics_error_handling(minimal_gripper_xml, panda_robot_xml):
     """Test all error-handling paths and parameter validations in robotics modules."""
@@ -483,7 +467,6 @@ def test_robotics_error_handling(minimal_gripper_xml, panda_robot_xml):
     with pytest.raises(TypeError, match="ik_solver"):
         solve_inverse_kinematics("not-callable", np.eye(4), np.zeros(9))  # type: ignore[arg-type]
 
-
 def test_gripper_controller_uses_shared_command_path(minimal_gripper_xml):
     """Verify that gripper controllers correctly command actuator inputs through shared state mappings."""
     import mujoco
@@ -504,14 +487,12 @@ def test_gripper_controller_uses_shared_command_path(minimal_gripper_xml):
     with pytest.raises(ValueError, match="shape"):
         controller(np.array([0.01, 0.02]))
 
-
 def test_gripper_controller_requires_bound_simulation(minimal_gripper_xml):
     """Verify that the gripper controller raises a RuntimeError if invoked before binding to active simulation state."""
     g_model = load_gripper_model(str(minimal_gripper_xml))
     controller = build_gripper_controller(g_model)
     with pytest.raises(RuntimeError, match="not bound"):
         controller(np.array([0.02]))
-
 
 def test_simulation_initializes_with_minimal_robot_description(panda_robot_xml):
     """Test loading and initializing simulation with a minimal robot description."""
@@ -524,7 +505,6 @@ def test_simulation_initializes_with_minimal_robot_description(panda_robot_xml):
     assert callable(step)
     assert callable(contacts)
 
-
 def test_simulation_initialization_rejects_missing_robot_description():
     """Test simulation initialization with a missing robot description path."""
     with pytest.raises(FileNotFoundError):
@@ -532,7 +512,6 @@ def test_simulation_initialization_rejects_missing_robot_description():
 
     with pytest.raises(TypeError):
         load_mujoco_model("not_a_path_object")  # type: ignore[arg-type]
-
 
 def test_simulation_reset_returns_initial_observation(panda_robot_xml):
     """Test environment reset returns observation and resets joints."""
@@ -547,7 +526,6 @@ def test_simulation_reset_returns_initial_observation(panda_robot_xml):
     reset_simulation(state)
     assert np.allclose(read_joint_positions(state), np.zeros(9))
 
-
 def test_simulation_step_accepts_valid_action(panda_robot_xml):
     """Test that simulation steps correctly with positive finite dt."""
     model = load_mujoco_model(panda_robot_xml)
@@ -556,7 +534,6 @@ def test_simulation_step_accepts_valid_action(panda_robot_xml):
     step(0.002)
     step(0.01)
 
-
 def test_simulation_step_rejects_invalid_action_shape(panda_robot_xml):
     """Test invalid joint position shape validation."""
     model = load_mujoco_model(panda_robot_xml)
@@ -564,7 +541,6 @@ def test_simulation_step_rejects_invalid_action_shape(panda_robot_xml):
 
     with pytest.raises(ValueError, match="positions shape"):
         set_joint_positions(state, np.array([1.0, 2.0]))
-
 
 def test_simulation_step_rejects_non_finite_action(panda_robot_xml):
     """Test non-finite values are rejected by joint control setter."""
@@ -575,7 +551,6 @@ def test_simulation_step_rejects_non_finite_action(panda_robot_xml):
         set_joint_positions(state, np.array([np.nan]))
     with pytest.raises(ValueError, match="finite"):
         set_joint_positions(state, np.array([np.inf]))
-
 
 def test_simulation_observation_shape_is_stable(panda_robot_xml):
     """Verify observation shape and body pose return formats."""
@@ -590,7 +565,6 @@ def test_simulation_observation_shape_is_stable(panda_robot_xml):
     assert pose.shape == (4, 4)
     assert np.allclose(pose[3, :], [0, 0, 0, 1])
 
-
 def test_simulation_state_does_not_leak_between_instances(panda_robot_xml):
     """Verify that multiple simulation states are completely independent."""
     model1 = load_mujoco_model(panda_robot_xml)
@@ -602,7 +576,6 @@ def test_simulation_state_does_not_leak_between_instances(panda_robot_xml):
     set_joint_positions(state1, np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
     assert np.allclose(read_joint_positions(state1)[0], 1.0)
     assert np.allclose(read_joint_positions(state2), np.zeros(9))
-
 
 def test_dynamic_object_attachment(panda_robot_xml, minimal_object_xml):
     """Verify attaching object to scene, renaming its body and reloading state."""
@@ -623,7 +596,6 @@ def test_dynamic_object_attachment(panda_robot_xml, minimal_object_xml):
     assert ee_pose.shape == (4, 4)
     assert obj_pose.shape == (4, 4)
 
-
 def test_scene_building_and_stepping(panda_robot_xml, minimal_object_xml):
     """Test build_scene_xml and step_scene functions."""
     scene_xml = build_scene_xml(panda_robot_xml, minimal_object_xml, None)
@@ -633,7 +605,6 @@ def test_scene_building_and_stepping(panda_robot_xml, minimal_object_xml):
     _state, step, _contacts = create_simulation(model)
 
     step_scene(step, 0.002, 10)
-
 
 def test_build_scene_xml_renames_object_body_when_name_supplied(panda_robot_xml, minimal_object_xml):
     """Verify build_scene_xml renames the object body when object_name is supplied."""
@@ -652,7 +623,6 @@ def test_build_scene_xml_renames_object_body_when_name_supplied(panda_robot_xml,
 
     with pytest.raises(TypeError):
         build_scene_xml(panda_robot_xml, minimal_object_xml, None, 123)  # type: ignore[arg-type]
-
 
 def test_contact_filtering():
     """Verify contact report filtering logic."""
@@ -679,7 +649,6 @@ def test_contact_filtering():
 
     filtered_empty = collect_contacts(dummy_reporter, {"bodyX", "bodyY"})
     assert len(filtered_empty) == 0
-
 
 def test_ycb_dataset_path_resolution(tmp_path):
     """Test list_ycb_objects, resolve_ycb_object_directory, find_ycb_mesh_file, ycb_object_exists."""
@@ -720,7 +689,6 @@ def test_ycb_dataset_path_resolution(tmp_path):
     # Mesh file lookup
     file2 = find_ycb_mesh_file(path2)
     assert file2 == mesh2
-
 
 def test_simulation_error_handling(panda_robot_xml, tmp_path):
     """Test all error-handling paths and parameter validations in simulation modules."""
@@ -831,14 +799,12 @@ def test_simulation_error_handling(panda_robot_xml, tmp_path):
     with pytest.raises(FileNotFoundError, match="No mesh file"):
         find_ycb_mesh_file(empty_dir)
 
-
 def test_find_ycb_mjcf_discovery(ycb_root_with_object):
     """Verify find_ycb_mjcf finds the mustard bottle XML model file in YCB paths."""
     object_dir = resolve_ycb_object_directory(ycb_root_with_object, "mustard_bottle")
     mjcf = find_ycb_mjcf(object_dir)
     assert mjcf.is_file()
     assert mjcf.suffix == ".xml"
-
 
 def test_find_ycb_mjcf_recursive_discovery(tmp_path):
     """Verify that find_ycb_mjcf recursively finds MJCF XML configuration files in subdirectories."""
@@ -848,7 +814,6 @@ def test_find_ycb_mjcf_recursive_discovery(tmp_path):
     (nested / "model.xml").write_text("<mujoco/>", encoding="utf-8")
     mjcf = find_ycb_mjcf(obj_dir)
     assert mjcf == nested / "model.xml"
-
 
 def test_find_ycb_mjcf_validation(tmp_path):
     """Verify that find_ycb_mjcf raises appropriate exceptions for non-existent directories or invalid inputs."""
@@ -860,7 +825,6 @@ def test_find_ycb_mjcf_validation(tmp_path):
     empty.mkdir()
     with pytest.raises(FileNotFoundError, match="MJCF XML"):
         find_ycb_mjcf(empty)
-
 
 def test_mujoco_scene_robot_only(panda_robot_xml):
     """Verify that MuJoCoScene initializes correctly with robot model and steps control commands successfully."""
@@ -875,7 +839,6 @@ def test_mujoco_scene_robot_only(panda_robot_xml):
     pose = scene.body_pose("link1")
     assert np.isfinite(pose).all()
 
-
 def test_mujoco_scene_with_object_renames_body(panda_robot_xml, scene_object_xml):
     """Verify that MuJoCoScene properly renames body names to match object identifiers on loading."""
     import mujoco
@@ -885,7 +848,6 @@ def test_mujoco_scene_with_object_renames_body(panda_robot_xml, scene_object_xml
     assert mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "obj_001") != -1
     assert mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "object") == -1
     assert scene.body_pose("obj_001")[2, 3] == pytest.approx(0.5)
-
 
 def test_mujoco_scene_snapshot_reset_restores_initial_state(panda_robot_xml, scene_object_xml):
     """Verify that calling reset on MuJoCoScene restores the state snapshot without rebuilding physics models."""
@@ -900,7 +862,6 @@ def test_mujoco_scene_snapshot_reset_restores_initial_state(panda_robot_xml, sce
     # Reset restores the captured snapshot without rebuilding the model.
     scene.reset()
     assert scene.body_pose("obj_001")[2, 3] == pytest.approx(initial_height)
-
 
 def test_mujoco_scene_reset_does_not_rebuild_xml(panda_robot_xml, scene_object_xml, monkeypatch):
     """Verify that reset on MuJoCoScene resets qpos and qvel using snapshots instead of rebuilding model trees."""
@@ -922,7 +883,6 @@ def test_mujoco_scene_reset_does_not_rebuild_xml(panda_robot_xml, scene_object_x
     scene.reset()
     assert len(calls) == build_calls_after_init
 
-
 def test_mujoco_scene_step_validates_controls(panda_robot_xml):
     """Verify that stepping MuJoCoScene validates control inputs for shape, types, and finite values."""
     scene = MuJoCoScene(panda_robot_xml)
@@ -932,7 +892,6 @@ def test_mujoco_scene_step_validates_controls(panda_robot_xml):
         scene.step(np.array([0.1, 0.2]), 0.002)
     with pytest.raises(TypeError):
         scene.step("not-an-array", 0.002)  # type: ignore[arg-type]
-
 
 def test_mujoco_scene_validation(panda_robot_xml, scene_object_xml):
     """Verify constructor parameters, robot XML paths, and object XML paths in MuJoCoScene."""
@@ -945,7 +904,6 @@ def test_mujoco_scene_validation(panda_robot_xml, scene_object_xml):
     with pytest.raises(FileNotFoundError):
         MuJoCoScene(panda_robot_xml, Path("non_existent_object.xml"))
 
-
 def test_mujoco_scene_attach_object_refreshes_snapshot(panda_robot_xml, scene_object_xml):
     """Verify that attaching new objects dynamically to MuJoCoScene updates active state snapshot ranges."""
     scene = MuJoCoScene(panda_robot_xml)
@@ -956,7 +914,6 @@ def test_mujoco_scene_attach_object_refreshes_snapshot(panda_robot_xml, scene_ob
     scene.reset()
     assert scene.body_pose("attached_obj")[2, 3] == pytest.approx(0.5)
 
-
 def test_mujoco_scene_is_consistent_with_functional_primitives(panda_robot_xml, scene_object_xml):
     """Verify that functional primitive simulation utilities yield outputs consistent with scene-based steps."""
     scene = MuJoCoScene(panda_robot_xml, scene_object_xml, object_name="obj_001")
@@ -966,7 +923,6 @@ def test_mujoco_scene_is_consistent_with_functional_primitives(panda_robot_xml, 
     assert callable(step)
     assert callable(contacts)
 
-
 def test_set_actuator_controls_writes_ctrl(panda_robot_xml):
     """Verify that set_actuator_controls correctly updates control registers in active MuJoCo simulation states."""
     model = load_mujoco_model(panda_robot_xml)
@@ -974,7 +930,6 @@ def test_set_actuator_controls_writes_ctrl(panda_robot_xml):
     set_actuator_controls(state, np.array([0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]))
     state_dict = state  # type: ignore[assignment]
     assert state_dict["data"].ctrl[0] == pytest.approx(0.25)
-
 
 def test_set_actuator_controls_validation(panda_robot_xml):
     """Verify that set_actuator_controls raises errors for non-finite values or control dimensionality mismatches."""
@@ -989,7 +944,6 @@ def test_set_actuator_controls_validation(panda_robot_xml):
         set_actuator_controls(state, np.array([np.nan]))
     with pytest.raises(ValueError, match="shape"):
         set_actuator_controls(state, np.array([0.1, 0.2]))
-
 
 def test_simulate_grasp_and_sweep_validations(panda_robot_xml, tmp_path: Path) -> None:
     """Verify shape and boundary validation checks on input parameters for grasp simulation pipelines."""
@@ -1098,7 +1052,6 @@ def test_simulate_grasp_and_sweep_validations(panda_robot_xml, tmp_path: Path) -
             gripper_close_command=np.zeros(1),
         )
 
-
 def test_run_simulation_sweep_execution(monkeypatch, panda_robot_xml, tmp_path: Path) -> None:
     """Verify that running a simulation sweep yields outputs for all input grasp poses in the batch."""
     ycb_dir = tmp_path / "ycb"
@@ -1125,17 +1078,9 @@ def test_run_simulation_sweep_execution(monkeypatch, panda_robot_xml, tmp_path: 
     assert len(outcomes) == 2
     assert outcomes[0]["success"]
 
-
 def test_ycb_all_helper_functions_and_discovery_paths(tmp_path: Path) -> None:
     """Verify that YCB helper tools classify names, resolve asset dirs, and discover mesh files correctly."""
-    from grasping_ai.simulation.ycb import (
-        build_ycb_object_name_classifier,
-        find_ycb_mesh_file,
-        find_ycb_mjcf,
-        resolve_ycb_object_directory,
-        tokenize_ycb_object_name,
-    )
-
+    
     with pytest.raises(TypeError, match="object_name must be a string"):
         tokenize_ycb_object_name(123)  # type: ignore[arg-type]
 
@@ -1189,18 +1134,9 @@ def test_ycb_all_helper_functions_and_discovery_paths(tmp_path: Path) -> None:
     mjcf_path = find_ycb_mjcf(nested_xml_dir)
     assert mjcf_path.name == "model.xml"
 
-
 def test_scene_and_simulate_grasp_additional_coverage(monkeypatch, panda_robot_xml, tmp_path: Path) -> None:
     """Verify that scene construction validation and simulate_grasp robustly handles malformed XML files and missing bodies."""
-    from grasping_ai.pipelines.simulate_grasp import (
-        run_simulation_sweep,
-        simulate_grasp,
-    )
-    from grasping_ai.simulation.scene import (
-        MuJoCoScene,
-        build_scene_xml,
-    )
-
+        
     object_xml = tmp_path / "obj.xml"
     object_xml.write_text(
         '<mujoco model="obj"><worldbody><body name="obj_body">'
@@ -1293,7 +1229,6 @@ def test_scene_and_simulate_grasp_additional_coverage(monkeypatch, panda_robot_x
     )
     assert len(outcomes) == 1
 
-
 def test_simulate_grasp_ik_failure_without_freejoint_returns_early(
     monkeypatch, panda_robot_xml, tmp_path: Path,
 ) -> None:
@@ -1307,8 +1242,7 @@ def test_simulate_grasp_ik_failure_without_freejoint_returns_early(
     Returns:
         None. Asserts the simulation outcome reports failure.
     """
-    from grasping_ai.pipelines.simulate_grasp import simulate_grasp
-
+    
     ycb_dir = tmp_path / "ycb"
     obj_dir = ycb_dir / "fixed_obj"
     obj_dir.mkdir(parents=True)
@@ -1338,7 +1272,6 @@ def test_simulate_grasp_ik_failure_without_freejoint_returns_early(
     assert outcome["success"] is False
     assert outcome["fk_position_error"] == float("inf")
 
-
 def test_simulate_grasp_gripper_actuator_and_freejoint_object(panda_robot_xml: Path, tmp_path: Path) -> None:
     """Exercise simulate_grasp on Panda with a freejoint object.
 
@@ -1349,8 +1282,7 @@ def test_simulate_grasp_gripper_actuator_and_freejoint_object(panda_robot_xml: P
     Returns:
         None. Asserts a simulation outcome dictionary is produced.
     """
-    from grasping_ai.pipelines.simulate_grasp import simulate_grasp
-
+    
     ycb_dir = tmp_path / "ycb"
     obj_dir = ycb_dir / "free_obj"
     obj_dir.mkdir(parents=True)
@@ -1372,7 +1304,6 @@ def test_simulate_grasp_gripper_actuator_and_freejoint_object(panda_robot_xml: P
     assert "success" in outcome
     assert outcome["contact_count"] >= 0.0
 
-
 def test_gripper_actuator_indices_detects_finger_and_tendon(panda_robot_xml: Path, tmp_path: Path) -> None:
     """Detect Panda finger/tendon gripper actuators and a tendon-only model.
 
@@ -1385,8 +1316,7 @@ def test_gripper_actuator_indices_detects_finger_and_tendon(panda_robot_xml: Pat
     """
     import mujoco
 
-    from grasping_ai.robotics.gripper import gripper_actuator_indices
-
+    
     model = mujoco.MjModel.from_xml_path(str(panda_robot_xml))
     finger_ids = gripper_actuator_indices(model)
     assert 7 in finger_ids
@@ -1405,7 +1335,6 @@ def test_gripper_actuator_indices_detects_finger_and_tendon(panda_robot_xml: Pat
     tendon_model = mujoco.MjModel.from_xml_path(str(tendon_xml))
     assert gripper_actuator_indices(tendon_model) == [0]
 
-
 def test_simulate_grasp_uses_fallback_timestep(monkeypatch, panda_robot_xml, tmp_path: Path) -> None:
     """Use a default physics timestep when the model reports a non-positive ``dt``.
 
@@ -1417,8 +1346,7 @@ def test_simulate_grasp_uses_fallback_timestep(monkeypatch, panda_robot_xml, tmp
     Returns:
         None. Asserts simulation completes without raising.
     """
-    from grasping_ai.pipelines.simulate_grasp import simulate_grasp
-
+    
     ycb_dir = tmp_path / "ycb"
     obj_dir = ycb_dir / "obj"
     obj_dir.mkdir(parents=True)

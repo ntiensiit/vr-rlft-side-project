@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
 from typing import TYPE_CHECKING
 
 import torch
 
-from grasping_ai.utils.constants import POINT_CLOUD_NDIM
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
 
 def batch_conditioned_grasp_samples(
     conditioning: torch.Tensor,

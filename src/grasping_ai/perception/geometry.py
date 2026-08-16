@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
 import numpy as np
 import pytransform3d.rotations as pr
 import pytransform3d.transformations as pt
 
-from grasping_ai.utils.constants import POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE, SPATIAL_DIM
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
+SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 
 RotationMatrix = np.ndarray
 Translation = np.ndarray
 Transform4x4 = np.ndarray
-
 
 def identity_transform() -> Transform4x4:
     """Construct the identity rigid-body transformation.
@@ -20,7 +23,6 @@ def identity_transform() -> Transform4x4:
         A ``(4, 4)`` identity transform matrix.
     """
     return np.eye(4)
-
 
 def rotation_matrix_from_axis_angle(axis: np.ndarray, angle: float) -> RotationMatrix:
     """Build a rotation matrix from a unit axis and an angle in radians.
@@ -50,7 +52,6 @@ def rotation_matrix_from_axis_angle(axis: np.ndarray, angle: float) -> RotationM
     a = np.hstack((axis, angle))
     return pr.matrix_from_axis_angle(a)
 
-
 def rotation_matrix_to_axis_angle(rotation: RotationMatrix) -> tuple[np.ndarray, float]:
     """Recover the axis-angle representation of a rotation matrix.
 
@@ -74,7 +75,6 @@ def rotation_matrix_to_axis_angle(rotation: RotationMatrix) -> tuple[np.ndarray,
     axis = a[:3]
     angle = a[3]
     return axis, angle
-
 
 def make_transform(rotation: RotationMatrix, translation: Translation) -> Transform4x4:
     """Assemble a rigid ``(4, 4)`` transformation from rotation and translation.
@@ -101,7 +101,6 @@ def make_transform(rotation: RotationMatrix, translation: Translation) -> Transf
 
     return pt.transform_from(rotation, translation)
 
-
 def invert_transform(transform: Transform4x4) -> Transform4x4:
     """Compute the inverse of a rigid-body transformation.
 
@@ -121,7 +120,6 @@ def invert_transform(transform: Transform4x4) -> Transform4x4:
         raise ValueError("Transform must have shape (4, 4)")
 
     return pt.invert_transform(transform)
-
 
 def apply_transform(points: np.ndarray, transform: Transform4x4) -> np.ndarray:
     """Apply a rigid transformation to a set of points.
@@ -151,7 +149,6 @@ def apply_transform(points: np.ndarray, transform: Transform4x4) -> np.ndarray:
     transformed_hom = pt.transform(transform, points_hom)
     # Convert back to (N, 3)
     return transformed_hom[:, :3]
-
 
 def grasp_pose_to_transform(rotation: RotationMatrix, translation: Translation) -> Transform4x4:
     """Convert an SE(3) grasp pose into a 4x4 transformation matrix.

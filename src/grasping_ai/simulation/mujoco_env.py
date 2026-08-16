@@ -2,6 +2,15 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.flattened_yaml_config import (
+    FLATTENED_YAML_CONFIG,
+    FlattenedYAMLConfig,
+)
+
+from grasping_ai.perception.geometry import make_transform
+
+from grasping_ai.utils.path_validation import require_path
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
@@ -10,14 +19,6 @@ import gymnasium as gym
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
 
-from grasping_ai.config.config import (
-    DEFAULT_CONFIG_DIR,
-    config_value,
-    load_project_yaml_config,
-)
-from grasping_ai.perception.geometry import make_transform
-from grasping_ai.utils.path_validation import require_path
-
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -25,7 +26,6 @@ if TYPE_CHECKING:
 
 SimulationStep = Callable[[float], None]
 ContactReporter = Callable[[], list[dict[str, np.ndarray]]]
-
 
 @dataclass(frozen=True)
 class RewardConfig:
@@ -55,38 +55,44 @@ class RewardConfig:
     terminate_on_non_finite: bool = True
 
     @classmethod
-    def load_from_config(cls, cfg: DictConfig) -> RewardConfig:
+    def load_from_config(cls, cfg: DictConfig | None = None) -> RewardConfig:
         """Load RewardConfig parameters from a composed Hydra config.
 
         Args:
-            cfg: The project configuration mapping.
+            cfg: The project configuration mapping. When ``None``, the global
+                flattened YAML config is used.
 
         Returns:
             A RewardConfig instance populated with configured parameters.
         """
+        resolved_cfg = FLATTENED_YAML_CONFIG.cfg if cfg is None else cfg
+        yaml_config = FlattenedYAMLConfig(resolved_cfg)
         return cls(
-            action_cost_weight=config_value(
-                cfg, "rl", "reward", "action_cost_weight", value_type=float, default=0.01
+            action_cost_weight=yaml_config.value(
+                "rl", "reward", "action_cost_weight", value_type=float, default=0.01
             ),
-            survival_bonus=config_value(cfg, "rl", "reward", "survival_bonus", value_type=float, default=1.0),
-            contact_reward=config_value(cfg, "rl", "reward", "contact_reward", value_type=float, default=0.0),
-            lift_reward_weight=config_value(
-                cfg, "rl", "reward", "lift_reward_weight", value_type=float, default=0.0
+            survival_bonus=yaml_config.value(
+                "rl", "reward", "survival_bonus", value_type=float, default=1.0
             ),
-            grasp_success_bonus=config_value(
-                cfg, "rl", "reward", "grasp_success_bonus", value_type=float, default=0.0
+            contact_reward=yaml_config.value(
+                "rl", "reward", "contact_reward", value_type=float, default=0.0
             ),
-            lift_height_threshold=config_value(
-                cfg, "rl", "reward", "lift_height_threshold", value_type=float, default=0.05
+            lift_reward_weight=yaml_config.value(
+                "rl", "reward", "lift_reward_weight", value_type=float, default=0.0
             ),
-            drop_height_threshold=config_value(
-                cfg, "rl", "reward", "drop_height_threshold", value_type=float, default=0.1
+            grasp_success_bonus=yaml_config.value(
+                "rl", "reward", "grasp_success_bonus", value_type=float, default=0.0
             ),
-            terminate_on_non_finite=config_value(
-                cfg, "rl", "reward", "terminate_on_non_finite", value_type=bool, default=True
+            lift_height_threshold=yaml_config.value(
+                "rl", "reward", "lift_height_threshold", value_type=float, default=0.05
+            ),
+            drop_height_threshold=yaml_config.value(
+                "rl", "reward", "drop_height_threshold", value_type=float, default=0.1
+            ),
+            terminate_on_non_finite=yaml_config.value(
+                "rl", "reward", "terminate_on_non_finite", value_type=bool, default=True
             ),
         )
-
 
 def load_mujoco_model(model_xml_path: Path) -> object:
     """Load a MuJoCo simulation model from an XML file.
@@ -110,7 +116,6 @@ def load_mujoco_model(model_xml_path: Path) -> object:
         "mj_model": mj_model,
         "xml_path": model_xml_path,
     }
-
 
 def create_simulation(model: object) -> tuple[object, SimulationStep, ContactReporter]:
     """Create a stepping interface over a MuJoCo model.
@@ -179,7 +184,6 @@ def create_simulation(model: object) -> tuple[object, SimulationStep, ContactRep
 
     return state, step, contacts
 
-
 def reset_simulation(state: object) -> None:
     """Reset the simulation state to its initial configuration.
 
@@ -192,7 +196,6 @@ def reset_simulation(state: object) -> None:
     state_dict = cast("dict[str, Any]", state)
     mujoco.mj_resetData(state_dict["model"], state_dict["data"])
     mujoco.mj_forward(state_dict["model"], state_dict["data"])
-
 
 def set_actuator_controls(state: object, ctrl: np.ndarray) -> None:
     """Write actuator controls into the simulation state.
@@ -228,7 +231,6 @@ def set_actuator_controls(state: object, ctrl: np.ndarray) -> None:
 
     data.ctrl[:] = ctrl
 
-
 def read_joint_positions(state: object) -> np.ndarray:
     """Read the current joint positions from the simulation state.
 
@@ -243,7 +245,6 @@ def read_joint_positions(state: object) -> np.ndarray:
 
     state_dict = cast("dict[str, Any]", state)
     return np.array(state_dict["data"].qpos, copy=True)
-
 
 def set_joint_positions(state: object, positions: np.ndarray) -> None:
     """Write joint positions into the simulation state.
@@ -269,7 +270,6 @@ def set_joint_positions(state: object, positions: np.ndarray) -> None:
     data.qpos[:] = positions
     mujoco.mj_forward(model, data)
 
-
 def read_body_pose(state: object, body_name: str) -> np.ndarray:
     """Read the world-frame pose of a named body.
 
@@ -294,7 +294,6 @@ def read_body_pose(state: object, body_name: str) -> np.ndarray:
         raise ValueError(f"Body '{body_name}' not found in simulation model")
 
     return make_transform(data.xmat[body_id].reshape(3, 3), data.xpos[body_id])
-
 
 class MuJoCoGraspingEnv(gym.Env):
     """Gymnasium-compatible MuJoCo environment for RL policy training.
@@ -347,8 +346,7 @@ class MuJoCoGraspingEnv(gym.Env):
         self._object_name = object_name
         if reward_config is None:
             try:
-                _cfg = load_project_yaml_config(DEFAULT_CONFIG_DIR)
-                reward_config = RewardConfig.load_from_config(_cfg)
+                reward_config = RewardConfig.load_from_config()
             except Exception:
                 reward_config = RewardConfig()
         self._reward_config = reward_config
@@ -369,15 +367,16 @@ class MuJoCoGraspingEnv(gym.Env):
             raise ValueError("MuJoCo model has zero actuators; the RL environment requires a non-empty action space")
 
         obs_size = nq + nv
+        space_dtype = FLATTENED_YAML_CONFIG.numpy_dtype()
         self.observation_space = gym.spaces.Box(
             low=-np.inf,
             high=np.inf,
             shape=(obs_size,),
-            dtype=np.float32,
+            dtype=space_dtype,
         )
 
-        act_low = np.full(nu, -1.0, dtype=np.float32)
-        act_high = np.full(nu, 1.0, dtype=np.float32)
+        act_low = np.full(nu, -1.0, dtype=space_dtype)
+        act_high = np.full(nu, 1.0, dtype=space_dtype)
         if hasattr(mj_model, "actuator_ctrlrange"):
             ctrl_range = np.array(mj_model.actuator_ctrlrange, copy=True)
             if ctrl_range.shape == (nu, 2):
@@ -391,7 +390,7 @@ class MuJoCoGraspingEnv(gym.Env):
             low=act_low,
             high=act_high,
             shape=(nu,),
-            dtype=np.float32,
+            dtype=space_dtype,
         )
 
     def reset(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from grasping_ai.pipelines.evaluate import read_jsonl_records
+
 import os
 import subprocess
 import sys
@@ -9,15 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from grasping_ai.pipelines.evaluate import read_jsonl_records
-
 ROOT = Path(__file__).resolve().parents[1]
 YCB_ROOT = ROOT / "data" / "raw" / "ycb"
 RUNNER = ROOT / "scripts" / "run_artifacts.py"
 ARTIFACTS = ROOT / "artifacts"
 DATA_PROCESSED = ROOT / "data" / "processed"
 DATA_OBSERVATIONS = ROOT / "data" / "observations"
-
 
 @pytest.fixture(scope="module")
 def chain_run():
@@ -48,7 +47,6 @@ def chain_run():
         pytest.fail(f"Artifact chain failed:\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}")
     return completed
 
-
 @pytest.mark.slow
 def test_manifest_records_retained_artifacts(chain_run):
     """Verify that the manifest file correctly logs retained artifacts and execution commands.
@@ -72,7 +70,6 @@ def test_manifest_records_retained_artifacts(chain_run):
         rel = str(record["path"])
         assert (ROOT / rel).is_file(), f"manifest references missing artifact: {rel}"
 
-
 @pytest.mark.slow
 def test_artifact_chain_produces_key_files(chain_run):
     """Verify that executing the full artifact pipeline produces all expected outputs.
@@ -94,7 +91,6 @@ def test_artifact_chain_produces_key_files(chain_run):
     ]
     missing = [str(p) for p in expected if not p.is_file()]
     assert not missing, f"missing retained artifacts: {missing}"
-
 
 @pytest.mark.slow
 def test_evaluation_report_uses_grasp_success_key(chain_run):

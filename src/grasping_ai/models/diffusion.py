@@ -2,19 +2,31 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.diffusion import (
+    DEFAULT_DIFFUSION_SCHEDULE,
+    DiffusionSchedule,
+    linear_beta_schedule,
+)
+
+from grasping_ai.models.equivariant_encoder import (
+    build_equivariant_encoder,
+    encode_point_cloud,
+    pool_object_features,
+)
+
+from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
+
+from grasping_ai.models.mlp import build_mish_mlp
+
 from collections.abc import Callable
 
 import torch
-
-from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
-from grasping_ai.models.mlp import build_mish_mlp
 
 DiffusionScoreModel = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
 DiffusionSampler = Callable[
     [torch.Tensor, Callable[..., torch.Tensor], torch.Tensor, torch.Generator | None],
     torch.Tensor,
 ]
-
 
 class ScoreNetwork(torch.nn.Module):
     """Neural network predicting score (noise) conditioned on features."""
@@ -40,7 +52,6 @@ class ScoreNetwork(torch.nn.Module):
         inputs = torch.cat([x, t_emb, conditioning], dim=-1)
         return self.mlp(inputs)
 
-
 class GraspGeneratorModel(torch.nn.Module):
     """Complete generative model holding encoder and score network."""
 
@@ -50,8 +61,7 @@ class GraspGeneratorModel(torch.nn.Module):
         self.feature_dim = feature_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-        from grasping_ai.models.equivariant_encoder import build_equivariant_encoder
-
+        
         self.encoder = build_equivariant_encoder(feature_dim, num_layers)
         self.score_net = ScoreNetwork(feature_dim, hidden_dim, num_layers)
 
@@ -71,14 +81,9 @@ class GraspGeneratorModel(torch.nn.Module):
         Returns:
             Pooled conditioning features with shape ``(B, feature_dim)``.
         """
-        from grasping_ai.models.equivariant_encoder import (
-            encode_point_cloud,
-            pool_object_features,
-        )
-
+        
         features = encode_point_cloud(self.encoder, point_clouds)
         return pool_object_features(features)
-
 
 def build_score_network(feature_dim: int, hidden_dim: int, num_layers: int) -> DiffusionScoreModel:
     """Construct a score network for grasp-pose diffusion.
@@ -93,7 +98,6 @@ def build_score_network(feature_dim: int, hidden_dim: int, num_layers: int) -> D
         a tensor with the same shape as ``x``.
     """
     return ScoreNetwork(feature_dim, hidden_dim, num_layers)
-
 
 def build_diffusion_sampler(
     num_steps: int,
@@ -113,12 +117,7 @@ def build_diffusion_sampler(
         A callable that maps ``(initial_noise, score_model, conditioning)``
         to a sampled grasp pose tensor.
     """
-    from grasping_ai.config.diffusion import (
-        DEFAULT_DIFFUSION_SCHEDULE,
-        DiffusionSchedule,
-        linear_beta_schedule,
-    )
-
+    
     schedule = DiffusionSchedule(
         beta_start=(DEFAULT_DIFFUSION_SCHEDULE.beta_start if beta_start is None else beta_start),
         beta_end=(DEFAULT_DIFFUSION_SCHEDULE.beta_end if beta_end is None else beta_end),
@@ -164,7 +163,6 @@ def build_diffusion_sampler(
         return x
 
     return sampler
-
 
 def sample_grasps_with_diffusion(
     sampler: DiffusionSampler,

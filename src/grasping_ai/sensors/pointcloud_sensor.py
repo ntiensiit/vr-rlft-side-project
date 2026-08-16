@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
+from grasping_ai.utils.path_validation import require_path
+
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
 
-from grasping_ai.utils.constants import POINT_CLOUD_NDIM, SPATIAL_DIM
-from grasping_ai.utils.path_validation import require_path
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
 PointCloudBatch = np.ndarray
-
 
 def acquire_point_cloud_from_observation(observation_path: Path) -> np.ndarray:
     """Load a single point cloud observation from a sensor data file.
@@ -44,7 +47,6 @@ def acquire_point_cloud_from_observation(observation_path: Path) -> np.ndarray:
     logger.info("Acquired point cloud observation from: {} (shape={})", observation_path, pts.shape)
     return pts
 
-
 def acquire_point_cloud_stream(observation_paths: list[Path]) -> Iterator[np.ndarray]:
     """Yield point clouds from a sequence of sensor observation files.
 
@@ -62,7 +64,6 @@ def acquire_point_cloud_stream(observation_paths: list[Path]) -> Iterator[np.nda
         raise TypeError("observation_paths must be a list of pathlib.Path instances")
     for path in observation_paths:
         yield acquire_point_cloud_from_observation(path)
-
 
 def merge_point_clouds(clouds: list[np.ndarray]) -> np.ndarray:
     """Merge multiple point clouds into a single observation.
@@ -85,7 +86,6 @@ def merge_point_clouds(clouds: list[np.ndarray]) -> np.ndarray:
     if not clouds:
         return np.empty((0, 3), dtype=np.float32)
     return np.concatenate(clouds, axis=0).astype(np.float32)
-
 
 def sample_point_cloud_from_mesh(mesh_path: Path, num_samples: int, rng: np.random.Generator) -> np.ndarray:
     """Sample a point cloud from a mesh resource on disk.

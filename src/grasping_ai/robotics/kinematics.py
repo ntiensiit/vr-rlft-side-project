@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from grasping_ai.perception.geometry import make_transform
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -12,8 +16,7 @@ import pytransform3d.rotations as pr
 import pytransform3d.transformations as pt
 from loguru import logger
 
-from grasping_ai.perception.geometry import make_transform
-from grasping_ai.utils.constants import SE3_MATRIX_SHAPE
+SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
 
 JointConfiguration = np.ndarray
 RigidTransform = np.ndarray
@@ -26,7 +29,6 @@ _EE_BODY_CANDIDATES = (
     "gripper",
     "hand",
 )
-
 
 def _resolve_end_effector_body_name(model: Any, robot_model: dict[str, object]) -> str:
     """Return the end-effector body name for FK/IK."""
@@ -42,7 +44,6 @@ def _resolve_end_effector_body_name(model: Any, robot_model: dict[str, object]) 
     logger.info("Resolved end-effector body name: {}", ee_body_name)
     return str(ee_body_name)
 
-
 def _se3_pose_error(target_pose: RigidTransform, current_pose: RigidTransform) -> np.ndarray:
     """Compute a 6D SE(3) pose error using ``pytransform3d`` conventions.
 
@@ -57,7 +58,6 @@ def _se3_pose_error(target_pose: RigidTransform, current_pose: RigidTransform) -
     err_pos = delta[:3, 3]
     err_rot = pr.compact_axis_angle_from_matrix(delta[:3, :3])
     return np.hstack((err_pos, err_rot))
-
 
 def load_robot_model(robot_description_path: str) -> dict[str, object]:
     """Load a robot description from disk.
@@ -90,7 +90,6 @@ def load_robot_model(robot_description_path: str) -> dict[str, object]:
         "nv": model.nv,
     }
 
-
 def robot_model_nq(robot_model: dict[str, object]) -> int:
     """Return joint count from a ``load_robot_model`` dictionary.
 
@@ -108,7 +107,6 @@ def robot_model_nq(robot_model: dict[str, object]) -> int:
         raise TypeError("robot_model['nq'] must be int")
     return nq
 
-
 def robot_model_mj_model(robot_model: dict[str, object]) -> Any:
     """Return the MuJoCo model object from a ``load_robot_model`` dictionary.
 
@@ -125,7 +123,6 @@ def robot_model_mj_model(robot_model: dict[str, object]) -> Any:
     if model is None:
         raise TypeError("robot_model must contain 'model'")
     return model
-
 
 def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematics:
     """Build a callable forward-kinematics function for a robot.
@@ -165,7 +162,6 @@ def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematic
         )
 
     return fk
-
 
 def build_inverse_kinematics(
     robot_model: dict[str, object], max_iterations: int, tolerance: float,
@@ -255,7 +251,6 @@ def build_inverse_kinematics(
         return q
 
     return ik
-
 
 def solve_inverse_kinematics(
     ik_solver: Callable[..., np.ndarray],

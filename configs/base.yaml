@@ -2,6 +2,8 @@
 seed: 42
 device: cpu
 experiment_name: default
+array_dtype: float32
+sim_dtype: float64
 tracking:
   backend: none
   project: vr-rlft-side-project

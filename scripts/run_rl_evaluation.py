@@ -2,27 +2,30 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
 
-import hydra
-import numpy as np
-from omegaconf import DictConfig
-
-from grasping_ai.config.config import (
-    SCRIPTS_CONFIG_PATH,
-    config_get,
-    config_value,
-)
 from grasping_ai.inference.policy_runner import (
     build_rl_policy_runner,
     load_rl_policy_checkpoint,
     run_policy_step,
 )
-from grasping_ai.pipelines.evaluate import write_jsonl_records
-from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
-from grasping_ai.simulation.scene import build_scene_xml
-from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
 
+from grasping_ai.pipelines.evaluate import write_jsonl_records
+
+from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv
+
+from grasping_ai.simulation.scene import build_scene_xml
+
+from grasping_ai.simulation.ycb import (
+    find_ycb_mjcf,
+    resolve_ycb_object_directory,
+)
+
+from pathlib import Path
+
+import hydra
+import numpy as np
+from omegaconf import DictConfig
 
 def run_rl_evaluation_main(
     policy_checkpoint_path: Path,
@@ -152,44 +155,44 @@ def run_rl_evaluation_main(
     ]
     write_jsonl_records(output_path, records)
 
-
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/run_rl_evaluation")
 def main(cfg: DictConfig) -> None:
+    yaml_config = FlattenedYAMLConfig(cfg)
     run_rl_evaluation_main(
-        policy_checkpoint_path=config_value(
-            cfg, "policy_checkpoint", "rl", "checkpoint", value_type=Path, script_or=True, required=True
+        policy_checkpoint_path=yaml_config.value(
+            "policy_checkpoint", "rl", "checkpoint", value_type=Path, script_or=True, required=True
         ),
-        robot_xml_path=config_value(
-            cfg, "robot_xml", "robot", "description", value_type=Path, script_or=True, required=True
+        robot_xml_path=yaml_config.value(
+            "robot_xml", "robot", "description", value_type=Path, script_or=True, required=True
         ),
-        ycb_root=config_value(cfg, "ycb_root", "paths", "ycb_mjcf", value_type=Path, script_or=True, required=True),
+        ycb_root=yaml_config.value("ycb_root", "paths", "ycb_mjcf", value_type=Path, script_or=True, required=True),
         object_id=str(
-            config_value(
-                cfg,
+            yaml_config.value(
                 "object_id",
                 value_type=object,
-                default=config_value(cfg, "objects", "ids", value_type=list[str])[0],
+                default=yaml_config.value("objects", "ids", value_type=list[str])[0],
                 script_or=True,
             )
         ),
-        observation_dim=int(config_value(cfg, "observation_dim", "rl", "observation_dim", value_type=object, script_or=True)),
-        action_dim=int(config_value(cfg, "action_dim", "rl", "action_dim", value_type=object, script_or=True)),
-        output_path=config_value(
-            cfg, "output", "evaluation", "rollout_report", value_type=Path, script_or=True, required=True
+        observation_dim=int(
+            yaml_config.value("observation_dim", "rl", "observation_dim", value_type=object, script_or=True)
         ),
-        episodes=config_value(cfg, "evaluation", "episodes", value_type=int),
-        max_steps=config_value(cfg, "evaluation", "max_steps", value_type=int),
-        device=str(config_get(cfg, "device")),
-        seed=config_value(cfg, "seed", value_type=int),
-        table_xml_path=config_value(cfg, "table_xml", "env", "table_xml", value_type=Path, script_or=True),
-        observation_dim_from_env=config_value(
-            cfg, "observation_dim_from_env", value_type=bool, default=False, script_or=True
+        action_dim=int(yaml_config.value("action_dim", "rl", "action_dim", value_type=object, script_or=True)),
+        output_path=yaml_config.value(
+            "output", "evaluation", "rollout_report", value_type=Path, script_or=True, required=True
         ),
-        action_dim_from_env=config_value(cfg, "action_dim_from_env", value_type=bool, default=False, script_or=True),
-        stochastic=config_value(cfg, "evaluation", "stochastic", value_type=bool, default=False),
-        exploration_noise=config_value(cfg, "evaluation", "exploration_noise", value_type=float, default=0.1),
+        episodes=yaml_config.value("evaluation", "episodes", value_type=int),
+        max_steps=yaml_config.value("evaluation", "max_steps", value_type=int),
+        device=str(yaml_config.get("device")),
+        seed=yaml_config.value("seed", value_type=int),
+        table_xml_path=yaml_config.value("table_xml", "env", "table_xml", value_type=Path, script_or=True),
+        observation_dim_from_env=yaml_config.value(
+            "observation_dim_from_env", value_type=bool, default=False, script_or=True
+        ),
+        action_dim_from_env=yaml_config.value("action_dim_from_env", value_type=bool, default=False, script_or=True),
+        stochastic=yaml_config.value("evaluation", "stochastic", value_type=bool, default=False),
+        exploration_noise=yaml_config.value("evaluation", "exploration_noise", value_type=float, default=0.1),
     )
-
 
 if __name__ == "__main__":
     main()

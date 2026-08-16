@@ -16,11 +16,17 @@ from grasping_ai.config.diffusion import (
     DiffusionSchedule,
     linear_beta_schedule,
 )
+from grasping_ai.config.flattened_yaml_config import (
+    FLATTENED_YAML_CONFIG,
+    FlattenedYAMLConfig,
+)
 
 __all__ = [
     "DEFAULT_CONFIG_DIR",
     "DEFAULT_DIFFUSION_SCHEDULE",
     "DiffusionSchedule",
+    "FLATTENED_YAML_CONFIG",
+    "FlattenedYAMLConfig",
     "SCRIPTS_CONFIG_PATH",
     "compose_config",
     "config_get",

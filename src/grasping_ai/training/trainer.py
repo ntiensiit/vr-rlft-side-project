@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
-from typing import TYPE_CHECKING
+from grasping_ai.config.diffusion import (
+    DEFAULT_DIFFUSION_SCHEDULE,
+    linear_beta_schedule,
+)
 
-import torch
-from loguru import logger
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 
 from grasping_ai.training.experiment_logging import (
     try_log_mlflow_artifact,
     try_log_mlflow_metric,
     try_log_mlflow_param,
 )
+
 from grasping_ai.utils.path_validation import require_path
+
+from collections.abc import Callable, Iterable, Iterator
+from typing import TYPE_CHECKING
+
+import torch
+from loguru import logger
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,7 +29,6 @@ if TYPE_CHECKING:
 BatchSource = Iterable[tuple[torch.Tensor, torch.Tensor]] | Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]]
 OptimizerFactory = Callable[[Iterator[torch.nn.Parameter]], torch.optim.Optimizer]
 LossForward = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
-
 
 class SupervisedTrainingStep:
     """Callable supervised training step that retains model and optimizer references."""
@@ -48,7 +55,6 @@ class SupervisedTrainingStep:
         self.optimizer.step()
         return {"loss": float(loss.item())}
 
-
 def build_supervised_training_step(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -57,7 +63,6 @@ def build_supervised_training_step(
 ) -> SupervisedTrainingStep:
     """Build a generic supervised step closure with pluggable forward/loss logic."""
     return SupervisedTrainingStep(model, optimizer, device, forward_fn)
-
 
 def build_adam_optimizer(parameters: Iterator[torch.nn.Parameter], learning_rate: float) -> torch.optim.Optimizer:
     """Create an Adam optimizer for the given parameters.
@@ -72,7 +77,6 @@ def build_adam_optimizer(parameters: Iterator[torch.nn.Parameter], learning_rate
     if learning_rate <= 0:
         raise ValueError("learning_rate must be positive")
     return torch.optim.Adam(list(parameters), lr=learning_rate)
-
 
 def build_training_step(
     model: torch.nn.Module,
@@ -101,11 +105,7 @@ def build_training_step(
 
     def diffusion_forward(cond: torch.Tensor, x_0: torch.Tensor) -> torch.Tensor:
         batch_size_val = x_0.shape[0]
-        from grasping_ai.config.diffusion import (
-            DEFAULT_DIFFUSION_SCHEDULE,
-            linear_beta_schedule,
-        )
-
+        
         num_steps = DEFAULT_DIFFUSION_SCHEDULE.num_steps
         t = torch.randint(0, num_steps, (batch_size_val,), device=device_obj, generator=generator)
         noise = torch.randn(x_0.shape, dtype=x_0.dtype, device=device_obj, generator=generator)
@@ -118,7 +118,6 @@ def build_training_step(
         return loss_fn(pred_noise, noise)
 
     return build_supervised_training_step(model, optimizer, device, diffusion_forward)
-
 
 def run_training_loop(
     training_step: SupervisedTrainingStep,
@@ -188,7 +187,6 @@ def run_training_loop(
     )
     try_log_mlflow_artifact(str(checkpoint_path))
 
-
 def save_training_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -229,7 +227,6 @@ def save_training_checkpoint(
     except Exception as e:
         raise ValueError(f"Failed to save checkpoint: {e}") from e
 
-
 def load_training_checkpoint(
     checkpoint_path: Path,
     model: torch.nn.Module,
@@ -249,8 +246,7 @@ def load_training_checkpoint(
     """
     require_path(checkpoint_path, "checkpoint_path")
 
-    from grasping_ai.training.checkpoint_io import load_torch_checkpoint
-
+    
     checkpoint = load_torch_checkpoint(checkpoint_path, device)
 
     model.load_state_dict(checkpoint["model_state_dict"])

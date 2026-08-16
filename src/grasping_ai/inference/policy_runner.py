@@ -2,22 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
-
-import numpy as np
-import torch
+from grasping_ai.models.rl_policy import (
+    build_policy_network,
+    read_rl_policy_metadata,
+    select_action,
+)
 
 from grasping_ai.training.checkpoint_io import (
     load_torch_checkpoint,
     read_checkpoint_model_state_dict,
 )
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+import torch
+
 if TYPE_CHECKING:
     from pathlib import Path
 
 PolicyActionSampler = Callable[[np.ndarray], np.ndarray]
-
 
 def load_rl_policy_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
     """Load an RL policy checkpoint from disk.
@@ -35,7 +40,6 @@ def load_rl_policy_checkpoint(checkpoint_path: Path, device: str) -> dict[str, A
         ValueError: If ``torch.load`` fails or the payload is not a dictionary.
     """
     return load_torch_checkpoint(checkpoint_path, device)
-
 
 def build_rl_policy_runner(
     checkpoint: dict[str, Any],
@@ -70,12 +74,7 @@ def build_rl_policy_runner(
         action as a numpy array clipped to ``[action_low, action_high]`` when
         both bounds are supplied.
     """
-    from grasping_ai.models.rl_policy import (
-        build_policy_network,
-        read_rl_policy_metadata,
-        select_action,
-    )
-
+    
     model_state = read_checkpoint_model_state_dict(checkpoint)
     metadata = read_rl_policy_metadata(checkpoint)
     if metadata is not None:
@@ -137,7 +136,6 @@ def build_rl_policy_runner(
         return action
 
     return runner
-
 
 def run_policy_step(runner: PolicyActionSampler, observation: np.ndarray) -> np.ndarray:
     """Run a single inference step of an RL policy.

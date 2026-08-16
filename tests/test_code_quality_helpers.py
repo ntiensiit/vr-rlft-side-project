@@ -2,13 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
-
-import numpy as np
-import pytest
-import torch
-
 from grasping_ai.evaluation.force_closure import (
     build_force_closure_judge,
     compute_grasp_quality,
@@ -16,19 +9,32 @@ from grasping_ai.evaluation.force_closure import (
     load_contact_set,
     parse_contact_set,
 )
+
 from grasping_ai.models.rl_policy import (
     _sequential_linear_layers,
     build_policy_network,
     build_sb3_net_arch,
     copy_sb3_policy_weights,
 )
+
 from grasping_ai.pipelines.generate_grasps import load_generated_grasps
-from grasping_ai.robotics.kinematics import robot_model_mj_model, robot_model_nq
+
+from grasping_ai.robotics.kinematics import (
+    robot_model_mj_model,
+    robot_model_nq,
+)
+
 from grasping_ai.training.checkpoint_io import read_checkpoint_model_state_dict
+
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
+
+import numpy as np
+import pytest
+import torch
 
 if TYPE_CHECKING:
     from pathlib import Path
-
 
 def test_parse_contact_set_accepts_list_dict_and_array() -> None:
     """Validate list, single-dict, and numpy-array contact payloads."""
@@ -36,7 +42,6 @@ def test_parse_contact_set_accepts_list_dict_and_array() -> None:
     assert parse_contact_set([record]) == [record]
     assert parse_contact_set(record) == [record]
     assert parse_contact_set(np.array([record], dtype=object)) == [record]
-
 
 def test_parse_contact_set_rejects_invalid_records() -> None:
     """Reject malformed contact records and payload types."""
@@ -49,14 +54,12 @@ def test_parse_contact_set_rejects_invalid_records() -> None:
     with pytest.raises(TypeError, match="list of contact records"):
         parse_contact_set(42)
 
-
 def test_load_contact_set_rejects_invalid_file_payload(tmp_path: Path) -> None:
     """Surface parse failures when a contact file contains invalid data."""
     path = tmp_path / "bad_contacts.npy"
     np.save(path, np.array("not-contacts", dtype=object), allow_pickle=True)
     with pytest.raises(ValueError, match="Failed to load contact set"):
         load_contact_set(path)
-
 
 def test_load_generated_grasps_rejects_invalid_dict_and_array(tmp_path: Path) -> None:
     """Reject grasp dictionaries with invalid keys/values and non-array payloads."""
@@ -75,7 +78,6 @@ def test_load_generated_grasps_rejects_invalid_dict_and_array(tmp_path: Path) ->
     with pytest.raises(TypeError, match="must contain a numpy array"):
         load_generated_grasps(bad_array_path)
 
-
 def test_read_checkpoint_model_state_dict_filters_payload() -> None:
     """Return tensor state dict entries and None for missing or empty payloads."""
     assert read_checkpoint_model_state_dict({}) is None
@@ -88,7 +90,6 @@ def test_read_checkpoint_model_state_dict_filters_payload() -> None:
     )
     assert state == {"0.weight": weight}
 
-
 def test_robot_model_accessors_validate_payload() -> None:
     """Validate typed accessors for robot model dictionaries."""
     assert robot_model_nq({"nq": 7}) == 7
@@ -100,7 +101,6 @@ def test_robot_model_accessors_validate_payload() -> None:
     with pytest.raises(TypeError, match="must contain 'model'"):
         robot_model_mj_model({})
 
-
 def test_build_sb3_net_arch_rejects_invalid_dims() -> None:
     """Reject non-positive SB3 architecture dimensions."""
     with pytest.raises(ValueError, match="hidden_dim"):
@@ -108,12 +108,10 @@ def test_build_sb3_net_arch_rejects_invalid_dims() -> None:
     with pytest.raises(ValueError, match="num_layers"):
         build_sb3_net_arch(64, 0)
 
-
 def test_sequential_linear_layers_requires_sequential() -> None:
     """Reject non-Sequential modules when extracting linear layers."""
     with pytest.raises(TypeError, match=r"torch\.nn\.Sequential"):
         _sequential_linear_layers(torch.nn.Linear(2, 2))
-
 
 def test_copy_sb3_policy_weights_validation_errors() -> None:
     """Reject invalid SB3/legacy policy modules during weight export."""
@@ -126,7 +124,6 @@ def test_copy_sb3_policy_weights_validation_errors() -> None:
     broken = torch.nn.Module()
     with pytest.raises(ValueError, match="mlp_extractor"):
         copy_sb3_policy_weights(broken, legacy)
-
 
 def test_compute_grasp_wrench_matrix_skips_degenerate_contacts() -> None:
     """Skip contacts with zero normals or missing fields."""
@@ -141,7 +138,6 @@ def test_compute_grasp_wrench_matrix_skips_degenerate_contacts() -> None:
     wrench = compute_grasp_wrench_matrix(contacts, friction_coefficient=0.5)
     assert wrench.shape[0] == 6
     assert wrench.shape[1] == 4
-
 
 def test_force_closure_judge_handles_linprog_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return False when the force-closure LP solver raises."""
@@ -161,7 +157,6 @@ def test_force_closure_judge_handles_linprog_failure(monkeypatch: pytest.MonkeyP
         },
     ]
     assert judge(contacts) is False
-
 
 def test_compute_grasp_quality_handles_solver_and_hull_failures(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return zero quality when hull or LP fallback solvers fail."""

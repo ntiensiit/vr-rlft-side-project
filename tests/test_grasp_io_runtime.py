@@ -2,30 +2,28 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import numpy as np
-import pytest
-
 from grasping_ai.inference.grasp_generator import generate_candidate_grasps
-from grasping_ai.inference.grasp_inference_runtime import (
-    run_single_object_grasp_inference,
-)
+
+from grasping_ai.inference.grasp_inference_runtime import run_single_object_grasp_inference
+
 from grasping_ai.pipelines.generate_grasps import (
     load_generated_grasps,
     write_generated_grasps,
     write_generated_grasps_array,
 )
 
+from typing import TYPE_CHECKING
+
+import numpy as np
+import pytest
+
 if TYPE_CHECKING:
     from pathlib import Path
-
 
 def _sample_grasps(count: int = 2) -> np.ndarray:
     grasps = np.tile(np.eye(4), (count, 1, 1))
     grasps[:, :3, 3] = np.arange(count)[:, None]
     return grasps
-
 
 def test_load_generated_grasps_plain_array(tmp_path: Path) -> None:
     """Verify loading generated grasps from a plain numpy array file."""
@@ -37,7 +35,6 @@ def test_load_generated_grasps_plain_array(tmp_path: Path) -> None:
     assert loaded.shape == (3, 4, 4)
     assert np.allclose(loaded, grasps)
 
-
 def test_load_generated_grasps_single_object_dict(tmp_path: Path) -> None:
     """Verify loading generated grasps from a dictionary containing a single object key."""
     grasps = _sample_grasps(2)
@@ -46,7 +43,6 @@ def test_load_generated_grasps_single_object_dict(tmp_path: Path) -> None:
 
     loaded = load_generated_grasps(path)
     assert np.allclose(loaded, grasps)
-
 
 def test_load_generated_grasps_multi_object_dict_requires_key(tmp_path: Path) -> None:
     """Verify that loading multi-object dictionaries requires specifying a target object key."""
@@ -65,13 +61,11 @@ def test_load_generated_grasps_multi_object_dict_requires_key(tmp_path: Path) ->
     keyed = load_generated_grasps(path, object_key="004_sugar_box")
     assert keyed.shape == (1, 4, 4)
 
-
 def test_write_generated_grasps_array_validates_shape(tmp_path: Path) -> None:
     """Verify that write_generated_grasps_array raises ValueError on invalid array shapes."""
     path = tmp_path / "grasps.npy"
     with pytest.raises(ValueError, match="grasp_poses must have shape"):
         write_generated_grasps_array(path, np.zeros((2, 3)))
-
 
 def test_run_single_object_grasp_inference_from_observation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that grasp inference runtime executes correctly on input observation point cloud files."""
@@ -110,7 +104,6 @@ def test_run_single_object_grasp_inference_from_observation(tmp_path: Path, monk
     assert np.allclose(res, dummy_grasps)
     assert out_path.is_file()
 
-
 def test_run_single_object_grasp_inference_rejects_conflicting_inputs(
     tmp_path: Path,
 ) -> None:
@@ -134,7 +127,6 @@ def test_run_single_object_grasp_inference_rejects_conflicting_inputs(
             ycb_root=tmp_path,
             object_id="003_cracker_box",
         )
-
 
 def test_run_single_object_grasp_inference_rejects_unknown_method(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -161,7 +153,6 @@ def test_run_single_object_grasp_inference_rejects_unknown_method(
             seed=42,
             observation_path=obs_path,
         )
-
 
 def test_run_single_object_grasp_inference_diffusion_and_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that grasp inference runtime can run both diffusion and flow matching pipelines."""
@@ -219,7 +210,6 @@ def test_run_single_object_grasp_inference_diffusion_and_flow(tmp_path: Path, mo
         observation_path=obs_path,
     )
     assert called_methods == ["diffusion", "flow"]
-
 
 def test_run_single_object_grasp_inference_validations(tmp_path: Path) -> None:
     """Verify that grasp inference runtime validates missing paths and invalid point cloud shapes."""
@@ -281,7 +271,6 @@ def test_run_single_object_grasp_inference_validations(tmp_path: Path) -> None:
             observation_path=bad_cloud_path,
         )
 
-
 def test_run_single_object_grasp_inference_from_ycb_mesh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that grasp inference runtime successfully samples meshes for YCB objects to run inference."""
     ycb_dir = tmp_path / "ycb"
@@ -325,7 +314,6 @@ def test_run_single_object_grasp_inference_from_ycb_mesh(tmp_path: Path, monkeyp
         object_id="003_cracker_box",
     )
 
-
 def test_generate_candidate_grasps_batch() -> None:
     """Verify that generate_candidate_grasps successfully loops over point cloud batches."""
     pc1 = np.zeros((10, 3))
@@ -337,7 +325,6 @@ def test_generate_candidate_grasps_batch() -> None:
     results = [generate_candidate_grasps(dummy_gen, pc, 2) for pc in [pc1, pc2]]
     assert len(results) == 2
     assert results[0].shape == (2, 4, 4)
-
 
 def test_generate_grasps_type_and_value_errors(tmp_path: Path) -> None:
     """Verify error handling on loading/saving files with invalid paths, missing dictionary keys, or 4D formats."""
@@ -359,7 +346,6 @@ def test_generate_grasps_type_and_value_errors(tmp_path: Path) -> None:
 
     with pytest.raises(TypeError, match="output_path must be"):
         write_generated_grasps_array("not_a_path", _sample_grasps(1))  # type: ignore[arg-type]
-
 
 def test_write_generated_grasps_exception_and_array_writer(monkeypatch, tmp_path: Path) -> None:
     """Verify that disk save failures raise custom ValueErrors, and that plain array saves function correctly."""

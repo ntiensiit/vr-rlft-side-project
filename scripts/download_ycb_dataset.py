@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+
 import glob
 import json
 import shutil
@@ -16,12 +18,6 @@ import hydra
 from loguru import logger
 from omegaconf import DictConfig
 
-from grasping_ai.config.config import (
-    SCRIPTS_CONFIG_PATH,
-    config_value,
-)
-
-
 @dataclass(frozen=True)
 class DownloadSettings:
     base_url: str
@@ -35,7 +31,6 @@ class DownloadSettings:
     cleanup_sleep_seconds: float
     berkeley_rgb_types: tuple[str, ...]
 
-
 def fetch_objects(url: str) -> list[str]:
     """Fetch the object list from the YCB benchmark index URL."""
     with urlopen(url) as response:
@@ -45,7 +40,6 @@ def fetch_objects(url: str) -> list[str]:
         msg = "YCB object index did not contain a list of objects"
         raise TypeError(msg)
     return [str(object_id) for object_id in objects]
-
 
 def download_file(url: str, filename: Path, settings: DownloadSettings) -> None:
     """Download a file from ``url`` with retries."""
@@ -84,7 +78,6 @@ def download_file(url: str, filename: Path, settings: DownloadSettings) -> None:
         else:
             return
 
-
 def tgz_url(ycb_object: str, file_type: str, settings: DownloadSettings) -> str:
     """Return the TGZ file URL for a YCB object and dataset type."""
     if file_type in settings.berkeley_rgb_types:
@@ -92,7 +85,6 @@ def tgz_url(ycb_object: str, file_type: str, settings: DownloadSettings) -> str:
     if file_type == "berkeley_processed":
         return f"{settings.base_url}berkeley/{ycb_object}/{ycb_object}_berkeley_meshes.tgz"
     return f"{settings.base_url}google/{ycb_object}_{file_type}.tgz"
-
 
 def extract_tgz(filename: Path, output_dir: Path, settings: DownloadSettings) -> None:
     """Extract a TGZ archive into ``output_dir``."""
@@ -109,7 +101,6 @@ def extract_tgz(filename: Path, output_dir: Path, settings: DownloadSettings) ->
         except OSError:
             time.sleep(settings.cleanup_sleep_seconds)
 
-
 def check_url(url: str) -> bool:
     """Return whether ``url`` responds to a HEAD request."""
     try:
@@ -122,14 +113,12 @@ def check_url(url: str) -> bool:
     else:
         return True
 
-
 def _is_already_extracted(object_dir: Path, file_type: str) -> bool:
     if file_type == "google_16k":
         return (object_dir / "google_16k").exists()
     if file_type == "berkeley_processed":
         return (object_dir / "clouds").exists()
     return False
-
 
 def _cleanup_failed_object(output_directory: Path, object_id: str, settings: DownloadSettings) -> None:
     object_dir = output_directory / object_id
@@ -144,7 +133,6 @@ def _cleanup_failed_object(output_directory: Path, object_id: str, settings: Dow
                 break
             except OSError:
                 time.sleep(settings.cleanup_sleep_seconds)
-
 
 def _process_object(
     object_id: str,
@@ -174,33 +162,34 @@ def _process_object(
         if extract:
             extract_tgz(filename, output_directory, settings)
 
-
-def _download_settings(cfg: DictConfig) -> DownloadSettings:
-    berkeley_rgb_types = config_value(cfg, "download", "berkeley_rgb_types", value_type=list[str])
+def _download_settings(yaml_config: FlattenedYAMLConfig) -> DownloadSettings:
+    berkeley_rgb_types = yaml_config.value("download", "berkeley_rgb_types", value_type=list[str])
     return DownloadSettings(
-        base_url=str(config_value(cfg, "download", "base_url", value_type=object, required=True)),
-        user_agent=str(config_value(cfg, "download", "user_agent", value_type=object, required=True)),
-        block_size=config_value(cfg, "download", "block_size", value_type=int, required=True),
-        max_retries=config_value(cfg, "download", "max_retries", value_type=int, required=True),
-        timeout_seconds=config_value(cfg, "download", "timeout_seconds", value_type=int, required=True),
-        retry_sleep_seconds=config_value(cfg, "download", "retry_sleep_seconds", value_type=float, required=True),
-        unpack_delete_retries=config_value(cfg, "download", "unpack_delete_retries", value_type=int, required=True),
-        cleanup_delete_retries=config_value(cfg, "download", "cleanup_delete_retries", value_type=int, required=True),
-        cleanup_sleep_seconds=config_value(cfg, "download", "cleanup_sleep_seconds", value_type=float, required=True),
+        base_url=str(yaml_config.value("download", "base_url", value_type=object, required=True)),
+        user_agent=str(yaml_config.value("download", "user_agent", value_type=object, required=True)),
+        block_size=yaml_config.value("download", "block_size", value_type=int, required=True),
+        max_retries=yaml_config.value("download", "max_retries", value_type=int, required=True),
+        timeout_seconds=yaml_config.value("download", "timeout_seconds", value_type=int, required=True),
+        retry_sleep_seconds=yaml_config.value("download", "retry_sleep_seconds", value_type=float, required=True),
+        unpack_delete_retries=yaml_config.value("download", "unpack_delete_retries", value_type=int, required=True),
+        cleanup_delete_retries=yaml_config.value("download", "cleanup_delete_retries", value_type=int, required=True),
+        cleanup_sleep_seconds=yaml_config.value("download", "cleanup_sleep_seconds", value_type=float, required=True),
         berkeley_rgb_types=tuple(berkeley_rgb_types),
     )
 
-
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/download_ycb_dataset")
 def main(cfg: DictConfig) -> None:
-    settings = _download_settings(cfg)
-    output_directory = config_value(
-        cfg, "output_directory", "download", "output_directory", value_type=Path, script_or=True
+    yaml_config = FlattenedYAMLConfig(cfg)
+    settings = _download_settings(yaml_config)
+    output_directory = yaml_config.value(
+        "output_directory", "download", "output_directory", value_type=Path, script_or=True
     )
-    objects_to_download = config_value(cfg, "objects_to_download", "download", "objects", value_type=list[str], script_or=True)
-    files_to_download = config_value(cfg, "files_to_download", "download", "files", value_type=list[str], script_or=True)
-    extract = config_value(cfg, "extract", "download", "extract", value_type=bool, script_or=True)
-    objects_url = str(config_value(cfg, "objects_url", "download", "objects_url", value_type=object, script_or=True))
+    objects_to_download = yaml_config.value(
+        "objects_to_download", "download", "objects", value_type=list[str], script_or=True
+    )
+    files_to_download = yaml_config.value("files_to_download", "download", "files", value_type=list[str], script_or=True)
+    extract = yaml_config.value("extract", "download", "extract", value_type=bool, script_or=True)
+    objects_url = str(yaml_config.value("objects_url", "download", "objects_url", value_type=object, script_or=True))
 
     output_directory.mkdir(parents=True, exist_ok=True)
     objects = fetch_objects(objects_url)
@@ -214,7 +203,6 @@ def main(cfg: DictConfig) -> None:
         except (OSError, URLError) as exc:
             logger.error("Failed to process {}: {}. Cleaning up...", object_id, exc)
             _cleanup_failed_object(output_directory, object_id, settings)
-
 
 if __name__ == "__main__":
     main()

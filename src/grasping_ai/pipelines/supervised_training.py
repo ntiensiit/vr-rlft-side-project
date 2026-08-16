@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
+from grasping_ai.inference.grasp_sampling import encode_grasp_conditioning
+
 import random
 from typing import TYPE_CHECKING
 
 import torch
 
-from grasping_ai.inference.grasp_sampling import encode_grasp_conditioning
-
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
 
 def iter_supervised_training_batches(
     pairs: list[tuple[torch.Tensor, torch.Tensor]],
@@ -40,7 +39,6 @@ def iter_supervised_training_batches(
         point_clouds = torch.stack([pairs[idx][0] for idx in batch_indices]).to(device)
         targets = torch.stack([pairs[idx][1] for idx in batch_indices]).to(device)
         yield point_clouds, targets
-
 
 def iter_conditioned_training_batches(
     pairs: list[tuple[torch.Tensor, torch.Tensor]],

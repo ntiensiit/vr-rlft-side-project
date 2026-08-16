@@ -2,15 +2,33 @@
 
 from __future__ import annotations
 
+from grasping_ai.models.rl_policy import (
+    build_policy_network,
+    build_sb3_net_arch,
+    copy_sb3_policy_weights,
+    save_rl_policy_checkpoint,
+)
+
+from grasping_ai.simulation.mujoco_env import (
+    MuJoCoGraspingEnv,
+    RewardConfig,
+)
+
+from grasping_ai.simulation.scene import build_scene_xml
+
+from grasping_ai.simulation.ycb import (
+    find_ycb_mjcf,
+    resolve_ycb_object_directory,
+)
+
+from grasping_ai.utils.path_validation import require_path
+
 from typing import TYPE_CHECKING
 
 import torch
 
-from grasping_ai.utils.path_validation import require_path
-
 if TYPE_CHECKING:
     from pathlib import Path
-
 
 def run_rl_training_pipeline(
     robot_xml_path: Path,
@@ -90,9 +108,7 @@ def run_rl_training_pipeline(
     env_xml_path = robot_xml_path
     object_name: str | None = None
     if object_ids:
-        from grasping_ai.simulation.scene import build_scene_xml
-        from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
-
+                
         object_dir = resolve_ycb_object_directory(ycb_root, object_ids[0])
         object_xml_path = find_ycb_mjcf(object_dir)
         object_name = object_ids[0]
@@ -100,11 +116,10 @@ def run_rl_training_pipeline(
 
     from stable_baselines3 import PPO
 
-    from grasping_ai.simulation.mujoco_env import MuJoCoGraspingEnv, RewardConfig
-
-    from grasping_ai.config.config import DEFAULT_CONFIG_DIR, load_project_yaml_config
-
-    reward_config = RewardConfig.load_from_config(load_project_yaml_config(DEFAULT_CONFIG_DIR))
+    try:
+        reward_config = RewardConfig.load_from_config()
+    except Exception:
+        reward_config = RewardConfig()
     env = MuJoCoGraspingEnv(env_xml_path, object_name=object_name, reward_config=reward_config)
 
     obs_shape = env.observation_space.shape
@@ -119,8 +134,7 @@ def run_rl_training_pipeline(
     if action_dim != act_shape[0]:
         raise ValueError(f"action_dim ({action_dim}) does not match environment action dimension ({act_shape[0]})")
 
-    from grasping_ai.models.rl_policy import build_sb3_net_arch
-
+    
     policy_kwargs = {
         "net_arch": build_sb3_net_arch(hidden_dim, policy_num_layers),
         "activation_fn": torch.nn.Tanh,
@@ -144,12 +158,7 @@ def run_rl_training_pipeline(
     total_timesteps = num_updates * n_steps
     sb3_model.learn(total_timesteps=total_timesteps)
 
-    from grasping_ai.models.rl_policy import (
-        build_policy_network,
-        copy_sb3_policy_weights,
-        save_rl_policy_checkpoint,
-    )
-
+    
     legacy_policy = build_policy_network(observation_dim, action_dim, hidden_dim, policy_num_layers)
     copy_sb3_policy_weights(sb3_model.policy, legacy_policy)
 

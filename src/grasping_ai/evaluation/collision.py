@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+from grasping_ai.perception.pointcloud import build_kdtree
+
+from grasping_ai.robotics.transforms import transform_between_frames
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
 from collections.abc import Callable
 
 import numpy as np
 
-from grasping_ai.perception.pointcloud import build_kdtree
-from grasping_ai.robotics.transforms import transform_between_frames
-from grasping_ai.utils.constants import GRASP_POSES_NDIM, NORM_EPS, POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE, SPATIAL_DIM
+GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
+NORM_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.norm_eps", 1e-8))
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
+SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 
 CollisionChecker = Callable[[np.ndarray], bool]
-
 
 def build_collision_checker(
     object_point_cloud: np.ndarray,
@@ -48,7 +55,6 @@ def build_collision_checker(
 
     return checker
 
-
 def check_collision(checker: CollisionChecker, grasp_pose: np.ndarray) -> bool:
     """Evaluate a single grasp pose against the collision checker.
 
@@ -60,7 +66,6 @@ def check_collision(checker: CollisionChecker, grasp_pose: np.ndarray) -> bool:
         ``True`` if the grasp is collision-free, otherwise ``False``.
     """
     return checker(grasp_pose)
-
 
 def filter_collision_free_grasps(checker: CollisionChecker, grasp_poses: np.ndarray) -> np.ndarray:
     """Filter a set of grasps to only those that are collision-free.
@@ -92,7 +97,6 @@ def filter_collision_free_grasps(checker: CollisionChecker, grasp_poses: np.ndar
     if not free_grasps:
         return np.empty((0, 4, 4))
     return np.stack(free_grasps, axis=0)
-
 
 def generate_analytical_contacts(
     object_point_cloud: np.ndarray,

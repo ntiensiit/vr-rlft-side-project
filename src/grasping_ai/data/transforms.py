@@ -2,21 +2,29 @@
 
 from __future__ import annotations
 
-import json
-from collections.abc import Callable
-from typing import TYPE_CHECKING
-
-import numpy as np
-
 from grasping_ai.perception.geometry import (
     apply_transform,
     make_transform,
     rotation_matrix_from_axis_angle,
     rotation_matrix_to_axis_angle,
 )
+
 from grasping_ai.robotics.transforms import transform_grasp_pose
-from grasping_ai.utils.constants import GRASP_POSES_NDIM, POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE, SPATIAL_DIM
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
 from grasping_ai.utils.path_validation import require_path
+
+import json
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
+SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -25,7 +33,6 @@ SampleTransform = Callable[
     [np.ndarray, np.ndarray | None, np.ndarray | None],
     tuple[np.ndarray, np.ndarray | None, np.ndarray | None],
 ]
-
 
 def make_random_rotation_jitter(rng: np.random.Generator) -> SampleTransform:
     """Build a transform that applies a random SO(3) rotation to a sample.
@@ -82,7 +89,6 @@ def make_random_rotation_jitter(rng: np.random.Generator) -> SampleTransform:
 
     return transform
 
-
 def make_translation_jitter(rng: np.random.Generator, scale: float) -> SampleTransform:
     """Build a transform that applies a small random translation to a sample.
 
@@ -136,7 +142,6 @@ def make_translation_jitter(rng: np.random.Generator, scale: float) -> SampleTra
 
     return transform
 
-
 def compose_transforms(*transforms: SampleTransform) -> SampleTransform:
     """Compose multiple sample transforms into a single callable.
 
@@ -159,7 +164,6 @@ def compose_transforms(*transforms: SampleTransform) -> SampleTransform:
         return points, grasp_poses, scores
 
     return composed
-
 
 def save_grasp_dataset_index(dataset_root: Path, entries: list[dict[str, str]], filename: str = "index.json") -> None:
     """Persist a dataset index file describing available records.

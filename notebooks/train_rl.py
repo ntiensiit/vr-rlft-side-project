@@ -1,3 +1,9 @@
+from grasping_ai import (
+    FlattenedYAMLConfig,
+    run_rl_training_pipeline,
+    setup_logging,
+)
+
 # %% [markdown]
 # # RL Grasp Policy Training
 #
@@ -20,6 +26,7 @@ try:
 
     in_colab = True
 except ImportError:
+    google.colab = None  # pragma: no cover
     in_colab = False
 
 if in_colab:
@@ -55,9 +62,7 @@ root = bootstrap_notebook()
 # RL hyperparameters and paths come from `configs/rl/default.yaml` and `configs/base.yaml`.
 
 # %%
-from grasping_ai.config.config import config_get, config_value
-from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
-from grasping_ai.utils.logging_utils import setup_logging
+
 from notebook_helpers import (
     config_dir_relative,
     load_notebook_config,
@@ -76,11 +81,12 @@ CONFIG_NAME = "rl/rl_train"
 config_dir_arg = config_dir_relative(CONFIG_DIR, root)
 
 cfg = load_notebook_config(CONFIG_DIR, CONFIG_NAME)
+yaml_config = FlattenedYAMLConfig(cfg)
 all_object_ids = object_ids_from_config(cfg)
 training_object_ids = [all_object_ids[notebook_object_index(cfg)]]
 seed, device = configure_seeds_and_device(cfg)
-learning_rate = config_value(cfg, "rl", "learning_rate", value_type=float, default=3e-4)
-num_updates = config_value(cfg, "rl", "num_updates", value_type=int, default=10)
+learning_rate = yaml_config.value( "rl", "learning_rate", value_type=float, default=3e-4)
+num_updates = yaml_config.value( "rl", "num_updates", value_type=int, default=10)
 experiment = notebook_experiment(cfg)
 
 print_runtime_banner(
@@ -105,7 +111,7 @@ paths = run_dataset_preparation(
     object_ids=all_object_ids,
     download_ycb=notebook_download_ycb(cfg),
 )
-robot_xml = config_value(cfg, "robot", "description", value_type=Path)
+robot_xml = yaml_config.value( "robot", "description", value_type=Path)
 print("robot_xml:", robot_xml)
 print("ycb_mjcf:", paths["mjcf_root"])
 
@@ -114,7 +120,7 @@ print("ycb_mjcf:", paths["mjcf_root"])
 
 # %%
 setup_logging(module_name="train_rl")
-policy_checkpoint = config_value(cfg, "rl", "checkpoint", value_type=Path)
+policy_checkpoint = yaml_config.value( "rl", "checkpoint", value_type=Path)
 policy_checkpoint.parent.mkdir(parents=True, exist_ok=True)
 
 run_rl_training_pipeline(
@@ -122,19 +128,19 @@ run_rl_training_pipeline(
     ycb_root=paths["mjcf_root"],
     object_ids=training_object_ids,
     policy_checkpoint_path=policy_checkpoint,
-    observation_dim=int(config_get(cfg, "rl", "observation_dim")),
-    action_dim=int(config_get(cfg, "rl", "action_dim")),
-    hidden_dim=int(config_get(cfg, "rl", "hidden_dim")),
+    observation_dim=int(yaml_config.get_path( "rl", "observation_dim")),
+    action_dim=int(yaml_config.get_path( "rl", "action_dim")),
+    hidden_dim=int(yaml_config.get_path( "rl", "hidden_dim")),
     learning_rate=learning_rate,
     num_updates=num_updates,
-    gamma=float(config_get(cfg, "rl", "gamma")),
+    gamma=float(yaml_config.get_path( "rl", "gamma")),
     device=device,
     seed=seed,
-    experiment_log_dir=config_value(cfg, "rl", "tensorboard", value_type=Path),
+    experiment_log_dir=yaml_config.value( "rl", "tensorboard", value_type=Path),
 )
 
 # %% [markdown]
 # ## 5. Results
 
 # %%
-print_checkpoint_summary(policy_checkpoint, config_value(cfg, "rl", "tensorboard", value_type=Path))
+print_checkpoint_summary(policy_checkpoint, yaml_config.value( "rl", "tensorboard", value_type=Path))

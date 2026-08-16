@@ -2,18 +2,55 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
+from grasping_ai.evaluation.metrics import (
+    build_lift_outcome_judge,
+    build_stability_judge,
+    evaluate_lift_success,
+    evaluate_stability,
+)
+
+from grasping_ai.perception.geometry import invert_transform
+
+from grasping_ai.robotics.gripper import (
+    gripper_actuator_indices,
+    load_gripper_model,
+    make_close_command,
+    make_open_command,
+    panda_hand_to_contact_transform,
+    panda_width_to_finger_joints,
+)
+
+from grasping_ai.robotics.kinematics import (
+    build_forward_kinematics,
+    build_inverse_kinematics,
+    load_robot_model,
+    robot_model_mj_model,
+    robot_model_nq,
+    solve_inverse_kinematics,
+)
+
+from grasping_ai.robotics.transforms import transform_grasp_pose
+
+from grasping_ai.simulation.scene import (
+    collect_contacts,
+    MuJoCoScene,
+    step_scene,
+)
+
+from grasping_ai.simulation.ycb import (
+    find_ycb_mjcf,
+    resolve_ycb_object_directory,
+)
+
 from pathlib import Path
 
 import numpy as np
 from loguru import logger
 
-from grasping_ai.config.config import DEFAULT_CONFIG_DIR, config_value, load_project_yaml_config
-from grasping_ai.utils.constants import DUAL_GRIPPER_COUNT, GRASP_POSES_NDIM, POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE
-
-
 def _fallback_timestep() -> float:
-    return float(config_value(load_project_yaml_config(DEFAULT_CONFIG_DIR), "fallback_timestep", value_type=float))
-
+    return float(FLATTENED_YAML_CONFIG.get("env.fallback_timestep", 0.002))
 
 def simulate_grasp(
     grasp_pose: np.ndarray,
@@ -58,7 +95,8 @@ def simulate_grasp(
         ValueError: If inputs or simulation state are invalid.
         FileNotFoundError: If required robot or YCB assets are missing.
     """
-    if grasp_pose.shape != SE3_MATRIX_SHAPE:
+    se3_matrix_shape = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
+    if grasp_pose.shape != se3_matrix_shape:
         raise ValueError(f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}")
     if not isinstance(robot_xml_path, Path) or not robot_xml_path.is_file():
         raise FileNotFoundError(f"robot_xml_path not found: {robot_xml_path}")
@@ -77,28 +115,7 @@ def simulate_grasp(
 
     import mujoco  # type: ignore[import-untyped]
 
-    from grasping_ai.perception.geometry import invert_transform
-    from grasping_ai.robotics.gripper import (
-        gripper_actuator_indices,
-        load_gripper_model,
-        make_close_command,
-        make_open_command,
-        panda_hand_to_contact_transform,
-        panda_width_to_finger_joints,
-    )
-    from grasping_ai.robotics.kinematics import (
-        build_forward_kinematics,
-        build_inverse_kinematics,
-        load_robot_model,
-        robot_model_mj_model,
-        robot_model_nq,
-        solve_inverse_kinematics,
-    )
-    from grasping_ai.robotics.transforms import transform_grasp_pose
-    from grasping_ai.simulation.scene import MuJoCoScene, collect_contacts, step_scene
-    from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
-    from grasping_ai.utils.constants import IK_POSE_TOLERANCE
-
+                            
     hand_to_contact = panda_hand_to_contact_transform()
     hand_pose = transform_grasp_pose(grasp_pose, invert_transform(hand_to_contact))
 
@@ -116,7 +133,11 @@ def simulate_grasp(
 
     robot_model = load_robot_model(str(robot_xml_path))
     nq_robot = robot_model_nq(robot_model)
-    ik_solver = build_inverse_kinematics(robot_model, max_iterations=400, tolerance=IK_POSE_TOLERANCE)
+    ik_solver = build_inverse_kinematics(
+        robot_model,
+        max_iterations=400,
+        tolerance=float(FLATTENED_YAML_CONFIG.get("robot.ik.tolerance", 0.001)),
+    )
     fk_solver = build_forward_kinematics(robot_model)
     robot_mj = robot_model_mj_model(robot_model)
     if int(robot_mj.nkey) > 0:
@@ -220,7 +241,9 @@ def simulate_grasp(
         for i, idx in enumerate(gripper_ids):
             open_cmd[idx] = open_vals[i]
             close_cmd[idx] = close_vals[i]
-        if grasp_width is not None and len(gripper_ids) == DUAL_GRIPPER_COUNT:
+        if grasp_width is not None and len(gripper_ids) == int(
+            FLATTENED_YAML_CONFIG.get("robot.gripper.dual_count", 2)
+        ):
             open_q1, open_q2 = panda_width_to_finger_joints(grasp_width)
             close_q1, close_q2 = 0.0, -0.04
             finger_open = {"finger_joint1": open_q1, "finger_joint2": open_q2}
@@ -281,13 +304,7 @@ def simulate_grasp(
     object_contacts = collect_contacts(scene.contacts, {object_id})
     contact_count = len(object_contacts)
 
-    from grasping_ai.evaluation.metrics import (
-        build_lift_outcome_judge,
-        build_stability_judge,
-        evaluate_lift_success,
-        evaluate_stability,
-    )
-
+    
     lift_judge = build_lift_outcome_judge(lift_height_threshold)
     stability_judge = build_stability_judge(max_linear_velocity, max_angular_velocity)
     lifted = evaluate_lift_success(lift_judge, initial_height, final_height)
@@ -303,7 +320,6 @@ def simulate_grasp(
         "grasp_pose": grasp_pose,
         "fk_position_error": fk_position_error,
     }
-
 
 def run_simulation_sweep(
     grasp_poses: np.ndarray,
@@ -338,13 +354,16 @@ def run_simulation_sweep(
     Raises:
         ValueError: If ``grasp_poses`` shape is invalid.
     """
-    if grasp_poses.ndim == POINT_CLOUD_NDIM:
-        if grasp_poses.shape == (4, 4):
-            grasp_poses = grasp_poses.reshape(1, 4, 4)
+    point_cloud_ndim = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+    grasp_poses_ndim = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
+    se3_matrix_shape = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
+    if grasp_poses.ndim == point_cloud_ndim:
+        if grasp_poses.shape == se3_matrix_shape:
+            grasp_poses = grasp_poses.reshape(1, *se3_matrix_shape)
         else:
             raise ValueError("grasp_poses must have shape (K, 4, 4) or (4, 4)")
 
-    if grasp_poses.ndim != GRASP_POSES_NDIM or grasp_poses.shape[1:] != SE3_MATRIX_SHAPE:
+    if grasp_poses.ndim != grasp_poses_ndim or grasp_poses.shape[1:] != se3_matrix_shape:
         raise ValueError("grasp_poses must have shape (K, 4, 4)")
 
     outcomes = []

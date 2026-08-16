@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import numpy as np
-import pytest
-
 from grasping_ai.pipelines.visualize_robot import (
     apply_home_keyframe,
     handle_robot_control_key,
@@ -16,15 +11,18 @@ from grasping_ai.pipelines.visualize_robot import (
     run_robot_viewer,
 )
 
+from typing import TYPE_CHECKING
+
+import numpy as np
+import pytest
+
 if TYPE_CHECKING:
     from pathlib import Path
-
 
 def test_load_visualization_scene_requires_robot_file(tmp_path: Path) -> None:
     """Verify that load_visualization_scene fails with FileNotFoundError if the robot file is missing."""
     with pytest.raises(FileNotFoundError, match="robot_xml_path"):
         load_visualization_scene(tmp_path / "missing.xml")
-
 
 def test_load_visualization_scene_requires_ycb_root_with_object(
     panda_robot_xml: Path,
@@ -32,7 +30,6 @@ def test_load_visualization_scene_requires_ycb_root_with_object(
     """Verify that load_visualization_scene fails if YCB root directory is missing when object is loaded."""
     with pytest.raises(ValueError, match="ycb_root"):
         load_visualization_scene(panda_robot_xml, object_id="cracker")
-
 
 def test_load_visualization_scene_applies_home_keyframe(panda_robot_xml: Path) -> None:
     """Verify that load_visualization_scene initializes joint positions to the home keyframe values."""
@@ -42,7 +39,6 @@ def test_load_visualization_scene_applies_home_keyframe(panda_robot_xml: Path) -
         [0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853, 0.04, 0.04],
         atol=1e-4,
     )
-
 
 def test_apply_home_keyframe_without_keys(tmp_path: Path) -> None:
     """Verify that apply_home_keyframe handles MuJoCo models that do not contain keyframes gracefully."""
@@ -62,7 +58,6 @@ def test_apply_home_keyframe_without_keys(tmp_path: Path) -> None:
     apply_home_keyframe(model, data)
     assert data.qpos[0] == pytest.approx(0.0)
 
-
 def test_robot_control_selects_and_nudges_actuator(panda_robot_xml: Path) -> None:
     """Verify that keyboard control handles pausing, home keys, selecting and nudging actuators."""
     model, data = load_visualization_scene(panda_robot_xml)
@@ -80,7 +75,6 @@ def test_robot_control_selects_and_nudges_actuator(panda_robot_xml: Path) -> Non
         [0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853, 0.04, 0.04],
         atol=1e-4,
     )
-
 
 def test_run_robot_viewer_listens_and_steps(
     panda_robot_xml: Path,
@@ -113,7 +107,6 @@ def test_run_robot_viewer_listens_and_steps(
         clock=lambda: 0.0,
     )
     assert viewer.closed is True
-
 
 def test_run_robot_control_loop_steps_until_viewer_stops(
     panda_robot_xml: Path,
@@ -149,7 +142,6 @@ def test_run_robot_control_loop_steps_until_viewer_stops(
     )
     assert viewer.syncs >= 1
     assert viewer.closed is True
-
 
 def test_run_robot_control_loop_applies_topic_keys(panda_robot_xml: Path) -> None:
     """Verify that run_robot_control_loop registers and handles keypresses from UDP keyboard topics."""

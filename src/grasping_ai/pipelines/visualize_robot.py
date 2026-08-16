@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
+from grasping_ai.robotics.gripper import gripper_actuator_indices
+
+from grasping_ai.simulation.scene import MuJoCoScene
+
+from grasping_ai.simulation.ycb import (
+    find_ycb_mjcf,
+    resolve_ycb_object_directory,
+)
+
+from grasping_ai.utils.path_validation import (
+    require_optional_path,
+    require_path,
+)
+
 import json
 import socket
 from pathlib import Path
@@ -10,24 +26,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from loguru import logger
 
-from grasping_ai.config.config import DEFAULT_CONFIG_DIR, config_value, load_project_yaml_config
-from grasping_ai.utils.constants import (
-    ACTUATOR_SPAN_LARGE_THRESHOLD,
-    ACTUATOR_STEP_LARGE,
-    ACTUATOR_STEP_SMALL,
-    KEY_DIGIT_1,
-    KEY_DIGIT_9,
-    KEY_GRIPPER_TOGGLE,
-    KEY_HOME,
-    KEY_SPACE,
-    UDP_PORT_MAX,
-    UDP_PORT_MIN,
-)
-from grasping_ai.utils.path_validation import require_optional_path, require_path
-
 if TYPE_CHECKING:
     from collections.abc import Callable
-
 
 def load_visualization_scene(
     robot_xml_path: Path,
@@ -61,12 +61,10 @@ def load_visualization_scene(
             raise ValueError("ycb_root is required when object_id is set")
         if not ycb_root.is_dir():
             raise FileNotFoundError(f"ycb_root not found: {ycb_root}")
-        from grasping_ai.simulation.ycb import find_ycb_mjcf, resolve_ycb_object_directory
-
+        
         object_xml_path = find_ycb_mjcf(resolve_ycb_object_directory(ycb_root, object_id))
 
-    from grasping_ai.simulation.scene import MuJoCoScene
-
+    
     scene = MuJoCoScene(
         robot_xml_path,
         object_xml_path,
@@ -77,7 +75,6 @@ def load_visualization_scene(
     if object_id is not None and table_xml_path is not None:
         _place_object_on_table(scene.model, scene.data, object_id)
     return scene.model, scene.data
-
 
 def _place_object_on_table(mj_model: Any, mj_data: Any, object_name: str) -> None:
     """Set the object freejoint so it rests on the table top surface.
@@ -122,7 +119,6 @@ def _place_object_on_table(mj_model: Any, mj_data: Any, object_name: str) -> Non
 
     mujoco.mj_forward(mj_model, mj_data)
 
-
 def apply_home_keyframe(mj_model: Any, mj_data: Any) -> None:
     """Reset robot joints to keyframe 0 without wiping extra scene DOFs.
 
@@ -151,7 +147,6 @@ def apply_home_keyframe(mj_model: Any, mj_data: Any) -> None:
     mj_data.ctrl[:nctrl] = key_ctrl[:nctrl]
     mj_data.qvel[:] = 0.0
     mujoco.mj_forward(mj_model, mj_data)
-
 
 def read_tui_key() -> int | None:
     """Read one pending terminal key without blocking.
@@ -206,7 +201,6 @@ def read_tui_key() -> int | None:
         "[": 91,
         "]": 93,
     }.get(char)
-
 
 def run_keyboard_tui(
     *,
@@ -266,7 +260,6 @@ def run_keyboard_tui(
         if owns_publisher and pub_sock is not None:
             pub_sock.close()
 
-
 def run_robot_viewer(
     mj_model: Any,
     mj_data: Any,
@@ -301,7 +294,9 @@ def run_robot_viewer(
         port = 5511 if topic_port is None else topic_port
         if not isinstance(host, str) or not host:
             raise TypeError("host must be a non-empty string")
-        if not isinstance(port, int) or not (UDP_PORT_MIN <= port <= UDP_PORT_MAX):
+        udp_port_min = int(FLATTENED_YAML_CONFIG.get("env.teleop.udp_port_min", 0))
+        udp_port_max = int(FLATTENED_YAML_CONFIG.get("env.teleop.udp_port_max", 65535))
+        if not isinstance(port, int) or not (udp_port_min <= port <= udp_port_max):
             raise ValueError("port must be an integer in 0..65535")
         topic_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         topic_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -348,7 +343,6 @@ def run_robot_viewer(
         if topic_sock is not None:
             topic_sock.close()
 
-
 def init_robot_control(mj_model: Any, mj_data: Any) -> dict[str, Any]:
     """Initialize keyboard teleoperation state for actuator targets.
 
@@ -364,8 +358,7 @@ def init_robot_control(mj_model: Any, mj_data: Any) -> dict[str, Any]:
     """
     import mujoco  # type: ignore[import-untyped]
 
-    from grasping_ai.robotics.gripper import gripper_actuator_indices
-
+    
     if int(mj_model.nu) <= 0:
         raise ValueError("model has no actuators to control")
     if int(mj_model.nkey) > 0 and mj_model.key_ctrl.shape[1] == mj_model.nu:
@@ -384,7 +377,6 @@ def init_robot_control(mj_model: Any, mj_data: Any) -> dict[str, Any]:
         "ctrl": ctrl,
     }
 
-
 def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> None:
     """Apply a GLFW keycode to robot teleoperation state.
 
@@ -401,8 +393,18 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
     mj_data = control_state["data"]
     ctrl = control_state["ctrl"]
     selected = control_state["selected"]
-    if KEY_DIGIT_1 <= code <= KEY_DIGIT_9:
-        index = code - KEY_DIGIT_1
+    key_digit_1 = int(FLATTENED_YAML_CONFIG.get("env.teleop.key_digit_1", 49))
+    key_digit_9 = int(FLATTENED_YAML_CONFIG.get("env.teleop.key_digit_9", 57))
+    actuator_span_large_threshold = float(
+        FLATTENED_YAML_CONFIG.get("env.teleop.actuator_span_large_threshold", 10.0)
+    )
+    actuator_step_large = float(FLATTENED_YAML_CONFIG.get("env.teleop.actuator_step_large", 15.0))
+    actuator_step_small = float(FLATTENED_YAML_CONFIG.get("env.teleop.actuator_step_small", 0.05))
+    key_gripper_toggle = int(FLATTENED_YAML_CONFIG.get("env.teleop.key_gripper_toggle", 71))
+    key_home = int(FLATTENED_YAML_CONFIG.get("env.teleop.key_home", 72))
+    key_space = int(FLATTENED_YAML_CONFIG.get("env.teleop.key_space", 32))
+    if key_digit_1 <= code <= key_digit_9:
+        index = code - key_digit_1
         if index < int(mj_model.nu):
             control_state["selected"] = index
             name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, index) or f"actuator_{index}"
@@ -415,7 +417,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         else:
             lo, hi = -3.14, 3.14
         span = hi - lo
-        step = ACTUATOR_STEP_LARGE if span > ACTUATOR_SPAN_LARGE_THRESHOLD else ACTUATOR_STEP_SMALL
+        step = actuator_step_large if span > actuator_span_large_threshold else actuator_step_small
         value = float(np.clip(ctrl[selected] - step, lo, hi))
         ctrl[selected] = value
         mj_data.ctrl[selected] = value
@@ -429,14 +431,14 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         else:
             lo, hi = -3.14, 3.14
         span = hi - lo
-        step = ACTUATOR_STEP_LARGE if span > ACTUATOR_SPAN_LARGE_THRESHOLD else ACTUATOR_STEP_SMALL
+        step = actuator_step_large if span > actuator_span_large_threshold else actuator_step_small
         value = float(np.clip(ctrl[selected] + step, lo, hi))
         ctrl[selected] = value
         mj_data.ctrl[selected] = value
         name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_ACTUATOR, selected) or f"actuator_{selected}"
         logger.info("actuator {} ({}) = {:.4f}", selected, name, value)
         return
-    if code == KEY_GRIPPER_TOGGLE:
+    if code == key_gripper_toggle:
         gripper_ids = control_state["gripper_ids"]
         if not gripper_ids:
             logger.warning("No gripper actuator found")
@@ -452,7 +454,7 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
             mj_data.ctrl[idx] = ctrl[idx]
         logger.info("Gripper open" if control_state["gripper_open"] else "Gripper closed")
         return
-    if code == KEY_HOME:
+    if code == key_home:
         apply_home_keyframe(mj_model, mj_data)
         if int(mj_model.nkey) > 0 and mj_model.key_ctrl.shape[1] == mj_model.nu:
             control_state["ctrl"] = np.array(mj_model.key_ctrl[0], dtype=np.float64, copy=True)
@@ -461,10 +463,9 @@ def handle_robot_control_key(control_state: dict[str, Any], keycode: int) -> Non
         mj_data.ctrl[:] = control_state["ctrl"]
         logger.info("Reset to home keyframe")
         return
-    if code == KEY_SPACE:
+    if code == key_space:
         control_state["paused"] = not control_state["paused"]
         logger.info("Paused" if control_state["paused"] else "Running")
-
 
 def apply_robot_control(control_state: dict[str, Any]) -> None:
     """Write the current command vector into ``data.ctrl``.
@@ -473,7 +474,6 @@ def apply_robot_control(control_state: dict[str, Any]) -> None:
         control_state: State returned by ``init_robot_control``.
     """
     control_state["data"].ctrl[:] = control_state["ctrl"]
-
 
 def run_robot_control_loop(
     mj_model: Any,
@@ -516,7 +516,7 @@ def run_robot_control_loop(
 
     dt = float(mj_model.opt.timestep)
     if dt <= 0 or not np.isfinite(dt):
-        dt = float(config_value(load_project_yaml_config(DEFAULT_CONFIG_DIR), "fallback_timestep", value_type=float))
+        dt = float(FLATTENED_YAML_CONFIG.get("env.fallback_timestep", 0.002))
 
     print(
         "Robot control keys come from run_keyboard_tui (UDP topic robot/keyboard):\n"
@@ -554,7 +554,6 @@ def run_robot_control_loop(
         close = getattr(viewer, "close", None)
         if callable(close):
             close()
-
 
 if __name__ == "__main__":
     import sys

@@ -2,18 +2,31 @@
 
 from __future__ import annotations
 
+from grasping_ai.data.pointcloud_dataset import save_grasp_sample
+
+from grasping_ai.pipelines.evaluate import (
+    read_jsonl_records,
+    write_evaluation_report,
+)
+
+from grasping_ai.pipelines.train_diffusion import run_diffusion_training_pipeline
+
+from grasping_ai.training.trainer import (
+    build_training_step,
+    load_training_checkpoint,
+    run_training_loop,
+    save_training_checkpoint,
+)
+
+from grasping_ai.utils.logging_utils import (
+    init_mlflow,
+    setup_logging,
+)
+
 import copy
 
 import numpy as np
 import torch
-
-from grasping_ai.pipelines.evaluate import write_evaluation_report
-from grasping_ai.pipelines.train_diffusion import run_diffusion_training_pipeline
-from grasping_ai.training.trainer import (
-    build_training_step,
-    run_training_loop,
-)
-
 
 class DummyModel(torch.nn.Module):
     """A simple, un-parameterized dummy model to simulate neural net structures during testing."""
@@ -29,7 +42,6 @@ class DummyModel(torch.nn.Module):
     def forward(self, x, t, cond):
         """Perform a dummy forward pass returning the linear mapping of the input."""
         return self.fc(x)
-
 
 def test_build_training_step_seeding():
     """Verify that the built training step functions produce identical outputs given the same seed."""
@@ -49,7 +61,6 @@ def test_build_training_step_seeding():
     res1 = step1(inputs, targets)
     res2 = step2(inputs, targets)
     assert np.allclose(res1["loss"], res2["loss"])
-
 
 def test_training_loop_tracking(tmp_path):
     """Verify that training loop processes logs to Tensorboard and checkpoints parameters under correct keys."""
@@ -91,11 +102,9 @@ def test_training_loop_tracking(tmp_path):
     checkpoint = torch.load(checkpoint_path)
     assert checkpoint.get("seed") == 42
 
-
 def test_evaluation_tracking(tmp_path):
     """Verify that evaluation reports log the expected summary records and push events to Tensorboard."""
-    from grasping_ai.pipelines.evaluate import read_jsonl_records
-
+    
     report_path = tmp_path / "report.jsonl"
     log_dir = tmp_path / "tb_eval_logs"
 
@@ -115,11 +124,9 @@ def test_evaluation_tracking(tmp_path):
     event_files = list(log_dir.glob("events.out.tfevents.*"))
     assert len(event_files) > 0
 
-
 def test_supervised_reproducibility(tmp_path):
     """Verify that supervised model training is reproducible with matching seeds and stochastic with different seeds."""
-    from grasping_ai.data.pointcloud_dataset import save_grasp_sample
-
+    
     dataset_root = tmp_path / "mock_dataset"
     dataset_root.mkdir()
 
@@ -220,14 +227,12 @@ def test_supervised_reproducibility(tmp_path):
         pretrained_encoder_path=checkpoint_path1,
     )
 
-
 def test_setup_logging():
     """Test setup_logging with console and file logs."""
     from datetime import UTC, datetime
     from pathlib import Path
 
-    from grasping_ai.utils.logging_utils import setup_logging
-
+    
     current_date = datetime.now(tz=UTC).date().isoformat()
     expected_file = Path("logs") / f"{current_date}-test_run.log"
 
@@ -247,11 +252,9 @@ def test_setup_logging():
     logger.remove()
     expected_file.unlink()
 
-
 def test_init_mlflow():
     """Test init_mlflow with different configurations."""
-    from grasping_ai.utils.logging_utils import init_mlflow
-
+    
     # 1. backend != mlflow
     config_none = {"tracking": {"backend": "none"}}
     assert init_mlflow(config_none) is False
@@ -274,13 +277,11 @@ def test_init_mlflow():
         mock_set_uri.assert_called_once_with("http://localhost:5000")
         mock_set_exp.assert_called_once_with("test_experiment")
 
-
 def test_save_training_checkpoint_errors():
     """Verify that trainer functions check input types and raise errors."""
     import pytest
 
-    from grasping_ai.training.trainer import load_training_checkpoint, save_training_checkpoint
-
+    
     model = DummyModel()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
@@ -290,11 +291,9 @@ def test_save_training_checkpoint_errors():
     with pytest.raises(TypeError):
         load_training_checkpoint("not_a_path_object", model, optimizer, "cpu")
 
-
 def test_training_loop_dataloader_types(tmp_path):
     """Test trainer.py run_training_loop with different dataloader types."""
-    from grasping_ai.training.trainer import build_training_step, run_training_loop
-
+    
     model = DummyModel()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn = torch.nn.MSELoss()
@@ -312,5 +311,4 @@ def test_training_loop_dataloader_types(tmp_path):
     # 2. Iterator dataloader
     iter_dl = iter([batch])
     run_training_loop(step, iter_dl, num_epochs=1, checkpoint_path=checkpoint_path, log_every=1)
-
 

@@ -4,6 +4,12 @@ metrics:
   wrench_regularization: 1.0
   lift_height_threshold: 0.05
   collision_clearance: 0.005
+  lp_feasibility_eps: 1.0e-5
+  hull_halfspace_eps: 1.0e-9
+wrench:
+  dim: 6
+  lp_equality_rows: 7
+  min_columns: 6
 limits:
   max_linear_velocity: 0.05
   max_angular_velocity: 0.1

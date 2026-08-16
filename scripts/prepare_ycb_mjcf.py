@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+
+from grasping_ai.simulation.ycb import (
+    find_ycb_mesh_file,
+    list_ycb_objects,
+)
+
 from pathlib import Path
 
 import hydra
 from loguru import logger
 from omegaconf import DictConfig
-
-from grasping_ai.config.config import SCRIPTS_CONFIG_PATH, config_value
-from grasping_ai.simulation.ycb import find_ycb_mesh_file, list_ycb_objects
-
 
 def convert_ycb_to_mjcf(ycb_root: Path, output_root: Path) -> list[Path]:
     """Write MJCF object wrappers referencing the real YCB mesh meshes."""
@@ -43,16 +46,15 @@ def convert_ycb_to_mjcf(ycb_root: Path, output_root: Path) -> list[Path]:
         generated.append(wrapper_path)
     return sorted(generated)
 
-
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/prepare_ycb_mjcf")
 def main(cfg: DictConfig) -> None:
+    yaml_config = FlattenedYAMLConfig(cfg)
     generated = convert_ycb_to_mjcf(
-        config_value(cfg, "paths", "ycb_root", value_type=Path, required=True),
-        config_value(cfg, "paths", "ycb_mjcf", value_type=Path, required=True),
+        yaml_config.value("paths", "ycb_root", value_type=Path, required=True),
+        yaml_config.value("paths", "ycb_mjcf", value_type=Path, required=True),
     )
     for path in generated:
         logger.info("{}", path)
-
 
 if __name__ == "__main__":
     main()

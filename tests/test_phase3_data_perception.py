@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
-import tempfile
-from pathlib import Path
-
-import numpy as np
-import pytest
+from grasping_ai.data.grasp_vector import (
+    se3_to_vec,
+    vec_to_se3,
+)
 
 from grasping_ai.data.pointcloud_dataset import (
     discover_dataset_files,
@@ -17,16 +15,19 @@ from grasping_ai.data.pointcloud_dataset import (
     resolve_ycb_object_id,
     save_grasp_sample,
 )
+
 from grasping_ai.data.training_pairs import (
     build_supervised_training_pairs,
     validate_grasp_dataset,
 )
+
 from grasping_ai.data.transforms import (
     compose_transforms,
     make_random_rotation_jitter,
     make_translation_jitter,
     save_grasp_dataset_index,
 )
+
 from grasping_ai.perception.pointcloud import (
     build_kdtree,
     estimate_point_cloud_normals,
@@ -35,11 +36,19 @@ from grasping_ai.perception.pointcloud import (
     sample_point_cloud,
     voxel_downsample,
 )
+
 from grasping_ai.sensors.pointcloud_sensor import (
     acquire_point_cloud_stream,
     merge_point_clouds,
+    sample_point_cloud_from_mesh,
 )
 
+import json
+import tempfile
+from pathlib import Path
+
+import numpy as np
+import pytest
 
 def test_numpy_runtime_dependency_available():
     """Verify that numpy package is available and can be imported."""
@@ -47,25 +56,21 @@ def test_numpy_runtime_dependency_available():
 
     assert np.__version__ is not None
 
-
 def test_phase1_package_import_remains_stable():
     """Verify that the package remains importable."""
     import grasping_ai
 
     assert grasping_ai.__name__ == "grasping_ai"
 
-
 def test_data_config_file_exists():
     """Verify data configuration file existence."""
     path = Path("configs/data/default.yaml")
     assert path.is_file()
 
-
 def test_object_config_file_exists():
     """Verify object configuration file existence."""
     path = Path("configs/object/default.yaml")
     assert path.is_file()
-
 
 def test_prepare_data_creates_index_from_minimal_dataset(tmp_path):
     """Test discovering files and writing a JSON index."""
@@ -100,7 +105,6 @@ def test_prepare_data_creates_index_from_minimal_dataset(tmp_path):
     assert len(loaded_entries) == 1
     assert loaded_entries[0]["path"] == str(record_path)
 
-
 def test_save_grasp_dataset_index_honors_custom_filename():
     """Verify that a custom index filename is honored instead of defaulting to index.json."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -116,7 +120,6 @@ def test_save_grasp_dataset_index_honors_custom_filename():
             loaded_entries = json.load(f)
         assert loaded_entries == entries
 
-
 def test_prepare_data_rejects_missing_dataset_root():
     """Verify that discover_dataset_files raises FileNotFoundError for missing paths."""
     with pytest.raises(FileNotFoundError):
@@ -124,14 +127,12 @@ def test_prepare_data_rejects_missing_dataset_root():
     with pytest.raises(TypeError):
         discover_dataset_files("not-a-path-object")  # type: ignore[arg-type]
 
-
 def test_prepare_data_rejects_empty_dataset(tmp_path):
     """Verify discover_dataset_files raises ValueError for empty directories."""
     empty_root = tmp_path / "empty"
     empty_root.mkdir()
     with pytest.raises(ValueError, match="No dataset record files"):
         discover_dataset_files(empty_root)
-
 
 def test_index_loader_reads_prepared_index(tmp_path):
     """Verify loading dataset via index iterate functions."""
@@ -155,12 +156,10 @@ def test_index_loader_reads_prepared_index(tmp_path):
     assert samples[0]["point_cloud"].shape == (10, 3)
     assert samples[1]["point_cloud"].shape == (15, 3)
 
-
 def test_index_loader_rejects_invalid_structure(tmp_path):
     """Test loading invalid index inputs."""
     with pytest.raises(TypeError):
         list(iterate_grasp_dataset("not-a-path"))  # type: ignore[arg-type]
-
 
 def test_save_grasp_sample_roundtrip(tmp_path):
     """Verify save_grasp_sample writes pickle-free archives readable by load_grasp_sample."""
@@ -182,7 +181,6 @@ def test_save_grasp_sample_roundtrip(tmp_path):
         assert "point_cloud" in archive
         assert archive["point_cloud"].dtype == np.float32
 
-
 def test_save_grasp_sample_validates_point_cloud(tmp_path):
     """Verify save_grasp_sample rejects invalid point-cloud payloads before writing."""
     path = tmp_path / "invalid.npz"
@@ -191,7 +189,6 @@ def test_save_grasp_sample_validates_point_cloud(tmp_path):
 
     with pytest.raises(ValueError, match="point_cloud must have shape"):
         save_grasp_sample(path, {"point_cloud": np.zeros((4, 2), dtype=np.float32)})
-
 
 def test_load_grasp_sample_decodes_object_id_array(tmp_path):
     """Verify object identifiers stored as unicode arrays decode to plain strings."""
@@ -203,7 +200,6 @@ def test_load_grasp_sample_decodes_object_id_array(tmp_path):
     )
     sample = load_grasp_sample(path)
     assert sample["object_id"] == "004_sugar_box"
-
 
 def test_point_cloud_loader_reads_valid_npz_point_cloud(tmp_path):
     """Test load_grasp_sample on valid file."""
@@ -220,7 +216,6 @@ def test_point_cloud_loader_reads_valid_npz_point_cloud(tmp_path):
     assert np.allclose(sample["point_cloud"], 1.0)
     assert sample["object_id"] == "box"
 
-
 def test_point_cloud_loader_rejects_wrong_shape(tmp_path):
     """Verify loader validation on malformed shapes."""
     path = tmp_path / "bad.npz"
@@ -235,14 +230,12 @@ def test_point_cloud_loader_rejects_wrong_shape(tmp_path):
     with pytest.raises(ValueError, match="shape"):
         load_grasp_sample(path)
 
-
 def test_point_cloud_loader_rejects_non_finite_values(tmp_path):
     """Verify loader validation rejects NaN and Inf."""
     path = tmp_path / "nan.npz"
     np.savez(path, point_cloud=np.array([[1.0, 2.0, np.nan]], dtype=np.float32))
     with pytest.raises(ValueError, match="finite"):
         load_grasp_sample(path)
-
 
 def test_resolve_ycb_object_id(tmp_path):
     """Verify YCB mesh path lookup resolution."""
@@ -261,7 +254,6 @@ def test_resolve_ycb_object_id(tmp_path):
     # Non-existent object
     with pytest.raises(FileNotFoundError):
         resolve_ycb_object_id(ycb_root, "banana")
-
 
 def test_make_random_rotation_jitter():
     """Verify SO(3) random rotation transform."""
@@ -286,7 +278,6 @@ def test_make_random_rotation_jitter():
     dist_rot = np.linalg.norm(pts_rot[0] - pts_rot[1])
     assert np.isclose(dist_orig, dist_rot)
 
-
 def test_make_translation_jitter():
     """Verify translation transform."""
     rng = np.random.default_rng(42)
@@ -305,7 +296,6 @@ def test_make_translation_jitter():
     assert gps_t is not None
     assert np.allclose(gps_t[:, :3, 3], shift)
 
-
 def test_compose_transforms():
     """Verify sequential composition of transforms."""
     rng = np.random.default_rng(42)
@@ -320,7 +310,6 @@ def test_compose_transforms():
     # Output should not be zero
     assert not np.allclose(pts_out, 0.0)
 
-
 def test_sample_point_cloud():
     """Verify point cloud fixed size sampling."""
     rng = np.random.default_rng(42)
@@ -333,7 +322,6 @@ def test_sample_point_cloud():
     sampled_3 = sample_point_cloud(points, 3, rng)
     assert sampled_3.shape == (3, 3)
 
-
 def test_normalize_point_cloud():
     """Verify centering and unit scaling."""
     points = np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
@@ -344,7 +332,6 @@ def test_normalize_point_cloud():
     # Max distance should be 1.0
     assert np.allclose(np.max(np.linalg.norm(normalized, axis=1)), 1.0)
 
-
 def test_farthest_point_sampling():
     """Verify Farthest Point Sampling indices selection."""
     rng = np.random.default_rng(42)
@@ -354,7 +341,6 @@ def test_farthest_point_sampling():
     assert indices.shape == (2,)
     # Farthest points should be selected (index 0 and 2, or index 1 and 2 depending on random start)
     assert 2 in indices
-
 
 def test_estimate_point_cloud_normals():
     """Verify normal estimation using local PCA."""
@@ -375,7 +361,6 @@ def test_estimate_point_cloud_normals():
         assert np.isclose(n[0], 0.0, atol=1e-4)
         assert np.isclose(n[1], 0.0, atol=1e-4)
 
-
 def test_voxel_downsample():
     """Verify voxel downsampling centroids grouping."""
     points = np.array(
@@ -390,7 +375,6 @@ def test_voxel_downsample():
     assert len(downsampled) == 2
     assert np.allclose(downsampled[0], [0.015, 0.015, 0.015]) or np.allclose(downsampled[1], [0.015, 0.015, 0.015])
 
-
 def test_build_kdtree():
     """Verify KDTree construction and neighbor querying."""
     points = np.array([[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
@@ -401,7 +385,6 @@ def test_build_kdtree():
     assert idx == 0
     assert np.isclose(dist, 0.1)
 
-
 def test_data_functions_do_not_leak_global_state(tmp_path):
     """Verify that calling voxel downsampling twice with the same inputs behaves deterministically and does not leak state."""
     # Test voxel downsampling determinism
@@ -409,7 +392,6 @@ def test_data_functions_do_not_leak_global_state(tmp_path):
     out1 = voxel_downsample(points, 0.2)
     out2 = voxel_downsample(points, 0.2)
     assert np.allclose(out1, out2)
-
 
 def test_data_perception_error_handling(tmp_path):
     """Test all input validation and error handling paths in Phase 3 modules."""
@@ -606,15 +588,13 @@ def test_data_perception_error_handling(tmp_path):
         )
 
     # validate_grasp_dataset and build_supervised_training_pairs validations (empty dataset)
-    from grasping_ai.data.training_pairs import build_supervised_training_pairs, validate_grasp_dataset
-
+    
     empty_dir = tmp_path / "empty_dataset"
     empty_dir.mkdir()
     with pytest.raises(ValueError, match="No dataset record files"):
         build_supervised_training_pairs(empty_dir)
     with pytest.raises(ValueError, match="No dataset record files"):
         validate_grasp_dataset(empty_dir)
-
 
 def test_resolve_ycb_object_id_exact_and_fallbacks(tmp_path):
     """Test resolve_ycb_object_id for exact directory matches and different mesh formats."""
@@ -651,7 +631,6 @@ def test_resolve_ycb_object_id_exact_and_fallbacks(tmp_path):
 
     assert resolve_ycb_object_id(ycb_root, "mug") == obj_dir4
 
-
 def test_transforms_optional_none_inputs():
     """Verify transforms when grasp_poses and scores are None."""
     rng = np.random.default_rng(42)
@@ -669,7 +648,6 @@ def test_transforms_optional_none_inputs():
     assert p_trans.shape == (5, 3)
     assert gp_trans is None
     assert s_trans is None
-
 
 def test_perception_edge_cases():
     """Verify FPS and normals estimation edge cases."""
@@ -696,7 +674,6 @@ def test_perception_edge_cases():
     normals = estimate_point_cloud_normals(identical_pts, neighborhood_size=4)
     assert np.allclose(normals, [0, 0, 1])
 
-
 def test_acquire_point_cloud_stream_yields_saved_clouds():
     """Verify that acquire_point_cloud_stream correctly yields point clouds loaded from numpy array files."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -711,7 +688,6 @@ def test_acquire_point_cloud_stream_yields_saved_clouds():
         assert clouds[0].shape == (10, 3)
         assert clouds[2].shape == (12, 3)
 
-
 def test_acquire_point_cloud_stream_rejects_invalid_input():
     """Verify that acquire_point_cloud_stream raises TypeError for invalid paths and FileNotFoundError for missing files."""
     with pytest.raises(TypeError, match=r"list of pathlib\.Path"):
@@ -723,7 +699,6 @@ def test_acquire_point_cloud_stream_rejects_invalid_input():
         with pytest.raises(FileNotFoundError):
             list(acquire_point_cloud_stream([missing]))
 
-
 def test_merge_point_clouds_concatenates():
     """Verify that merge_point_clouds correctly concatenates multiple point cloud arrays into a single array."""
     a = np.random.randn(5, 3).astype(np.float32)
@@ -733,12 +708,10 @@ def test_merge_point_clouds_concatenates():
     assert np.allclose(merged[:5], a)
     assert np.allclose(merged[5:], b)
 
-
 def test_merge_point_clouds_empty_list():
     """Verify that merge_point_clouds returns an empty array of correct shape when given an empty list."""
     merged = merge_point_clouds([])
     assert merged.shape == (0, 3)
-
 
 def test_merge_point_clouds_validation():
     """Verify that merge_point_clouds raises TypeError or ValueError for invalid list or array shapes."""
@@ -746,7 +719,6 @@ def test_merge_point_clouds_validation():
         merge_point_clouds("not_a_list")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="shape \\(N, 3\\)"):
         merge_point_clouds([np.random.randn(4, 2)])
-
 
 def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
     """Verify validations on dataset root paths and dataset data augmentation inside training pair utilities."""
@@ -808,7 +780,6 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="point_cloud must have shape"):
         build_supervised_training_pairs(dataset_dir)
 
-
 def test_generate_analytical_grasps_validations_and_fallbacks() -> None:
     """Verify type and value checks on antipodal dot limits, multipliers, and relaxed grasp fallbacks."""
     pts = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.04]], dtype=np.float64)
@@ -852,14 +823,9 @@ def test_generate_analytical_grasps_validations_and_fallbacks() -> None:
     )
     assert isinstance(relaxed_grasps, np.ndarray)
 
-
 def test_training_pairs_validations_and_error_paths(tmp_path: Path) -> None:
     """Verify validation checks on dataset records with corrupt or empty point clouds and grasp arrays."""
-    from grasping_ai.data.training_pairs import (
-        build_supervised_training_pairs,
-        validate_grasp_dataset,
-    )
-
+    
     with pytest.raises(TypeError, match="dataset_root"):
         validate_grasp_dataset("invalid")  # type: ignore[arg-type]
 
@@ -908,27 +874,20 @@ def test_training_pairs_validations_and_error_paths(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="has no target grasp poses"):
         build_supervised_training_pairs(corrupt_ds3)
 
-
 def test_grasp_vector_invalid_inputs() -> None:
     """Verify shape and value validation exceptions on grasp SE3 and 9D vector conversion functions."""
     import torch
 
-    from grasping_ai.data.grasp_vector import se3_to_vec, vec_to_se3
-
+    
     with pytest.raises(ValueError, match="t_matrix must be a"):
         se3_to_vec(np.zeros((3, 3)))
 
     with pytest.raises(ValueError, match="x must have shape"):
         vec_to_se3(torch.zeros(9))
 
-
 def test_transforms_additional_validations(tmp_path: Path) -> None:
     """Verify that point cloud translation jitter and dataset index saving raise appropriate validation errors on invalid inputs."""
-    from grasping_ai.data.transforms import (
-        make_translation_jitter,
-        save_grasp_dataset_index,
-    )
-
+    
     rng = np.random.default_rng(42)
     trans = make_translation_jitter(rng, scale=0.01)
 
@@ -946,11 +905,9 @@ def test_transforms_additional_validations(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="Failed to write dataset index"):
         save_grasp_dataset_index(dir_path, [{"record": "r1"}], filename="")
 
-
 def test_generate_analytical_grasps_degenerate_parallel_normals() -> None:
     """Verify that generating analytical grasps handles parallel collinear normal vectors successfully."""
-    from grasping_ai.data.pointcloud_dataset import generate_analytical_grasps
-
+    
     rng = np.random.default_rng(42)
     pts = np.array([[0.0, 0.0, 0.0], [0.02, 0.0, 0.0]], dtype=np.float64)
     normals = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]], dtype=np.float64)
@@ -958,11 +915,9 @@ def test_generate_analytical_grasps_degenerate_parallel_normals() -> None:
     grasps = generate_analytical_grasps(pts, normals, num_grasps=1, gripper_width=0.05, rng=rng)
     assert isinstance(grasps, np.ndarray)
 
-
 def test_pointcloud_sensor_additional_coverage(tmp_path: Path) -> None:
     """Verify mesh reading error scenarios, empty files, and random generators inside point cloud sensor functions."""
-    from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
-
+    
     mesh_file = tmp_path / "mesh.obj"
     mesh_file.write_text("v 0 0 0\nv 0 0 0\nv 0 0 0\nf 1 2 3\n", encoding="utf-8")
 
@@ -984,11 +939,9 @@ def test_pointcloud_sensor_additional_coverage(tmp_path: Path) -> None:
     pc = sample_point_cloud_from_mesh(mesh_file, 5, rng)
     assert pc.shape == (5, 3)
 
-
 def test_generate_analytical_grasps_relaxed_fallback_and_parallel_normals() -> None:
     """Verify relaxed fallbacks on parallel normal vectors and empty arrays for zero-distance grasp points."""
-    from grasping_ai.data.pointcloud_dataset import generate_analytical_grasps
-
+    
     rng = np.random.default_rng(42)
 
     pts = np.array([[0.0, 0.0, 0.0], [0.02, 0.0, 0.0]])

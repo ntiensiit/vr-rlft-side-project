@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from grasping_ai.models.rl_policy import read_rl_policy_metadata
+
+from grasping_ai.utils.path_validation import require_path
+
 from typing import TYPE_CHECKING, Any
 
 import torch
 
-from grasping_ai.utils.path_validation import require_path
-
 if TYPE_CHECKING:
     from pathlib import Path
-
 
 def read_checkpoint_model_state_dict(checkpoint: dict[str, Any]) -> dict[str, torch.Tensor] | None:
     """Extract ``model_state_dict`` tensor entries from a loaded checkpoint.
@@ -31,7 +32,6 @@ def read_checkpoint_model_state_dict(checkpoint: dict[str, Any]) -> dict[str, to
         if isinstance(key, str) and isinstance(value, torch.Tensor)
     }
     return state or None
-
 
 def load_torch_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
     """Load a PyTorch checkpoint from disk with shared validation and errors.
@@ -61,7 +61,6 @@ def load_torch_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
         raise ValueError(f"Checkpoint at {checkpoint_path} must deserialize to a dictionary")
     return checkpoint
 
-
 def checkpoint_scalar_int(value: object) -> int:
     """Coerce a checkpoint scalar value to ``int``.
 
@@ -84,7 +83,6 @@ def checkpoint_scalar_int(value: object) -> int:
         return int(value)
     raise TypeError(f"Expected numeric checkpoint scalar, got {type(value)!r}")
 
-
 def read_model_checkpoint_metadata(
     checkpoint_path: Path,
     device: str = "cpu",
@@ -104,8 +102,7 @@ def read_model_checkpoint_metadata(
     """
     checkpoint = load_torch_checkpoint(checkpoint_path, device)
 
-    from grasping_ai.models.rl_policy import read_rl_policy_metadata
-
+    
     rl_metadata = read_rl_policy_metadata(checkpoint)
     if rl_metadata is not None:
         kind = "rl_policy"

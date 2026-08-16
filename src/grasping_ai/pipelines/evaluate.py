@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import json
-from typing import TYPE_CHECKING
-
-import numpy as np
-from loguru import logger
-
 from grasping_ai.evaluation.collision import (
     build_collision_checker,
     check_collision,
     filter_collision_free_grasps,
     generate_analytical_contacts,
 )
+
 from grasping_ai.evaluation.force_closure import (
     build_force_closure_judge,
     compute_grasp_quality,
@@ -21,14 +16,26 @@ from grasping_ai.evaluation.force_closure import (
     evaluate_force_closure,
     load_contact_set,
 )
+
 from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
-from grasping_ai.utils.constants import GRASP_POSES_NDIM, POINT_CLOUD_NDIM, SE3_MATRIX_SHAPE
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
 from grasping_ai.utils.path_validation import require_path
+
+import json
+from typing import TYPE_CHECKING
+
+import numpy as np
+from loguru import logger
+
+GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
-
 
 def evaluate_generated_grasps(
     grasp_poses: np.ndarray,
@@ -124,7 +131,6 @@ def evaluate_generated_grasps(
         )
     return results
 
-
 def aggregate_evaluation_results(
     per_object_results: dict[str, list[dict[str, float | bool]]],
 ) -> dict[str, float]:
@@ -198,7 +204,6 @@ def aggregate_evaluation_results(
         "max_grasp_quality": max_q,
     }
 
-
 def write_jsonl_records(
     output_path: Path,
     records: list[dict[str, object]],
@@ -224,7 +229,6 @@ def write_jsonl_records(
                 fp.write("\n")
     except Exception as e:
         raise ValueError(f"Failed to write JSONL records: {e}") from e
-
 
 def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
     """Read JSON Lines records from disk.
@@ -260,7 +264,6 @@ def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
             raise TypeError(f"JSONL line {line_number} in {input_path} must be a mapping")
         records.append(loaded)
     return records
-
 
 def write_evaluation_report(
     report_path: Path,
