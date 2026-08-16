@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from grasping_ai.config.flattened_yaml_config import (
-    FLATTENED_YAML_CONFIG,
-    FlattenedYAMLConfig,
-)
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 
 import torch
-from omegaconf import DictConfig
+
+DIFFUSION_BETA_START = float(FLATTENED_YAML_CONFIG.get("diffusion.beta_start", 1e-4))
+DIFFUSION_BETA_END = float(FLATTENED_YAML_CONFIG.get("diffusion.beta_end", 0.02))
+DIFFUSION_NUM_STEPS = int(FLATTENED_YAML_CONFIG.get("diffusion.num_steps", 100))
 
 @dataclass(frozen=True)
 class DiffusionSchedule:
@@ -22,34 +22,11 @@ class DiffusionSchedule:
         num_steps: Number of diffusion timesteps ``T``.
     """
 
-    beta_start: float = 1e-4
-    beta_end: float = 0.02
-    num_steps: int = 100
+    beta_start: float = DIFFUSION_BETA_START
+    beta_end: float = DIFFUSION_BETA_END
+    num_steps: int = DIFFUSION_NUM_STEPS
 
-    @classmethod
-    def load_from_config(cls, cfg: DictConfig | None = None) -> DiffusionSchedule:
-        """Load DiffusionSchedule parameters from a composed Hydra config.
-
-        Args:
-            cfg: The project configuration mapping. When ``None``, the global
-                flattened YAML config is used.
-
-        Returns:
-            A DiffusionSchedule instance populated with configured parameters.
-        """
-        resolved_cfg = FLATTENED_YAML_CONFIG.cfg if cfg is None else cfg
-        yaml_config = FlattenedYAMLConfig(resolved_cfg)
-        return cls(
-            beta_start=yaml_config.value("diffusion", "beta_start", value_type=float, default=1e-4),
-            beta_end=yaml_config.value("diffusion", "beta_end", value_type=float, default=0.02),
-            num_steps=yaml_config.value("diffusion", "num_steps", value_type=int, default=100),
-        )
-
-
-try:
-    DEFAULT_DIFFUSION_SCHEDULE = DiffusionSchedule.load_from_config()
-except Exception:
-    DEFAULT_DIFFUSION_SCHEDULE = DiffusionSchedule()
+DEFAULT_DIFFUSION_SCHEDULE = DiffusionSchedule()
 
 def linear_beta_schedule(
     schedule: DiffusionSchedule = DEFAULT_DIFFUSION_SCHEDULE,

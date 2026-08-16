@@ -64,7 +64,6 @@ def load_grasp_model_checkpoint(checkpoint_path: Path, device: str) -> dict[str,
 def build_diffusion_grasp_generator(
     checkpoint: dict[str, Any],
     feature_dim: int,
-    num_diffusion_steps: int,
     device: str,
     seed: int = 42,
 ) -> GraspPoseGenerator:
@@ -73,7 +72,6 @@ def build_diffusion_grasp_generator(
     Args:
         checkpoint: Loaded model parameters from ``load_grasp_model_checkpoint``.
         feature_dim: Conditioning feature dimension expected by the score model.
-        num_diffusion_steps: Number of denoising steps for the sampler.
         device: Device identifier on which inference runs.
         seed: Random seed used to draw initial diffusion noise. Sampling is
             reproducible for a fixed seed.
@@ -91,7 +89,7 @@ def build_diffusion_grasp_generator(
     model.to(device)
     model.eval()
 
-    sampler = build_diffusion_sampler(num_diffusion_steps)
+    sampler = build_diffusion_sampler()
 
     def generator(point_cloud: np.ndarray, num_grasps: int = 10) -> np.ndarray:
         pc_tensor = prepare_point_cloud_tensor(point_cloud, device)

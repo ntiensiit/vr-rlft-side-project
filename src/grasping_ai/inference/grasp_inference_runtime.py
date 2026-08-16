@@ -83,7 +83,7 @@ def run_single_object_grasp_inference(
 
     checkpoint = load_grasp_model_checkpoint(checkpoint_path, device)
     if method == "diffusion":
-        generator = build_diffusion_grasp_generator(checkpoint, feature_dim, num_steps, device, seed)
+        generator = build_diffusion_grasp_generator(checkpoint, feature_dim, device, seed)
     elif method == "flow":
         generator = build_flow_grasp_generator(checkpoint, feature_dim, num_steps, device, seed)
     else:

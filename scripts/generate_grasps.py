@@ -34,12 +34,6 @@ def main(cfg: DictConfig) -> None:
     generator = build_diffusion_grasp_generator(
         model_checkpoint,
         yaml_config.value("architecture", "feature_dim", value_type=int),
-        yaml_config.value(
-            "model",
-            "inference_steps",
-            value_type=int,
-            default=yaml_config.value("diffusion", "inference_steps", value_type=int, default=5),
-        ),
         device,
         seed,
     )

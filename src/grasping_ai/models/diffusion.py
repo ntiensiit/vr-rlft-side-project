@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from grasping_ai.config.diffusion import (
     DEFAULT_DIFFUSION_SCHEDULE,
-    DiffusionSchedule,
     linear_beta_schedule,
 )
 
@@ -99,30 +98,17 @@ def build_score_network(feature_dim: int, hidden_dim: int, num_layers: int) -> D
     """
     return ScoreNetwork(feature_dim, hidden_dim, num_layers)
 
-def build_diffusion_sampler(
-    num_steps: int,
-    beta_start: float | None = None,
-    beta_end: float | None = None,
-) -> DiffusionSampler:
+def build_diffusion_sampler() -> DiffusionSampler:
     """Construct a score-based diffusion sampler for grasp poses.
 
-    Args:
-        num_steps: Number of denoising steps used during sampling.
-        beta_start: Optional override of the initial noise level. When
-            ``None`` the value from ``DEFAULT_DIFFUSION_SCHEDULE`` is used.
-        beta_end: Optional override of the final noise level. When ``None``
-            the value from ``DEFAULT_DIFFUSION_SCHEDULE`` is used.
+    Uses ``DEFAULT_DIFFUSION_SCHEDULE`` for the noise schedule.
 
     Returns:
         A callable that maps ``(initial_noise, score_model, conditioning)``
         to a sampled grasp pose tensor.
     """
-    
-    schedule = DiffusionSchedule(
-        beta_start=(DEFAULT_DIFFUSION_SCHEDULE.beta_start if beta_start is None else beta_start),
-        beta_end=(DEFAULT_DIFFUSION_SCHEDULE.beta_end if beta_end is None else beta_end),
-        num_steps=num_steps,
-    )
+    schedule = DEFAULT_DIFFUSION_SCHEDULE
+    num_steps = schedule.num_steps
     beta = linear_beta_schedule(schedule)
     alpha = 1.0 - beta
     alpha_bar = torch.cumprod(alpha, dim=0)
