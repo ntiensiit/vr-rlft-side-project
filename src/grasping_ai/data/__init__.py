@@ -11,14 +11,14 @@ from grasping_ai.data.pointcloud_dataset import (
     save_grasp_sample,
 )
 from grasping_ai.data.training_pairs import (
-    build_supervised_training_pairs,
+    SupervisedGraspDataset,
     validate_grasp_dataset,
 )
 from grasping_ai.data.transforms import save_grasp_dataset_index
 
 __all__ = [
     "GraspSample",
-    "build_supervised_training_pairs",
+    "SupervisedGraspDataset",
     "discover_dataset_files",
     "load_grasp_sample",
     "resolve_ycb_object_id",

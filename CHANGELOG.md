@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ADRs [0001](docs/adr/001-phase4-canonicalization-vs-equivariant.md)–[0008](docs/adr/008-hydra-configuration.md); CI; artifact-chain script (`run_artifacts.py`) and runtime workflow scripts — [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
 - Hydra config composition (`hydra-core`, `configs/config.yaml`, config groups) — [ADR-0008](docs/adr/008-hydra-configuration.md).
 - Panda sim fidelity: contact-to-hand transform, width-to-joint mapping, fingertip friction — [ADR-0009](docs/adr/009-panda-contact-frame.md).
-- `scripts/visualize_robot.py` and keyboard TUI in `pipelines/visualize_robot.py` (``python -m grasping_ai.pipelines.visualize_robot --keyboard-tui``) with UDP topic `robot/keyboard` — [ADR-0006](docs/adr/006-robot-viewer-keyboard-topic-split.md).
+- `scripts/visualize_robot.py` passive MuJoCo viewer.
 - Flow training/inference (`FlowGeneratorModel`, `scripts/train_flow.py`).
 - Shared modules from dedup/refactor: `grasp_vector`, `training_pairs`, `grasp_sampling`, `checkpoint_io`, `supervised_training`, `grasp_sampling_batch`, `grasp_inference_runtime` — [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md), [ADR-0005](docs/adr/005-runtime-workflow-integration.md).
 - Training flags `--augment` / `--resume`; unified grasp I/O (`load_generated_grasps`); `tests/test_grasp_io_runtime.py`.
@@ -35,12 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Diffusion training entry points renamed (`scripts/train_diffusion.py`, `pipelines/train_diffusion.py`); artifact outputs use method-specific filenames (`diffusion_grasp_generator.pt`, `flow_grasp_generator.pt`, `rl_grasp_policy.pt`, `{method}_grasp_candidates.npy`, etc.).
 - `configs/` restructured as Hydra config groups (`config.yaml` entrypoint, `<group>/default.yaml`); `load_project_yaml_config` composes via Hydra with CLI override support (`seed=100`) — [ADR-0008](docs/adr/008-hydra-configuration.md).
 - Flat config files (`configs/data.yaml`, `configs/model.yaml`, etc.) replaced by group defaults under `configs/<group>/default.yaml`.
-- Franka Emika Panda replaces toy 2-DOF arm in `deploy/robot.xml`; robot viewer/control consolidated in `pipelines/visualize_robot.py` — [ADR-0006](docs/adr/006-robot-viewer-keyboard-topic-split.md).
+- Franka Emika Panda replaces toy 2-DOF arm in `deploy/robot.xml`; robot viewing is consolidated in `pipelines/visualize_robot.py`.
 
 ### Removed
 
 - Empty repo placeholders; obsolete notebooks (`notebooks/archive/README.md`); dead wrappers and test-only public exports from refactor audit — [ADR-0004](docs/adr/004-dead-helper-wiring-and-refactoring.md).
-- `run_simulation.py --render`; `pipelines/control_robot.py`, `grasping_ai.control` package, `GraspCommandPlayer`, and unused table-pick automation — [ADR-0006](docs/adr/006-robot-viewer-keyboard-topic-split.md).
+- `run_simulation.py --render`; `pipelines/control_robot.py`, `grasping_ai.control` package, `GraspCommandPlayer`, and unused table-pick automation.
 
 ### Fixed
 

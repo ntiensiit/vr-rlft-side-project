@@ -59,7 +59,7 @@ simulation -> pipelines.train_rl (SB3 PPO + Gymnasium) -> exported legacy checkp
 | `scripts/generate_grasps.py` | Multi-object diffusion inference; writes a **dict** `.npy` (artifact chain). |
 | `scripts/run_grasp_inference.py` | Single-object diffusion/flow inference; writes a plain `(K, 4, 4)` array. |
 | `scripts/run_simulation.py` | Execute generated grasps in MuJoCo on YCB objects (headless). |
-| `scripts/visualize_robot.py` | MuJoCo viewer; listens on UDP topic `robot/keyboard`. Run `python -m grasping_ai.pipelines.visualize_robot --keyboard-tui` in a second terminal for teleoperation. |
+| `scripts/visualize_robot.py` | MuJoCo robot viewer. |
 | `scripts/evaluate.py` | Evaluate generated grasps and write a report. |
 | `scripts/run_artifacts.py` | End-to-end CPU-friendly artifact-chain smoke test. |
 | `scripts/run_workflow.py` | Runtime workflow: inference → simulation → evaluation. |

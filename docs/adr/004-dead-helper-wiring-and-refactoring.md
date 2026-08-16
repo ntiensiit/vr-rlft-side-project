@@ -44,7 +44,7 @@ behavior change; no tests weakened or removed.
 | Simulation | `step_scene`, `load_gripper_model`, `make_open_command`, `make_close_command`, `build_forward_kinematics` → `pipelines/simulate_grasp.py` |
 | Generation | `generate_candidate_grasps` → `pipelines/generate_grasps.py`, `scripts/generate_grasps.py` |
 | Evaluation | `filter_collision_free_grasps`, `load_contact_set`, `compute_grasp_wrench_matrix`, `aggregate_grasp_success_rate` → `pipelines/evaluate.py`, `scripts/evaluate.py`, `run_workflow.py` |
-| Training | `load_pretrained_encoder`, `invert_rigid_transform`, `build_grasp_pose_regression_loss` → `pipelines/train.py`, `pipelines/train_flow.py` |
+| Training | `load_pretrained_encoder`, `invert_rigid_transform` → `pipelines/train_flow.py` |
 | Perception/data | `sample_point_cloud`, `farthest_point_sampling`, `voxel_downsample` → `scripts/prepare_data.py`; `merge_point_clouds`, `normalize_point_cloud` → `scripts/prepare_observations.py`; transform helpers → `data/transforms.py`; `invert_transform` → `models/equivariant_encoder.py` |
 | Frames | `convert_grasps_to_world_frame`, `identity_transform` → `scripts/run_simulation.py` |
 | RL | `build_value_network` → `pipelines/train_rl.py`; `select_action` → `inference/policy_runner.py`, `scripts/run_rl_evaluation.py` |
@@ -54,7 +54,7 @@ behavior change; no tests weakened or removed.
 | Extraction | Module |
 | --- | --- |
 | `se3_to_vec`, `vec_to_se3` | `data/grasp_vector.py` |
-| `build_supervised_training_pairs`, `validate_grasp_dataset` | `data/training_pairs.py` |
+| `SupervisedGraspDataset`, `validate_grasp_dataset` | `data/training_pairs.py` |
 | `prepare_point_cloud_tensor`, `encode_grasp_conditioning`, `sample_to_world_frame` | `inference/grasp_sampling.py` |
 | `load_torch_checkpoint`, `read_model_checkpoint_metadata`, `checkpoint_scalar_int`, `checkpoint_dict_int` | `training/checkpoint_io.py` |
 | `SupervisedTrainingDataloader`, `ConditionedTrainingDataloader` | `pipelines/supervised_training.py` |
@@ -89,7 +89,7 @@ policy):
 | Helper / flag | Production caller |
 | --- | --- |
 | `make_open_command` | `pipelines/simulate_grasp.py` (pre-grasp open phase) |
-| Augmentation transforms | `build_supervised_training_pairs(augment=True)` + `--augment` on train CLIs |
+| Augmentation transforms | `SupervisedGraspDataset(augment=True)` + `--augment` on train CLIs |
 | `iterate_grasp_dataset` | `validate_grasp_dataset()` in diffusion/flow pipelines |
 | `load_training_checkpoint` | `--resume` on `scripts/train.py` / `scripts/train_flow.py` |
 

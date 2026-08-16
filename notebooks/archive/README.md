@@ -11,7 +11,8 @@ Research notebooks live in the parent `notebooks/` directory. Each follows a sta
 | `../train_diffusion.py` | `scripts/train_diffusion.py` |
 | `../train_flow.py` | `scripts/train_flow.py` |
 | `../train_rl.py` | `scripts/train_rl.py` |
-| `../evaluate.py` | `scripts/run_grasp_inference.py`, `evaluate.py`, `run_simulation.py`, `run_rl_evaluation.py` |
+| `../evaluate_diffusion.py`, `../evaluate_flow.py` | `scripts/run_grasp_inference.py`, `evaluate.py`, `run_simulation.py` |
+| `../evaluate_rl.py` | `scripts/run_rl_evaluation.py` |
 
 See [`../README.md`](../README.md) for Colab quick start.
 

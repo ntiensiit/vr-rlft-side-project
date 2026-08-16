@@ -57,7 +57,6 @@ root = bootstrap_notebook()
 
 # %%
 import json
-import numpy as np
 
 from notebook_helpers import (
     config_dir_relative,

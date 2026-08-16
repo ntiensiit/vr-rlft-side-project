@@ -7,10 +7,6 @@ paths:
   ycb_root: ${paths.input_dir}/raw/ycb
   output_index: ${paths.input_dir}/processed/index.json
 
-splits:
-  train: train
-  val: val
-  test: test
 synthetic:
   num_samples: 512
   num_grasps: 16

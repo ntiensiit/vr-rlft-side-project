@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from grasping_ai.data.training_pairs import (
-    build_supervised_training_pairs,
+    SupervisedGraspDataset,
     validate_grasp_dataset,
 )
 from grasping_ai.models.diffusion import GraspGeneratorModel
@@ -112,7 +112,7 @@ def run_diffusion_training_pipeline(  # noqa: PLR0913  # public pipeline API; CL
         model.encoder.load_state_dict(encoder_state, strict=False)
 
     try:
-        training_pairs = build_supervised_training_pairs(
+        training_dataset = SupervisedGraspDataset(
             dataset_root,
             augment=augment,
             seed=seed,
@@ -135,7 +135,7 @@ def run_diffusion_training_pipeline(  # noqa: PLR0913  # public pipeline API; CL
 
     dataloader: BatchSource = partial(
         iter_conditioned_training_batches,
-        training_pairs,
+        training_dataset,
         batch_size,
         device,
         seed,

@@ -1,0 +1,293 @@
+seed: 42
+device: cpu
+experiment_name: default
+output_dir: artifacts
+array_dtype: float32
+sim_dtype: float64
+paths:
+  output_dir: ${output_dir}
+  input_dir: ${oc.env:MGS_INPUT_DIR,"data"}
+  ycb_mjcf: ${paths.input_dir}/processed/ycb_mjcf
+  observations: ${paths.input_dir}/observations
+  dataset_root: ${paths.input_dir}/processed
+  ycb_root: ${paths.input_dir}/raw/ycb
+  output_index: ${paths.input_dir}/processed/index.json
+tracking:
+  backend: none
+  project: vr-rlft-side-project
+  entity: null
+  mode: offline
+  mlflow:
+    tracking_uri: ${oc.env:MLFLOW_TRACKING_URI,"./mlruns"}
+    experiment_name: ${experiment_name}
+synthetic:
+  num_samples: 512
+  num_grasps: 16
+  gripper_width: ${robot.gripper.max_width}
+  seed: 42
+  oversample_factor: 2
+  oversample_extra: 256
+  neighborhood_size: 30
+  voxel_size: 1.0e-05
+  strict_antipodal_dot: 0.5
+  strict_alignment_dot: 0.5
+  relaxed_antipodal_dot: 0.3
+  allow_relaxed: true
+  search_multiplier: 50
+  candidate_multiplier: 3
+  min_grasp_translation: 0.01
+  min_grasp_rotation: 0.2
+  min_quality_score: 0.0
+  friction_coefficient: ${metrics.friction_coefficient}
+  collision_clearance: ${metrics.collision_clearance}
+  sim_validate: false
+  sim_validate_require_lift: false
+  sim_validate_require_ik: true
+  sim_validate_min_contacts: 1.0
+  sim_validate_fallback_analytical: true
+  sim_table_xml: ${table_xml}
+  sim_object_position:
+  - 0.5
+  - 0.0
+  - 0.1
+  num_simulation_steps: 500
+geometry:
+  point_cloud_ndim: 2
+  spatial_dim: 3
+  min_normal_neighborhood: 3
+tolerances:
+  norm_eps: 1.0e-08
+  degenerate_span_eps: 1.0e-12
+  degenerate_component_eps: 1.0e-09
+  grasp_distance_eps: 0.0001
+  rotation_det_eps: 0.0001
+  alignment_dot_threshold: 0.9
+observations:
+  num_samples: 256
+  seed: 7
+  gripper_point_cloud: ${paths.observations}/gripper.npy
+  output:
+    merged_objects: merged_objects.npy
+    merged_objects_normalized: merged_objects_normalized.npy
+    gripper: gripper.npy
+  gripper_grid:
+    x:
+      start: -0.03
+      stop: 0.03
+      count: 4
+    'y':
+      start: -0.02
+      stop: 0.02
+      count: 3
+    z:
+      start: -0.04
+      stop: 0.04
+      count: 5
+  files:
+  - ${paths.observations}/${objects.ids.0}.npy
+  - ${paths.observations}/${objects.ids.1}.npy
+  - ${paths.observations}/${objects.ids.2}.npy
+download:
+  output_directory: ${paths.ycb_root}
+  objects: ${objects.ids}
+  files:
+  - berkeley_processed
+  - google_16k
+  extract: true
+  objects_url: https://ycb-benchmarks.s3.amazonaws.com/data/objects.json
+  base_url: http://ycb-benchmarks.s3-website-us-east-1.amazonaws.com/data/
+  user_agent: Mozilla/5.0
+  block_size: 65536
+  max_retries: 5
+  timeout_seconds: 30
+  retry_sleep_seconds: 2
+  unpack_delete_retries: 10
+  cleanup_delete_retries: 5
+  cleanup_sleep_seconds: 1
+  berkeley_rgb_types:
+  - berkeley_rgbd
+  - berkeley_rgb_highres
+prepare:
+  mode: index
+  output_dir: null
+  quality_report: null
+artifact_chain:
+  prepare_data_mode: synthetic
+  evaluate_multi_object: true
+artifacts:
+  root: ${oc.env:MGS_OUTPUT_DIR,"artifacts"}
+  checkpoints: ${artifacts.root}/checkpoints
+  exports: ${artifacts.root}/exports
+  reports: ${artifacts.root}/reports
+  tensorboard: ${artifacts.root}/exports/tensorboard
+  manifest: ${artifacts.root}/manifest.jsonl
+  config_dir: configs
+  pycache_dir: .pycache
+  rl_inference_smoke: ${artifacts.root}/rl_inference_smoke.py
+  retained:
+    dataset_globs:
+    - '*.npz'
+    - index.json
+    mjcf_glob: '**/*.xml'
+    artifact_globs:
+    - '**/*.pt'
+    - '**/*.npy'
+    - '**/*.jsonl'
+  chain:
+    description: 'Reproducible artifact chain: supervised (YCB mesh -> synthetic dataset
+      -> grasp checkpoint -> generated grasps -> MuJoCo simulation -> eval report)
+      and RL (SB3 PPO -> legacy checkpoint -> policy_runner inference)'
+    wandb:
+      job_type: artifact-chain
+      tags:
+      - artifact-chain
+      artifact_name: artifact-chain
+      artifact_type: pipeline-output
+robot:
+  description: deploy/robot.xml
+  gripper:
+    description: ${robot.description}
+    dual_count: 2
+    max_width: 0.08
+    min_width_clamp: 0.003
+    close_command:
+    - 0.0
+    open_command:
+    - 0.04
+    joint_ranges:
+      finger_joint1:
+      - 0.0
+      - 0.04
+      finger_joint2:
+      - -0.04
+      - 0.0
+    base_to_contact:
+      position:
+      - 0
+      - 0
+      - -0.102
+      quaternion_wxyz:
+      - 0.707106781
+      - 0.0
+      - 0.0
+      - 0.707106781
+  ik:
+    max_iterations: 400
+    tolerance: 0.001
+gripper: {}
+dt: 0.002
+fallback_timestep: ${dt}
+num_steps: 50
+table_xml: deploy/table.xml
+objects:
+  ids:
+  - 003_cracker_box
+  - 004_sugar_box
+  - 006_mustard_bottle
+grasp:
+  dim: 9
+  representation: 6d_rotation_columns
+  poses_ndim: 3
+  se3_matrix_shape:
+  - 4
+  - 4
+  object_batch_ndim: 4
+  torch_norm_clamp_min: 1.0e-08
+  torch_degenerate_clamp_min: 1.0e-12
+  min_antipodal_contacts: 2
+default_method: flow
+architecture:
+  feature_dim: 64
+  hidden_dim: 64
+  num_layers: 3
+  num_grasps: 8
+flow:
+  inference_steps: 10
+  checkpoint: ${artifacts.checkpoints}/flow_grasp_generator.pt
+  tensorboard: ${artifacts.tensorboard}/flow_train
+  exports:
+    grasp_poses: ${artifacts.exports}/flow_grasp_poses_${objects.ids.0}.npy
+    simulation_report: ${artifacts.reports}/flow_simulation_outcomes_${objects.ids.0}.jsonl
+    evaluation_report: ${artifacts.reports}/flow_analytical_evaluation_report.jsonl
+model:
+  checkpoint: ${flow.checkpoint}
+  inference_steps: ${flow.inference_steps}
+  exports:
+    grasp_poses: ${flow.exports.grasp_poses}
+    simulation_report: ${flow.exports.simulation_report}
+    evaluation_report: ${flow.exports.evaluation_report}
+    inference_candidates: ${artifacts.exports}/grasp_candidates.npy
+rl:
+  observation_dim: 31
+  action_dim: 8
+  hidden_dim: 32
+  checkpoint: ${artifacts.checkpoints}/rl_grasp_policy.pt
+  tensorboard: ${artifacts.tensorboard}/rl_grasp_train
+  learning_rate: 0.0003
+  num_updates: 10
+  gamma: 0.99
+  n_steps: 64
+  batch_size: 64
+  n_epochs: 1
+  policy_num_layers: 2
+  exports:
+    rollout_report: ${artifacts.reports}/rl_grasp_rollout_report.jsonl
+  reward:
+    action_cost_weight: 0.01
+    survival_bonus: 1.0
+    contact_reward: 0.5
+    lift_reward_weight: 2.0
+    grasp_success_bonus: 5.0
+    lift_height_threshold: ${metrics.lift_height_threshold}
+    drop_height_threshold: 0.1
+    terminate_on_non_finite: true
+workflow:
+  grasp_pose_format: object
+  eval_object_key: ${evaluation.single_object_key}
+  gripper_point_cloud: ${observations.gripper_point_cloud}
+  object_point_cloud: object_point_cloud.npy
+  point_cloud_sample_multiplier: 8
+  pycache_dir: .pycache
+  intermediate:
+    grasp_candidates: '{method}_grasp_candidates.npy'
+    simulation_outcomes: '{method}_simulation_outcomes.jsonl'
+    analytical_evaluation: '{method}_analytical_evaluation_report.jsonl'
+  rl_rollout_report: ${rl.exports.rollout_report}
+notebook:
+  download_ycb: true
+  object_index: 0
+  augment: false
+  mount_drive: false
+  drive_storage_dir: vr-rlft-side-project
+  experiment: flow_grasp_colab
+metrics:
+  friction_coefficient: 0.5
+  wrench_regularization: 1.0
+  lift_height_threshold: 0.05
+  collision_clearance: 0.005
+  lp_feasibility_eps: 1.0e-05
+  hull_halfspace_eps: 1.0e-09
+wrench:
+  dim: 6
+  lp_equality_rows: 7
+  min_columns: 6
+limits:
+  max_linear_velocity: 0.05
+  max_angular_velocity: 0.1
+evaluation:
+  filter_collisions: false
+  single_object_key: object_0
+  method: diffusion
+  analytical_report: ${model.exports.evaluation_report}
+  simulation_report: ${model.exports.simulation_report}
+supervised:
+  batch_size: 2
+  learning_rate: 0.001
+  num_epochs: 3
+  min_grasp_score: 0.0
+  score_repeat_factor: 2
+  score_repeat_power: 1.0
+training:
+  pretrained_encoder: null
+  resume: null
+  augment: false

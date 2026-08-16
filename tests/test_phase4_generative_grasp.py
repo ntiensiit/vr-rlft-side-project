@@ -56,7 +56,6 @@ from grasping_ai.training.checkpoint_io import (
 from grasping_ai.training.losses import (
     build_diffusion_score_loss,
     build_flow_matching_loss,
-    build_grasp_pose_regression_loss,
 )
 from grasping_ai.training.trainer import (
     build_adam_optimizer,
@@ -475,22 +474,6 @@ def test_flow_matching_loss_is_finite() -> None:
     loss = loss_fn(pred, target)
     if not (torch.isfinite(loss)):
         raise AssertionError
-
-
-def test_regression_loss_types() -> None:
-    """Verify regression loss MSE, Smooth L1 and error raising."""
-    loss_mse = build_grasp_pose_regression_loss("mse")
-    loss_l1 = build_grasp_pose_regression_loss("smooth_l1")
-
-    pred = torch.randn(3, 9)
-    target = torch.randn(3, 9)
-    if not (torch.isfinite(loss_mse(pred, target))):
-        raise AssertionError
-    if not (torch.isfinite(loss_l1(pred, target))):
-        raise AssertionError
-
-    with pytest.raises(ValueError, match="Unsupported loss_type"):
-        build_grasp_pose_regression_loss("unsupported_type")
 
 
 def test_flow_field_forward_shape() -> None:

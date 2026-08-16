@@ -7,7 +7,6 @@ grasp:
     - 4
     - 4
   object_batch_ndim: 4
-  quaternion_dim: 4
   torch_norm_clamp_min: 1.0e-8
   torch_degenerate_clamp_min: 1.0e-12
   min_antipodal_contacts: 2

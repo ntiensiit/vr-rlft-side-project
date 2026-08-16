@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from grasping_ai.data.training_pairs import (
-    build_supervised_training_pairs,
+    SupervisedGraspDataset,
     validate_grasp_dataset,
 )
 from grasping_ai.models.flow import (
@@ -182,7 +182,7 @@ def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tes
                 encoder_state[key] = value
         model.encoder.load_state_dict(encoder_state, strict=False)
 
-    pairs = build_supervised_training_pairs(
+    training_dataset = SupervisedGraspDataset(
         dataset_root,
         augment=augment,
         seed=seed,
@@ -200,7 +200,13 @@ def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tes
         seed=seed,
     )
 
-    dataloader: BatchSource = partial(iter_supervised_training_batches, pairs, batch_size, device, seed)
+    dataloader: BatchSource = partial(
+        iter_supervised_training_batches,
+        training_dataset,
+        batch_size,
+        device,
+        seed,
+    )
 
     metadata = {
         "pipeline": "flow",

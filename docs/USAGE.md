@@ -35,8 +35,7 @@
   * `scripts/train_rl.py`: Trains the grasping policy using Stable-Baselines3 PPO against the Gymnasium-compatible MuJoCo environment.
   * `scripts/generate_grasps.py`: Generates grasp poses from object point clouds.
   * `scripts/run_simulation.py`: Executes generated grasps in a MuJoCo simulation environment.
-  * `scripts/visualize_robot.py`: Opens an interactive MuJoCo viewer and listens for ``robot/keyboard`` commands.
-  * ``grasping_ai.pipelines.visualize_robot``: Terminal TUI via ``python -m grasping_ai.pipelines.visualize_robot --keyboard-tui``.
+  * `scripts/visualize_robot.py`: Opens an interactive MuJoCo viewer.
   * `scripts/evaluate.py`: Evaluates the generated grasp poses (analytical: collision-free + force-closure ⇒ `grasp_success`).
   * `scripts/run_artifacts.py`: End-to-end reproducible artifact chain (MJCF YCB → synthetic data → training → grasp generation → MuJoCo → evaluation → RL → policy inference); writes `artifacts/manifest.jsonl`.
 * `src/grasping_ai/`: Main source code directory containing functional modules.
@@ -168,7 +167,6 @@ Grasp execution stays in `scripts/run_simulation.py`. Open the viewer first, the
 
 ```bash
 python scripts/visualize_robot.py --robot-xml deploy/robot.xml
-python -m grasping_ai.pipelines.visualize_robot --keyboard-tui
 ```
 
 `visualize_robot.py` opens MuJoCo and listens on UDP topic `robot/keyboard` (`127.0.0.1:5511`). The keyboard-topic module is a terminal publisher only. Keys: `1-9` select an actuator, left/right nudge it, `g` toggles the gripper, `h` returns home, space pauses, `q` quits the TUI.
@@ -199,7 +197,6 @@ The main settings use nested objects (not flat prefix keys):
   * `paths.checkpoints`, `paths.exports`, `paths.reports`, `paths.tensorboard` (under `paths.output_dir`)
   * `synthetic.gripper_width` → `${robot.gripper.max_width}`; `synthetic.friction_coefficient` / `collision_clearance` → `${metrics.*}`
   * `objects.ids`: YCB object list
-  * `splits.train`, `splits.val`, `splits.test`
   * `synthetic.*`: synthetic dataset generation
   * `observations.*`: observation cloud sampling
 * Model Config (`model/diffusion.yaml` or `model/flow.yaml`; `model/default.yaml` selects diffusion):
@@ -210,9 +207,9 @@ The main settings use nested objects (not flat prefix keys):
   * `flow.*`: same shape as `diffusion`
   * `rl.observation_dim`, `rl.action_dim`, `rl.hidden_dim`, `rl.checkpoint`, `rl.tensorboard`
 * Training Config (`training/diffusion.yaml` or `training/flow.yaml`; `training/default.yaml` selects diffusion):
-  * `supervised.batch_size`, `supervised.learning_rate`, `supervised.num_epochs`, `supervised.log_every`
+  * `supervised.batch_size`, `supervised.learning_rate`, `supervised.num_epochs`
 * RL Config (`rl/default.yaml`):
-  * `rl.learning_rate`, `rl.num_updates`, `rl.gamma`, `rl.clip_ratio`, `rl.gae_lambda`
+  * `rl.learning_rate`, `rl.num_updates`, `rl.gamma`
   * `rl.reward.lift_height_threshold` → `${metrics.lift_height_threshold}`
 * Evaluation Config (`evaluation/default.yaml` holds shared metrics/limits; `diffusion.yaml`, `flow.yaml`, `rl.yaml` add method settings):
   * Common: `metrics.friction_coefficient`, `metrics.lift_height_threshold`, `metrics.collision_clearance`, `metrics.wrench_regularization`, `limits.max_linear_velocity`, `limits.max_angular_velocity`
@@ -220,7 +217,7 @@ The main settings use nested objects (not flat prefix keys):
 * Gripper Config (`gripper/franka_emika_panda.yaml`; `gripper/default.yaml` selects Franka):
   * `robot.description`, `robot.gripper.close_command`, `robot.gripper.open_command`, `robot.ik.max_iterations`, `robot.ik.tolerance`
 * Env Config (`env/default.yaml`):
-  * `dt`, `num_steps`, `contact_body_names`
+  * `dt`, `num_steps`, `table_xml`
 
 ## 7. Typical Workflow
 

@@ -2,19 +2,43 @@
 
 from __future__ import annotations
 
-import random
 from typing import TYPE_CHECKING
 
 import torch
+from torch.utils.data import DataLoader, Dataset
 
 from grasping_ai.inference.grasp_sampling import encode_grasp_conditioning
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+TrainingDataset = Dataset[tuple[torch.Tensor, torch.Tensor]] | list[tuple[torch.Tensor, torch.Tensor]]
+
+
+def build_supervised_dataloader(
+    dataset: TrainingDataset,
+    batch_size: int,
+    seed: int | None,
+    *,
+    num_workers: int = 0,
+) -> DataLoader[tuple[torch.Tensor, torch.Tensor]]:
+    """Build a reproducibly shuffled DataLoader for supervised pairs."""
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    if num_workers < 0:
+        raise ValueError("num_workers must be non-negative")
+    generator = torch.Generator().manual_seed(42 if seed is None else seed)
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        generator=generator,
+        num_workers=num_workers,
+    )
+
 
 def iter_supervised_training_batches(
-    pairs: list[tuple[torch.Tensor, torch.Tensor]],
+    pairs: TrainingDataset,
     batch_size: int,
     device: str,
     seed: int | None,
@@ -30,20 +54,12 @@ def iter_supervised_training_batches(
     Yields:
         Batched ``(point_clouds, targets)`` tensors on ``device``.
     """
-    num_samples = len(pairs)
-    indices = list(range(num_samples))
-    local_random = random.Random(seed if seed is not None else 42)  # noqa: S311  # batch shuffling, not security
-    local_random.shuffle(indices)
-
-    for i in range(0, num_samples, batch_size):
-        batch_indices = indices[i : i + batch_size]
-        point_clouds = torch.stack([pairs[idx][0] for idx in batch_indices]).to(device)
-        targets = torch.stack([pairs[idx][1] for idx in batch_indices]).to(device)
-        yield point_clouds, targets
+    for point_clouds, targets in build_supervised_dataloader(pairs, batch_size, seed):
+        yield point_clouds.to(device), targets.to(device)
 
 
 def iter_conditioned_training_batches(
-    pairs: list[tuple[torch.Tensor, torch.Tensor]],
+    pairs: TrainingDataset,
     batch_size: int,
     device: str,
     seed: int | None,

@@ -224,7 +224,7 @@ The simulation layer is responsible for:
 - Handling contacts and physical interaction (including high-friction pads).
 - Providing outcomes (e.g., success metrics) to evaluation components.
 
-**Visualization and Teleoperation split (ADR-0006):** Simulation execution (`run_simulation.py`) is headless. Interaction visualization and teleoperation are handled by the passive MuJoCo viewer (`visualize_robot.py`) and a terminal TUI via the `robot/keyboard` UDP topic.
+Simulation execution (`run_simulation.py`) is headless. Interactive inspection is provided by the passive MuJoCo viewer (`visualize_robot.py`).
 
 ### 5.7 Reinforcement learning layer
 
@@ -260,7 +260,7 @@ Possible roles for RL identified during project analysis include:
 
 The exact role is not yet fixed by the project specification.
 
-**Status note (2026-08-14):** PPO training via Stable-Baselines3 against `MuJoCoGraspingEnv` is implemented in `scripts/train_rl.py` and `notebooks/train_rl.py`. Policy rollouts are available through `scripts/run_rl_evaluation.py` and the RL section of `notebooks/evaluate.py`.
+**Status note (2026-08-14):** PPO training via Stable-Baselines3 against `MuJoCoGraspingEnv` is implemented in `scripts/train_rl.py` and `notebooks/train_rl.py`. Policy rollouts are available through `scripts/run_rl_evaluation.py` and `notebooks/evaluate_rl.py`.
 
 ### 5.8 Evaluation layer
 
@@ -776,7 +776,8 @@ Google Colab–ready percent-format notebooks in `notebooks/` follow a standard 
 | `notebooks/train_diffusion.py` | `scripts/train_diffusion.py` | `run_diffusion_training_pipeline` |
 | `notebooks/train_flow.py` | `scripts/train_flow.py` | `run_flow_training_pipeline` (`model=flow` override) |
 | `notebooks/train_rl.py` | `scripts/train_rl.py` | `run_rl_training_pipeline` |
-| `notebooks/evaluate.py` | `run_grasp_inference.py`, `evaluate.py`, `run_simulation.py`, `run_rl_evaluation.py` | diffusion/flow inference, analytical evaluation, MuJoCo simulation, RL rollouts |
+| `notebooks/evaluate_diffusion.py`, `notebooks/evaluate_flow.py` | `run_grasp_inference.py`, `evaluate.py`, `run_simulation.py` | diffusion/flow inference, analytical evaluation, and MuJoCo simulation |
+| `notebooks/evaluate_rl.py` | `run_rl_evaluation.py` | RL policy rollouts |
 
 On Colab: set **Runtime → GPU**, run cells sequentially, and optionally set `MOUNT_DRIVE = True` in the environment cell. See `notebooks/README.md`.
 
@@ -871,7 +872,7 @@ Common evaluator
 
 This makes quantitative comparison possible.
 
-The combined evaluation notebook (`notebooks/evaluate.py`) runs diffusion and flow inference, shared analytical metrics, MuJoCo simulation sweeps, and RL policy rollouts for the first configured YCB object, writing reports under `artifacts/reports/`.
+The evaluation notebooks run diffusion or flow inference, shared analytical metrics, MuJoCo simulation sweeps, or RL policy rollouts for the first configured YCB object, writing reports under `artifacts/reports/`.
 
 Relevant metrics include:
 
@@ -1088,7 +1089,6 @@ Current ADRs:
 - [ADR-0003: Flow model checkpoint contract — jointly train encoder + flow field](adr/003-flow-checkpoint-joint-encoder.md)
 - [ADR-0004: Dead-helper wiring, deduplication, and dependency retention](adr/004-dead-helper-wiring-and-refactoring.md)
 - [ADR-0005: Runtime workflow integration scripts](adr/005-runtime-workflow-integration.md)
-- [ADR-0006: Robot viewer and keyboard-topic teleoperation split](adr/006-robot-viewer-keyboard-topic-split.md)
 - [ADR-0007: W&B artifact versioning for the artifact chain](adr/007-wandb-artifact-versioning.md)
 - [ADR-0008: Hydra configuration composition](adr/008-hydra-configuration.md)
 - [ADR-0009: Panda contact-frame grasps and sim fidelity](adr/009-panda-contact-frame.md)

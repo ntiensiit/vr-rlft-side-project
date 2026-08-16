@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import hydra
@@ -16,8 +17,6 @@ _LEGACY_OVERRIDES: dict[str, object] = {}
 
 def _normalize_legacy_flags() -> None:
     """Translate legacy flags into Hydra overrides before composition."""
-    import sys
-
     mapping = {
         "--dataset-root": "paths.dataset_root",
         "--checkpoint": "model.checkpoint",
@@ -67,8 +66,6 @@ def _hydra_main(cfg: object) -> None:
 
 def main() -> None:
     """Run the Hydra entrypoint, retaining compatibility with legacy flags."""
-    import sys
-
     if "--dataset-root" in sys.argv:
         _normalize_legacy_flags()
     _hydra_main()

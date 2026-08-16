@@ -11,7 +11,9 @@ Shared setup, config loading, data prep, and training helpers live in [`notebook
 | [`train_diffusion.py`](train_diffusion.py) | Supervised score-based diffusion grasp training |
 | [`train_flow.py`](train_flow.py) | Supervised flow-matching grasp training |
 | [`train_rl.py`](train_rl.py) | PPO RL policy training in MuJoCo |
-| [`evaluate.py`](evaluate.py) | Diffusion/flow inference, analytical metrics, simulation, RL rollouts |
+| [`evaluate_diffusion.py`](evaluate_diffusion.py) | Diffusion inference, analytical metrics, and simulation |
+| [`evaluate_flow.py`](evaluate_flow.py) | Flow inference, analytical metrics, and simulation |
+| [`evaluate_rl.py`](evaluate_rl.py) | RL policy rollouts |
 
 Notebooks call existing `scripts/` entry points for data preparation and `grasping_ai.pipelines.*` for training and evaluation.
 
@@ -23,8 +25,10 @@ Full Hydra compositions live in the matching config group files. Each notebook s
 | --- | --- |
 | `train_diffusion.py` | `configs/training/diffusion.yaml` |
 | `train_flow.py` | `configs/training/flow.yaml` |
-| `train_rl.py` | `configs/rl/rl_train.yaml` |
-| `evaluate.py` | `evaluation/diffusion`, `evaluation/flow`, `evaluation/rl` |
+| `train_rl.py` | `configs/training/rl_train.yaml` |
+| `evaluate_diffusion.py` | `evaluation/diffusion` |
+| `evaluate_flow.py` | `evaluation/flow` |
+| `evaluate_rl.py` | `evaluation/rl` |
 
 Data-prep subprocesses receive the same `--config-name` so scripts load an identical composed tree.
 
@@ -47,7 +51,9 @@ Open any notebook `.py` file with the Jupyter extension. The environment cell de
 | --- | --- |
 | `train_diffusion.py` | `python scripts/train_diffusion.py --config-name training/diffusion` |
 | `train_flow.py` | `python scripts/train_flow.py --config-name training/flow` |
-| `train_rl.py` | `python scripts/train_rl.py --config-name rl/rl_train` |
-| `evaluate.py` | combine inference/eval scripts with matching `--config-name` |
+| `train_rl.py` | `python scripts/train_rl.py --config-name training/rl_train` |
+| `evaluate_diffusion.py` | `python scripts/run_grasp_inference.py --config-name evaluation/diffusion` |
+| `evaluate_flow.py` | `python scripts/run_grasp_inference.py --config-name evaluation/flow` |
+| `evaluate_rl.py` | `python scripts/run_rl_evaluation.py --config-name evaluation/rl` |
 
 Legacy Colab notebooks are archived under [`archive/`](archive/README.md).

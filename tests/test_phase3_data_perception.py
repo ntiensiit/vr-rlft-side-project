@@ -21,10 +21,7 @@ from grasping_ai.data.pointcloud_dataset import (
     resolve_ycb_object_id,
     save_grasp_sample,
 )
-from grasping_ai.data.training_pairs import (
-    build_supervised_training_pairs,
-    validate_grasp_dataset,
-)
+from grasping_ai.data.training_pairs import SupervisedGraspDataset, validate_grasp_dataset
 from grasping_ai.data.transforms import (
     compose_transforms,
     make_random_rotation_jitter,
@@ -684,12 +681,12 @@ def _assert_grasp_generation_error_paths(rng: np.random.Generator, tmp_path: Pat
             rng=rng,
         )
 
-    # validate_grasp_dataset and build_supervised_training_pairs validations (empty dataset)
+    # Dataset and validation behavior for an empty dataset
 
     empty_dir = tmp_path / "empty_dataset"
     empty_dir.mkdir()
     with pytest.raises(ValueError, match="No dataset record files"):
-        build_supervised_training_pairs(empty_dir)
+        SupervisedGraspDataset(empty_dir)
     with pytest.raises(ValueError, match="No dataset record files"):
         validate_grasp_dataset(empty_dir)
 
@@ -869,10 +866,10 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
         validate_grasp_dataset(empty_root)
 
     with pytest.raises(TypeError, match="dataset_root must be"):
-        build_supervised_training_pairs("not_a_path")  # type: ignore[arg-type]
+        SupervisedGraspDataset("not_a_path")  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="No dataset record files"):
-        build_supervised_training_pairs(empty_root)
+        SupervisedGraspDataset(empty_root)
 
     dataset_dir = tmp_path / "valid_dataset"
     dataset_dir.mkdir()
@@ -888,7 +885,7 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
         },
     )
 
-    pairs = build_supervised_training_pairs(dataset_dir, augment=True, seed=42)
+    pairs = SupervisedGraspDataset(dataset_dir, augment=True, seed=42)
     if not (len(pairs) == EXPECTED_TRAINING_PAIRS):
         raise AssertionError
     if not (pairs[0][0].shape == (20, 3)):
@@ -908,7 +905,7 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
             "scores": scores,
         },
     )
-    filtered_pairs = build_supervised_training_pairs(
+    filtered_pairs = SupervisedGraspDataset(
         scored_dir,
         min_grasp_score=0.5,
         score_repeat_factor=2,
@@ -924,7 +921,7 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
         grasp_poses=grasps,
     )
     with pytest.raises(ValueError, match="point_cloud must have shape"):
-        build_supervised_training_pairs(dataset_dir)
+        SupervisedGraspDataset(dataset_dir)
 
 
 def test_generate_analytical_grasps_validations_and_fallbacks() -> None:
@@ -985,10 +982,10 @@ def test_training_pairs_validations_and_error_paths(tmp_path: Path) -> None:
         validate_grasp_dataset(empty_dir)
 
     with pytest.raises(TypeError, match="dataset_root"):
-        build_supervised_training_pairs("invalid")  # type: ignore[arg-type]
+        SupervisedGraspDataset("invalid")  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match=r"No dataset record files|Dataset is empty"):
-        build_supervised_training_pairs(empty_dir)
+        SupervisedGraspDataset(empty_dir)
 
     corrupt_ds = tmp_path / "corrupt_ds"
     corrupt_ds.mkdir()
@@ -999,7 +996,7 @@ def test_training_pairs_validations_and_error_paths(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="point_cloud must have shape"):
-        build_supervised_training_pairs(corrupt_ds)
+        SupervisedGraspDataset(corrupt_ds)
 
     corrupt_ds2 = tmp_path / "corrupt_ds2"
     corrupt_ds2.mkdir()
@@ -1009,7 +1006,7 @@ def test_training_pairs_validations_and_error_paths(tmp_path: Path) -> None:
     )
 
     with pytest.raises(TypeError, match=r"grasp poses must be a numpy array"):
-        build_supervised_training_pairs(corrupt_ds2)
+        SupervisedGraspDataset(corrupt_ds2)
 
     corrupt_ds3 = tmp_path / "corrupt_ds3"
     corrupt_ds3.mkdir()
@@ -1022,7 +1019,7 @@ def test_training_pairs_validations_and_error_paths(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="has no target grasp poses"):
-        build_supervised_training_pairs(corrupt_ds3)
+        SupervisedGraspDataset(corrupt_ds3)
 
 
 def test_grasp_vector_invalid_inputs() -> None:

@@ -11,7 +11,6 @@ rationale, and consequences of a single choice.
 | 0003  | [Flow model checkpoint contract: jointly train encoder + flow field](./003-flow-checkpoint-joint-encoder.md) | Accepted | 2026-08-12 |
 | 0004  | [Dead-helper wiring, deduplication, and dependency retention](./004-dead-helper-wiring-and-refactoring.md) | Accepted | 2026-08-12 (updated 2026-08-13) |
 | 0005  | [Runtime workflow integration scripts](./005-runtime-workflow-integration.md) | Accepted | 2026-08-12 (updated 2026-08-13) |
-| 0006  | [Robot viewer and keyboard-topic teleoperation split](./006-robot-viewer-keyboard-topic-split.md) | Accepted | 2026-08-14 |
 | 0007  | [W&B artifact versioning for the artifact chain](./007-wandb-artifact-versioning.md) | Accepted | 2026-08-14 |
 | 0008  | [Hydra configuration composition](./008-hydra-configuration.md) | Accepted | 2026-08-14 |
 | 0009  | [Panda contact-frame grasps and sim fidelity](./009-panda-contact-frame.md) | Accepted | 2026-08-14 |

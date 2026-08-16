@@ -77,7 +77,7 @@ from notebook_helpers import (
 )
 
 CONFIG_DIR = root / "configs"
-CONFIG_NAME = "rl/rl_train"
+CONFIG_NAME = "training/rl_train"
 config_dir_arg = config_dir_relative(CONFIG_DIR, root)
 
 cfg = load_notebook_config(CONFIG_DIR, CONFIG_NAME)

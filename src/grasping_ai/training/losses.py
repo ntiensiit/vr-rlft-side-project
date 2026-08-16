@@ -35,29 +35,3 @@ def build_flow_matching_loss() -> LossFunction:
         return torch.nn.functional.mse_loss(predicted_velocity, target_velocity)
 
     return loss
-
-
-def build_grasp_pose_regression_loss(loss_type: str) -> LossFunction:
-    """Construct a grasp-pose regression loss for supervised training.
-
-    Args:
-        loss_type: Loss identifier such as ``"mse"`` or ``"smooth_l1"``.
-
-    Returns:
-        A callable loss mapping ``(predicted_pose, target_pose)`` to a scalar
-        training loss tensor.
-    """
-    if loss_type.lower() == "mse":
-
-        def loss_mse(predicted_pose: torch.Tensor, target_pose: torch.Tensor) -> torch.Tensor:
-            return torch.nn.functional.mse_loss(predicted_pose, target_pose)
-
-        return loss_mse
-    if loss_type.lower() == "smooth_l1":
-
-        def loss_l1(predicted_pose: torch.Tensor, target_pose: torch.Tensor) -> torch.Tensor:
-            return torch.nn.functional.smooth_l1_loss(predicted_pose, target_pose)
-
-        return loss_l1
-    msg = f"Unsupported loss_type: '{loss_type}'"
-    raise ValueError(msg)

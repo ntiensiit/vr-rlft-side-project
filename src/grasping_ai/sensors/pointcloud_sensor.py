@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import open3d as o3d  # type: ignore[import-untyped]
 import numpy as np
 from loguru import logger
+from torch.utils.data import Dataset
 
 from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.utils.path_validation import require_path
@@ -18,7 +19,25 @@ SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-PointCloudBatch = np.ndarray
+class PointCloudObservationDataset(Dataset[np.ndarray]):
+    """Map-style Dataset for validated ``.npy`` point-cloud observations."""
+
+    def __init__(self, observation_paths: list[Path]) -> None:
+        """Store the ordered observation paths after validating their types."""
+        if not isinstance(observation_paths, list) or not all(isinstance(path, Path) for path in observation_paths):
+            msg = "observation_paths must be a list of pathlib.Path instances"
+            raise TypeError(msg)
+        self.observation_paths = observation_paths
+
+    def __len__(self) -> int:
+        """Return the number of observation files."""
+        return len(self.observation_paths)
+
+    def __getitem__(self, index: int) -> np.ndarray:
+        """Load and validate one observation point cloud."""
+        if not isinstance(index, int):
+            raise TypeError("index must be an integer")
+        return acquire_point_cloud_from_observation(self.observation_paths[index])
 
 
 def acquire_point_cloud_from_observation(observation_path: Path) -> np.ndarray:
@@ -69,8 +88,9 @@ def acquire_point_cloud_stream(observation_paths: list[Path]) -> Iterator[np.nda
     if not isinstance(observation_paths, list) or not all(isinstance(path, Path) for path in observation_paths):
         msg = "observation_paths must be a list of pathlib.Path instances"
         raise TypeError(msg)
-    for path in observation_paths:
-        yield acquire_point_cloud_from_observation(path)
+    dataset = PointCloudObservationDataset(observation_paths)
+    for index in range(len(dataset)):
+        yield dataset[index]
 
 
 def merge_point_clouds(clouds: list[np.ndarray]) -> np.ndarray:
