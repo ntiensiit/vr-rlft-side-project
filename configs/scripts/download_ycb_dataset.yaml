@@ -1,3 +1,4 @@
+# @package _global_
 defaults:
   - /scripts/base
   - _self_
@@ -8,3 +9,13 @@ script:
   files_to_download: ${download.files}
   extract: ${download.extract}
   objects_url: ${download.objects_url}
+  base_url: ${download.base_url}
+  user_agent: ${download.user_agent}
+  block_size: ${download.block_size}
+  max_retries: ${download.max_retries}
+  timeout_seconds: ${download.timeout_seconds}
+  retry_sleep_seconds: ${download.retry_sleep_seconds}
+  unpack_delete_retries: ${download.unpack_delete_retries}
+  cleanup_delete_retries: ${download.cleanup_delete_retries}
+  cleanup_sleep_seconds: ${download.cleanup_sleep_seconds}
+  berkeley_rgb_types: ${download.berkeley_rgb_types}

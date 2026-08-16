@@ -1,3 +1,8 @@
+# @package _global_
 defaults:
   - /scripts/base
   - _self_
+
+script:
+  ycb_root: ${paths.ycb_root}
+  ycb_mjcf: ${paths.ycb_mjcf}

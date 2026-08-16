@@ -1,3 +1,4 @@
+# @package _global_
 defaults:
   - /scripts/base
   - /scripts/sim_env
@@ -5,6 +6,11 @@ defaults:
 
 script:
   grasps: ${model.exports.grasp_poses}
+  object_ids: ${objects.ids}
   object_id: ${objects.ids.0}
   output: ${model.exports.simulation_report}
   grasp_pose_format: world
+  ycb_root: ${paths.ycb_mjcf}
+  robot_xml: ${robot.description}
+  table_xml: ${table_xml}
+  num_steps: ${num_steps}

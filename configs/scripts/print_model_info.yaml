@@ -1,4 +1,9 @@
+# @package _global_
 defaults:
   - /scripts/base
   - /scripts/grasp_model
   - _self_
+
+script:
+  checkpoint: ${model.checkpoint}
+  device: ${device}

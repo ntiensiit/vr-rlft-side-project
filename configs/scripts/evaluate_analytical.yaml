@@ -10,3 +10,7 @@ script:
   object_point_cloud: null
   experiment_log_dir: null
   contact_path: null
+  friction_coefficient: ${metrics.friction_coefficient}
+  lift_height_threshold: ${metrics.lift_height_threshold}
+  contact_clearance: ${metrics.collision_clearance}
+  wrench_regularization: ${metrics.wrench_regularization}

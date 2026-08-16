@@ -9,7 +9,7 @@ import hydra
 import mlflow
 import numpy as np
 
-from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+from grasping_ai.config import FLATTENED_YAML_CONFIG, SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
 from grasping_ai.pipelines.evaluate import (
     aggregate_evaluation_results,
     evaluate_generated_grasps,
@@ -20,6 +20,15 @@ from grasping_ai.utils.logging_utils import (
     init_mlflow,
     setup_logging,
 )
+
+FILTER_COLLISIONS = bool(FLATTENED_YAML_CONFIG.get("script.filter_collisions", False))
+FRICTION_COEFFICIENT = float(FLATTENED_YAML_CONFIG.get("script.friction_coefficient", 0.5))
+LIFT_HEIGHT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("script.lift_height_threshold", 0.05))
+CLEARANCE = float(FLATTENED_YAML_CONFIG.get("script.contact_clearance", 0.005))
+WRENCH_REGULARIZATION = float(FLATTENED_YAML_CONFIG.get("script.wrench_regularization", 1.0))
+MULTI_OBJECT = bool(FLATTENED_YAML_CONFIG.get("script.multi_object", False))
+EXPERIMENT_LOG_DIR = FLATTENED_YAML_CONFIG.get("script.experiment_log_dir")
+CONTACT_PATH = FLATTENED_YAML_CONFIG.get("script.contact_path")
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
@@ -72,17 +81,59 @@ def main(cfg: DictConfig) -> None:
     report_path = yaml_config.value(
         "report", "evaluation", "analytical_report", value_type=Path, script_or=True, required=True,
     )
-    multi_object = yaml_config.value("multi_object", value_type=bool, default=False, script_or=True)
+    multi_object = yaml_config.value("multi_object", value_type=bool, default=MULTI_OBJECT, script_or=True)
     filter_collisions = yaml_config.value(
-        "filter_collisions", "evaluation", "filter_collisions", value_type=bool, default=False, script_or=True,
+        "filter_collisions",
+        "evaluation",
+        "filter_collisions",
+        value_type=bool,
+        default=FILTER_COLLISIONS,
+        script_or=True,
     )
-    experiment_log_dir = yaml_config.value("script", "experiment_log_dir", value_type=Path)
-    contact_path = yaml_config.value("script", "contact_path", value_type=Path)
+    experiment_log_dir = yaml_config.value(
+        "experiment_log_dir",
+        "script",
+        "experiment_log_dir",
+        value_type=Path,
+        default=EXPERIMENT_LOG_DIR,
+        script_or=True,
+    )
+    contact_path = yaml_config.value(
+        "contact_path", "script", "contact_path", value_type=Path, default=CONTACT_PATH, script_or=True,
+    )
 
-    friction_coefficient = yaml_config.value("metrics", "friction_coefficient", value_type=float)
-    lift_height_threshold = yaml_config.value("metrics", "lift_height_threshold", value_type=float)
-    contact_clearance = yaml_config.value("metrics", "collision_clearance", value_type=float)
-    wrench_regularization = yaml_config.value("metrics", "wrench_regularization", value_type=float)
+    friction_coefficient = yaml_config.value(
+        "friction_coefficient",
+        "metrics",
+        "friction_coefficient",
+        value_type=float,
+        script_or=True,
+        default=FRICTION_COEFFICIENT,
+    )
+    lift_height_threshold = yaml_config.value(
+        "lift_height_threshold",
+        "metrics",
+        "lift_height_threshold",
+        value_type=float,
+        script_or=True,
+        default=LIFT_HEIGHT_THRESHOLD,
+    )
+    contact_clearance = yaml_config.value(
+        "contact_clearance",
+        "metrics",
+        "collision_clearance",
+        value_type=float,
+        script_or=True,
+        default=CLEARANCE,
+    )
+    wrench_regularization = yaml_config.value(
+        "wrench_regularization",
+        "metrics",
+        "wrench_regularization",
+        value_type=float,
+        script_or=True,
+        default=WRENCH_REGULARIZATION,
+    )
 
     gripper_point_cloud = np.load(gripper_point_cloud_path)
     per_object: dict[str, list[dict[str, float | bool]]] = {}

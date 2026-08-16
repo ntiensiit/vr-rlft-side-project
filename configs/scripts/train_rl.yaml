@@ -1,3 +1,22 @@
+# @package _global_
 defaults:
   - /scripts/base
   - _self_
+
+script:
+  robot_xml: ${robot.description}
+  ycb_root: ${paths.ycb_mjcf}
+  object_ids: ${objects.ids}
+  policy_checkpoint: ${rl.checkpoint}
+  observation_dim: ${rl.observation_dim}
+  action_dim: ${rl.action_dim}
+  hidden_dim: ${rl.hidden_dim}
+  learning_rate: ${rl.learning_rate}
+  num_updates: ${rl.num_updates}
+  gamma: ${rl.gamma}
+  device: ${device}
+  seed: ${seed}
+  n_steps: ${rl.n_steps}
+  batch_size: ${rl.batch_size}
+  n_epochs: ${rl.n_epochs}
+  policy_num_layers: ${rl.policy_num_layers}

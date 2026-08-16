@@ -1,3 +1,4 @@
+# @package _global_
 defaults:
   - /scripts/base
   - /scripts/sim_env
@@ -5,3 +6,6 @@ defaults:
 
 script:
   object_id: null
+  robot_xml: ${robot.description}
+  ycb_root: ${paths.ycb_mjcf}
+  table_xml: ${table_xml}

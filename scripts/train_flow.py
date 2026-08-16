@@ -58,7 +58,9 @@ def _hydra_main(cfg: object) -> None:
     run_supervised_training_script(
         yaml_config,
         module_name="train_flow",
-        experiment_log_dir=yaml_config.value("flow", "tensorboard", value_type=Path),
+        experiment_log_dir=yaml_config.value(
+            "experiment_log_dir", "flow", "tensorboard", value_type=Path, script_or=True,
+        ),
         mlflow_run_name="flow_training",
         pipeline_fn=run_flow_training_pipeline,
     )

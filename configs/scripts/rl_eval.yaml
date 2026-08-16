@@ -1,8 +1,14 @@
 # @package _global_
 script:
   policy_checkpoint: ${rl.checkpoint}
+  robot_xml: ${robot.description}
+  ycb_root: ${paths.ycb_mjcf}
+  object_ids: ${objects.ids}
   observation_dim: ${rl.observation_dim}
   action_dim: ${rl.action_dim}
+  device: ${device}
+  seed: ${seed}
+  exploration_noise: ${evaluation.exploration_noise}
   output: ${evaluation.rollout_report}
   object_id: ${objects.ids.0}
   observation_dim_from_env: false

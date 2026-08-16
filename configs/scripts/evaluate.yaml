@@ -1,3 +1,4 @@
+# @package _global_
 defaults:
   - /scripts/base
   - /scripts/evaluate_analytical

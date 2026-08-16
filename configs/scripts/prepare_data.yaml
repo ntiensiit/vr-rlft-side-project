@@ -1,3 +1,4 @@
+# @package _global_
 defaults:
   - /scripts/base
   - _self_
@@ -6,3 +7,35 @@ script:
   mode: ${prepare.mode}
   output_dir: ${prepare.output_dir}
   quality_report: ${prepare.quality_report}
+  dataset_root: ${paths.dataset_root}
+  object_ids: ${objects.ids}
+  robot_xml: ${robot.description}
+  ycb_root: ${paths.ycb_root}
+  allow_relaxed: ${synthetic.allow_relaxed}
+  candidate_multiplier: ${synthetic.candidate_multiplier}
+  collision_clearance: ${synthetic.collision_clearance}
+  friction_coefficient: ${synthetic.friction_coefficient}
+  gripper_width: ${synthetic.gripper_width}
+  lift_height_threshold: ${synthetic.lift_height_threshold}
+  max_angular_velocity: ${synthetic.max_angular_velocity}
+  max_linear_velocity: ${synthetic.max_linear_velocity}
+  min_grasp_rotation: ${synthetic.min_grasp_rotation}
+  min_grasp_translation: ${synthetic.min_grasp_translation}
+  min_quality_score: ${synthetic.min_quality_score}
+  neighborhood_size: ${synthetic.neighborhood_size}
+  num_grasps: ${synthetic.num_grasps}
+  num_samples: ${synthetic.num_samples}
+  num_simulation_steps: ${synthetic.num_simulation_steps}
+  oversample_extra: ${synthetic.oversample_extra}
+  oversample_factor: ${synthetic.oversample_factor}
+  relaxed_antipodal_dot: ${synthetic.relaxed_antipodal_dot}
+  search_multiplier: ${synthetic.search_multiplier}
+  seed: ${synthetic.seed}
+  sim_validate: ${synthetic.sim_validate}
+  sim_validate_fallback_analytical: ${synthetic.sim_validate_fallback_analytical}
+  sim_validate_min_contacts: ${synthetic.sim_validate_min_contacts}
+  sim_validate_require_ik: ${synthetic.sim_validate_require_ik}
+  sim_validate_require_lift: ${synthetic.sim_validate_require_lift}
+  strict_alignment_dot: ${synthetic.strict_alignment_dot}
+  strict_antipodal_dot: ${synthetic.strict_antipodal_dot}
+  voxel_size: ${synthetic.voxel_size}

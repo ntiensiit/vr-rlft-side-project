@@ -1,3 +1,10 @@
+# @package _global_
 defaults:
   - /scripts/base
   - _self_
+
+script:
+  ycb_root: ${paths.ycb_root}
+  observations_dir: ${paths.observations}
+  num_samples: ${observations.num_samples}
+  seed: ${observations.seed}

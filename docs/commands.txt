@@ -1,24 +1,20 @@
 uv sync --frozen --group dev
-uv run --frozen ruff check src tests scripts
-uv run --frozen mypy --num-workers 0 --cache-dir .mypy_cache src
 uv run --frozen python -c "import grasping_ai; print('grasping_ai ok')"
-uv run --frozen pytest -c pytest.toml -q -m "not slow" --cov --cov-config=coverage.toml --cov-report=term-missing
-uv run python -m scripts.download_ycb_dataset
-uv run python -m scripts.prepare_ycb_mjcf
-uv run python -m scripts.prepare_data prepare.mode=synthetic prepare.quality_report=artifacts/reports/synthetic_quality.json
-uv run python -m scripts.audit_synthetic_labels
-uv run python -m scripts.prepare_data prepare.mode=synthetic synthetic.sim_validate=true paths.dataset_root=data/processed_sim paths.output_index=data/processed_sim/index.json
-uv run python -m scripts.prepare_observations
-uv run python -m scripts.train_diffusion supervised.num_epochs=100
-uv run python -m scripts.train_flow supervised.num_epochs=150
-uv run python -m scripts.train_rl rl.num_updates=1000
-uv run python -m scripts.generate_grasps
-uv run python -m scripts.run_grasp_inference model=flow script.observation=data/observations/003_cracker_box.npy
-uv run python -m scripts.run_simulation script.table_xml=deploy/table.xml
-uv run python -m scripts.visualize_robot script.object_id=003_cracker_box script.table_xml=deploy/table.xml
-uv run python -m scripts.evaluate evaluation=diffusion
-uv run python -m scripts.run_artifacts
-uv run python -m scripts.run_workflow model=flow evaluation=flow
-uv run python -m scripts.extract_object_grasps
-uv run python -m scripts.print_model_info
-uv run python -m scripts.run_rl_evaluation script.observation_dim_from_env=true script.action_dim_from_env=true
+uv run --frozen ruff check src tests scripts
+uv run --frozen pytest -c pytest.toml -q -m "not slow"
+uv run python scripts/prepare_ycb_mjcf.py
+uv run python scripts/prepare_data.py prepare.mode=synthetic prepare.quality_report=artifacts/reports/synthetic_quality.json
+uv run python scripts/audit_synthetic_labels.py script.output=artifacts/reports/synthetic_label_audit.json
+uv run python scripts/prepare_observations.py
+uv run python scripts/train_diffusion.py
+uv run python scripts/train_flow.py
+uv run python scripts/generate_grasps.py
+uv run python scripts/extract_object_grasps.py
+uv run python scripts/run_simulation.py
+uv run python scripts/evaluate.py script.multi_object=true
+uv run python scripts/print_model_info.py
+uv run python scripts/run_grasp_inference.py model=flow script.observation=data/observations/003_cracker_box.npy
+uv run python scripts/train_rl.py
+uv run python scripts/run_rl_evaluation.py script.observation_dim_from_env=true script.action_dim_from_env=true
+uv run python scripts/run_workflow.py model=flow evaluation=flow script.observation=data/observations/003_cracker_box.npy script.object_id=003_cracker_box
+uv run python scripts/visualize_robot.py script.object_id=003_cracker_box

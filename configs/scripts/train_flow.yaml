@@ -1,3 +1,4 @@
+# @package _global_
 defaults:
   - /scripts/base
   - override /training@_global_: flow

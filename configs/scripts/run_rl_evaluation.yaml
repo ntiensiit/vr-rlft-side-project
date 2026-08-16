@@ -1,6 +1,7 @@
+# @package _global_
 defaults:
   - /scripts/base
-  - override /evaluation: rl
   - /scripts/sim_env
   - /scripts/rl_eval
+  - override /evaluation: rl
   - _self_

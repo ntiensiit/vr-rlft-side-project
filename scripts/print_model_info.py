@@ -8,8 +8,13 @@ from typing import TYPE_CHECKING
 import hydra
 from loguru import logger
 
-from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+from grasping_ai.config import FLATTENED_YAML_CONFIG, SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
 from grasping_ai.training.checkpoint_io import read_model_checkpoint_metadata
+
+CHECKPOINT_PATH = Path(
+    str(FLATTENED_YAML_CONFIG.get("script.checkpoint", "artifacts/checkpoints/model.pt")),
+)
+DEVICE = str(FLATTENED_YAML_CONFIG.get("script.device", "cpu"))
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
@@ -20,8 +25,15 @@ def main(cfg: DictConfig) -> None:
     """Print architecture and parameter metadata for the configured checkpoint."""
     yaml_config = FlattenedYAMLConfig(cfg)
     metadata = read_model_checkpoint_metadata(
-        yaml_config.value("checkpoint", "model", "checkpoint", value_type=Path, script_or=True, required=True),
-        str(yaml_config.get("device")),
+        yaml_config.value(
+            "checkpoint",
+            "model",
+            "checkpoint",
+            value_type=Path,
+            script_or=True,
+            default=CHECKPOINT_PATH,
+        ),
+        str(yaml_config.value("device", "device", value_type=object, script_or=True, default=DEVICE)),
     )
     for key in (
         "checkpoint_path",

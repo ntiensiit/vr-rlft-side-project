@@ -14,26 +14,26 @@ from urllib.request import Request, urlopen
 import hydra
 from loguru import logger
 
-from grasping_ai.config import FLATTENED_YAML_CONFIG, SCRIPTS_CONFIG_PATH
+from grasping_ai.config import FLATTENED_YAML_CONFIG, SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
 
-OUTPUT_DIRECTORY = Path(str(FLATTENED_YAML_CONFIG.get("download.output_directory")))
-OBJECTS_TO_DOWNLOAD = [str(object_id) for object_id in FLATTENED_YAML_CONFIG.get("download.objects", [])]
-FILES_TO_DOWNLOAD = [str(file_type) for file_type in FLATTENED_YAML_CONFIG.get("download.files", [])]
-EXTRACT = bool(FLATTENED_YAML_CONFIG.get("download.extract", True))
-OBJECTS_URL = str(FLATTENED_YAML_CONFIG.get("download.objects_url"))
-BASE_URL = str(FLATTENED_YAML_CONFIG.get("download.base_url"))
-USER_AGENT = str(FLATTENED_YAML_CONFIG.get("download.user_agent"))
-BLOCK_SIZE = int(FLATTENED_YAML_CONFIG.get("download.block_size", 65536))
-MAX_RETRIES = int(FLATTENED_YAML_CONFIG.get("download.max_retries", 5))
-TIMEOUT_SECONDS = int(FLATTENED_YAML_CONFIG.get("download.timeout_seconds", 30))
-RETRY_SLEEP_SECONDS = float(FLATTENED_YAML_CONFIG.get("download.retry_sleep_seconds", 2))
-UNPACK_DELETE_RETRIES = int(FLATTENED_YAML_CONFIG.get("download.unpack_delete_retries", 10))
-CLEANUP_DELETE_RETRIES = int(FLATTENED_YAML_CONFIG.get("download.cleanup_delete_retries", 5))
-CLEANUP_SLEEP_SECONDS = float(FLATTENED_YAML_CONFIG.get("download.cleanup_sleep_seconds", 1))
-BERKELEY_RGB_TYPES = tuple(FLATTENED_YAML_CONFIG.get("download.berkeley_rgb_types", []))
+OUTPUT_DIRECTORY = Path(str(FLATTENED_YAML_CONFIG.get("script.output_directory")))
+OBJECTS_TO_DOWNLOAD = [str(object_id) for object_id in FLATTENED_YAML_CONFIG.get("script.objects_to_download", [])]
+FILES_TO_DOWNLOAD = [str(file_type) for file_type in FLATTENED_YAML_CONFIG.get("script.files_to_download", [])]
+EXTRACT = bool(FLATTENED_YAML_CONFIG.get("script.extract", True))
+OBJECTS_URL = str(FLATTENED_YAML_CONFIG.get("script.objects_url"))
+BASE_URL = str(FLATTENED_YAML_CONFIG.get("script.base_url"))
+USER_AGENT = str(FLATTENED_YAML_CONFIG.get("script.user_agent"))
+BLOCK_SIZE = int(FLATTENED_YAML_CONFIG.get("script.block_size", 65536))
+MAX_RETRIES = int(FLATTENED_YAML_CONFIG.get("script.max_retries", 5))
+TIMEOUT_SECONDS = int(FLATTENED_YAML_CONFIG.get("script.timeout_seconds", 30))
+RETRY_SLEEP_SECONDS = float(FLATTENED_YAML_CONFIG.get("script.retry_sleep_seconds", 2))
+UNPACK_DELETE_RETRIES = int(FLATTENED_YAML_CONFIG.get("script.unpack_delete_retries", 10))
+CLEANUP_DELETE_RETRIES = int(FLATTENED_YAML_CONFIG.get("script.cleanup_delete_retries", 5))
+CLEANUP_SLEEP_SECONDS = float(FLATTENED_YAML_CONFIG.get("script.cleanup_sleep_seconds", 1))
+BERKELEY_RGB_TYPES = tuple(FLATTENED_YAML_CONFIG.get("script.berkeley_rgb_types", []))
 
 
 def _validate_https_url(url: str) -> None:
@@ -176,13 +176,35 @@ def _process_object(object_id: str) -> None:
 
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/download_ycb_dataset")
-def main(_cfg: DictConfig) -> None:
+def main(cfg: DictConfig) -> None:
     """Download and extract the configured YCB object archives."""
-    OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
-    objects = fetch_objects(OBJECTS_URL)
+    yaml_config = FlattenedYAMLConfig(cfg)
+    output_directory = yaml_config.value(
+        "output_directory",
+        "download",
+        "output_directory",
+        value_type=Path,
+        script_or=True,
+        default=OUTPUT_DIRECTORY,
+    )
+    objects_to_download = yaml_config.value(
+        "objects_to_download",
+        "download",
+        "objects",
+        value_type=list[str],
+        script_or=True,
+        default=OBJECTS_TO_DOWNLOAD,
+    )
+    objects_url = str(
+        yaml_config.value(
+            "objects_url", "download", "objects_url", value_type=object, script_or=True, default=OBJECTS_URL,
+        ),
+    )
+    output_directory.mkdir(parents=True, exist_ok=True)
+    objects = fetch_objects(objects_url)
 
     for object_id in objects:
-        if object_id not in OBJECTS_TO_DOWNLOAD:
+        if object_id not in objects_to_download:
             continue
 
         try:

@@ -3,6 +3,11 @@ script:
   method: ${evaluation.method}
   checkpoint: ${model.checkpoint}
   output_dir: ${artifacts.root}
+  feature_dim: ${architecture.feature_dim}
+  num_steps: ${model.inference_steps}
+  num_grasps: ${architecture.num_grasps}
+  device: ${device}
+  seed: ${seed}
   observation: null
   ycb_root: ${paths.ycb_root}
   ycb_mjcf: ${paths.ycb_mjcf}
@@ -21,3 +26,12 @@ script:
   point_cloud_sample_multiplier: ${workflow.point_cloud_sample_multiplier}
   pycache_dir: ${workflow.pycache_dir}
   rl_rollout_report: ${workflow.rl_rollout_report}
+  grasp_candidates_name: ${workflow.intermediate.grasp_candidates}
+  simulation_outcomes_name: ${workflow.intermediate.simulation_outcomes}
+  analytical_evaluation_name: ${workflow.intermediate.analytical_evaluation}
+  num_simulation_steps: ${num_steps}
+  gripper_close_command: ${robot.gripper.close_command.0}
+  friction_coefficient: ${metrics.friction_coefficient}
+  lift_height_threshold: ${metrics.lift_height_threshold}
+  contact_clearance: ${metrics.collision_clearance}
+  wrench_regularization: ${metrics.wrench_regularization}

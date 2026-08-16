@@ -12,8 +12,10 @@ import hydra
 import wandb
 from loguru import logger
 
-from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+from grasping_ai.config import FLATTENED_YAML_CONFIG, SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
 from grasping_ai.pipelines.evaluate import write_jsonl_records
+
+WANDB_ENTITY = FLATTENED_YAML_CONFIG.get("tracking.entity")
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
@@ -32,7 +34,9 @@ def _build_env_vars(yaml_config: FlattenedYAMLConfig, root: Path) -> dict[str, s
     return {
         **os.environ,
         "PYTHONPATH": str(root / "src"),
-        "PYTHONPYCACHEPREFIX": str(root / yaml_config.value("artifacts", "pycache_dir", value_type=object)),
+        "PYTHONPYCACHEPREFIX": str(root / yaml_config.value(
+            "pycache_dir", "artifacts", "pycache_dir", value_type=object, script_or=True,
+        )),
     }
 
 
@@ -86,8 +90,10 @@ def _run_command_chain(
 
 def _collect_retained_artifacts(yaml_config: FlattenedYAMLConfig, root: Path, artifacts: Path) -> list[str]:
     """Collect repo-relative paths of retained dataset, MJCF, and artifact files."""
-    data_processed = yaml_config.value("paths", "dataset_root", value_type=Path, required=True)
-    mjcf_root = yaml_config.value("paths", "ycb_mjcf", value_type=Path, required=True)
+    data_processed = yaml_config.value(
+        "dataset_root", "paths", "dataset_root", value_type=Path, script_or=True, required=True,
+    )
+    mjcf_root = yaml_config.value("ycb_mjcf", "paths", "ycb_mjcf", value_type=Path, script_or=True, required=True)
     if not data_processed.is_absolute():
         data_processed = root / data_processed
     if not mjcf_root.is_absolute():
@@ -122,9 +128,13 @@ def _write_manifest(
     log: list[dict[str, object]],
 ) -> tuple[Path, list[dict[str, object]]]:
     """Write the artifact-chain manifest and return its path and records."""
-    manifest_cfg = yaml_config.value("artifacts", "manifest", value_type=Path, required=True)
+    manifest_cfg = yaml_config.value(
+        "manifest", "artifacts", "manifest", value_type=Path, script_or=True, required=True,
+    )
     manifest_path = manifest_cfg if manifest_cfg.is_absolute() else artifacts / manifest_cfg.name
-    config_dir_arg = str(yaml_config.value("artifacts", "config_dir", value_type=object, required=True))
+    config_dir_arg = str(
+        yaml_config.value("config_dir", "artifacts", "config_dir", value_type=object, script_or=True, required=True),
+    )
     chain_cfg = yaml_config.get_path("artifacts", "chain")
     if not isinstance(chain_cfg, dict):
         msg = "artifacts.chain must be a mapping"
@@ -153,7 +163,9 @@ def _publish_wandb_artifact(
     tracking_backend = str(yaml_config.get_path("tracking", "backend", default="none")).lower()
     if tracking_backend != "wandb":
         return
-    config_dir_arg = str(yaml_config.value("artifacts", "config_dir", value_type=object, required=True))
+    config_dir_arg = str(
+        yaml_config.value("config_dir", "artifacts", "config_dir", value_type=object, script_or=True, required=True),
+    )
     chain_cfg = yaml_config.get_path("artifacts", "chain")
     if not isinstance(chain_cfg, dict):
         msg = "artifacts.chain must be a mapping"
@@ -163,7 +175,7 @@ def _publish_wandb_artifact(
         wandb_cfg = {}
     root_resolved = root.resolve()
     wandb_project = str(yaml_config.get_path("tracking", "project", default="vr-rlft-side-project"))
-    wandb_entity = yaml_config.get_path("tracking", "entity", default=None)
+    wandb_entity = yaml_config.get_path("tracking", "entity", default=WANDB_ENTITY)
     wandb_mode = str(yaml_config.get_path("tracking", "mode", default="offline"))
     wandb_init: dict[str, object] = {
         "project": wandb_project,
@@ -223,14 +235,20 @@ def _run_rl_inference_smoke(
     log: list[dict[str, object]],
 ) -> None:
     """Write and execute the RL policy inference smoke-check script."""
-    observation_dim = yaml_config.value("rl", "observation_dim", value_type=int)
-    action_dim = yaml_config.value("rl", "action_dim", value_type=int)
-    rl_checkpoint = yaml_config.value("rl", "checkpoint", value_type=Path, required=True)
+    observation_dim = yaml_config.value(
+        "observation_dim", "rl", "observation_dim", value_type=int, script_or=True,
+    )
+    action_dim = yaml_config.value("action_dim", "rl", "action_dim", value_type=int, script_or=True)
+    rl_checkpoint = yaml_config.value(
+        "policy_checkpoint", "rl", "checkpoint", value_type=Path, script_or=True, required=True,
+    )
     if not rl_checkpoint.is_absolute():
         rl_checkpoint = root / rl_checkpoint
     root_resolved = root.resolve()
     rl_checkpoint_arg = rl_checkpoint.resolve().relative_to(root_resolved).as_posix()
-    infer_cfg = yaml_config.value("artifacts", "rl_inference_smoke", value_type=Path, required=True)
+    infer_cfg = yaml_config.value(
+        "rl_inference_smoke", "artifacts", "rl_inference_smoke", value_type=Path, script_or=True, required=True,
+    )
     infer_path = infer_cfg if infer_cfg.is_absolute() else artifacts / infer_cfg.name
     infer_path_arg = infer_path.resolve().relative_to(root_resolved).as_posix()
     infer_script = (

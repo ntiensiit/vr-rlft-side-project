@@ -1,6 +1,10 @@
+# @package _global_
 defaults:
   - /scripts/base
   - _self_
 
 script:
   output: null
+  dataset_root: ${paths.dataset_root}
+  friction_coefficient: ${metrics.friction_coefficient}
+  collision_clearance: ${metrics.collision_clearance}
