@@ -2,35 +2,41 @@
 
 from __future__ import annotations
 
-from grasping_ai.config import FLATTENED_YAML_CONFIG
+from pathlib import Path
 
+import pytest
+
+from grasping_ai.config import FLATTENED_YAML_CONFIG
 from grasping_ai.utils.path_validation import (
     require_optional_path,
     require_path,
 )
 
-from pathlib import Path
-
-import pytest
 
 def test_require_path_accepts_path_instance() -> None:
     """Accept a pathlib.Path without raising."""
     path = Path("example.pt")
-    assert require_path(path, "example_path") is path
+    if require_path(path, "example_path") is not path:
+        raise AssertionError
+
 
 def test_require_path_rejects_non_path() -> None:
     """Reject non-Path values with a descriptive TypeError."""
     with pytest.raises(TypeError, match=r"example_path must be a pathlib\.Path instance"):
         require_path("not-a-path", "example_path")
 
+
 def test_require_optional_path_accepts_none() -> None:
     """Allow None for optional path parameters."""
-    assert require_optional_path(None, "optional_path") is None
+    if require_optional_path(None, "optional_path") is not None:
+        raise AssertionError
+
 
 def test_require_optional_path_rejects_invalid_type() -> None:
     """Reject non-Path, non-None values for optional paths."""
     with pytest.raises(TypeError, match=r"optional_path must be a pathlib\.Path instance or None"):
         require_optional_path("bad", "optional_path")
+
 
 def test_numerics_constants_are_positive() -> None:
     """Shared tolerances must remain strictly positive."""
@@ -38,4 +44,5 @@ def test_numerics_constants_are_positive() -> None:
         float(FLATTENED_YAML_CONFIG.get("tolerances.norm_eps", 1e-8)),
         float(FLATTENED_YAML_CONFIG.get("tolerances.grasp_distance_eps", 1e-4)),
     ):
-        assert value > 0.0
+        if not (value > 0.0):
+            raise AssertionError

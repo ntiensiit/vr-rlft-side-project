@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from grasping_ai.utils.path_validation import require_path
-
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
 from theseus import Node, default_tokenizer  # type: ignore[import-untyped]
 
+from grasping_ai.utils.path_validation import require_path
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 YcbObjectMesh = Path
+
 
 def tokenize_ycb_object_name(object_name: str) -> list[str]:
     """Tokenize a YCB object identifier for vocabulary-based alias matching.
@@ -29,10 +30,12 @@ def tokenize_ycb_object_name(object_name: str) -> list[str]:
         Lowercased word tokens extracted from ``object_name``.
     """
     if not isinstance(object_name, str):
-        raise TypeError("object_name must be a string")
+        msg = "object_name must be a string"
+        raise TypeError(msg)
 
     normalized = object_name.replace("-", " ").replace("_", " ")
     return default_tokenizer(normalized)
+
 
 def build_ycb_object_name_classifier(
     ycb_root: Path,
@@ -52,11 +55,13 @@ def build_ycb_object_name_classifier(
     """
     require_path(ycb_root, "ycb_root")
     if not ycb_root.is_dir():
-        raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
+        msg = f"YCB root directory '{ycb_root}' does not exist"
+        raise FileNotFoundError(msg)
 
     object_names = list_ycb_objects(ycb_root)
     if not object_names:
-        raise ValueError(f"No YCB objects found under '{ycb_root}'")
+        msg = f"No YCB objects found under '{ycb_root}'"
+        raise ValueError(msg)
 
     vocabularies: dict[str, set[str]] = {}
     for name in object_names:
@@ -86,6 +91,7 @@ def build_ycb_object_name_classifier(
 
     return classify
 
+
 def list_ycb_objects(ycb_root: Path) -> list[str]:
     """Enumerate available YCB object identifiers under a YCB root directory.
 
@@ -97,13 +103,12 @@ def list_ycb_objects(ycb_root: Path) -> list[str]:
     """
     require_path(ycb_root, "ycb_root")
     if not ycb_root.is_dir():
-        raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
+        msg = f"YCB root directory '{ycb_root}' does not exist"
+        raise FileNotFoundError(msg)
 
-    objects = []
-    for path in ycb_root.iterdir():
-        if path.is_dir():
-            objects.append(path.name)
+    objects = [path.name for path in ycb_root.iterdir() if path.is_dir()]
     return sorted(objects)
+
 
 def resolve_ycb_object_directory(ycb_root: Path, object_name: str) -> Path:
     """Resolve the on-disk directory of a YCB object.
@@ -117,9 +122,11 @@ def resolve_ycb_object_directory(ycb_root: Path, object_name: str) -> Path:
     """
     require_path(ycb_root, "ycb_root")
     if not isinstance(object_name, str):
-        raise TypeError("object_name must be a string")
+        msg = "object_name must be a string"
+        raise TypeError(msg)
     if not ycb_root.is_dir():
-        raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
+        msg = f"YCB root directory '{ycb_root}' does not exist"
+        raise FileNotFoundError(msg)
 
     # 1. Check exact match
     direct_path = ycb_root / object_name
@@ -153,7 +160,9 @@ def resolve_ycb_object_directory(ycb_root: Path, object_name: str) -> Path:
         logger.info("Resolved YCB object '{}' via classifier to directory: {}", object_name, resolved)
         return resolved
 
-    raise FileNotFoundError(f"YCB object '{object_name}' not found under '{ycb_root}'")
+    msg = f"YCB object '{object_name}' not found under '{ycb_root}'"
+    raise FileNotFoundError(msg)
+
 
 def find_ycb_mesh_file(object_dir: Path) -> YcbObjectMesh:
     """Locate the mesh file inside a YCB object directory.
@@ -166,7 +175,8 @@ def find_ycb_mesh_file(object_dir: Path) -> YcbObjectMesh:
     """
     require_path(object_dir, "object_dir")
     if not object_dir.is_dir():
-        raise FileNotFoundError(f"YCB object directory '{object_dir}' does not exist")
+        msg = f"YCB object directory '{object_dir}' does not exist"
+        raise FileNotFoundError(msg)
 
     for path in object_dir.rglob("textured.obj"):
         if path.is_file():
@@ -180,7 +190,9 @@ def find_ycb_mesh_file(object_dir: Path) -> YcbObjectMesh:
         if path.is_file():
             return path
 
-    raise FileNotFoundError(f"No mesh file (.obj or .ply) found in '{object_dir}'")
+    msg = f"No mesh file (.obj or .ply) found in '{object_dir}'"
+    raise FileNotFoundError(msg)
+
 
 def find_ycb_mjcf(object_dir: Path) -> Path:
     """Locate the MJCF XML description of a YCB object.
@@ -200,7 +212,8 @@ def find_ycb_mjcf(object_dir: Path) -> Path:
     """
     require_path(object_dir, "object_dir")
     if not object_dir.is_dir():
-        raise FileNotFoundError(f"YCB object directory '{object_dir}' does not exist")
+        msg = f"YCB object directory '{object_dir}' does not exist"
+        raise FileNotFoundError(msg)
 
     for xml_path in object_dir.glob("*.xml"):
         if xml_path.is_file():
@@ -209,7 +222,9 @@ def find_ycb_mjcf(object_dir: Path) -> Path:
         if xml_path.is_file():
             return xml_path
 
-    raise FileNotFoundError(f"No MJCF XML file found in '{object_dir}'")
+    msg = f"No MJCF XML file found in '{object_dir}'"
+    raise FileNotFoundError(msg)
+
 
 def ycb_object_exists(ycb_root: Path, object_name: str) -> bool:
     """Check whether a YCB object exists under the given root directory.
@@ -223,6 +238,7 @@ def ycb_object_exists(ycb_root: Path, object_name: str) -> bool:
     """
     try:
         resolve_ycb_object_directory(ycb_root, object_name)
-        return True
     except (FileNotFoundError, TypeError, ValueError):
         return False
+    else:
+        return True

@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import hypothesis.strategies as st
+import numpy as np
+import numpy.typing as npt
+import pytest
+import pytransform3d
+import scipy  # type: ignore[import-untyped]
+from hypothesis import HealthCheck, given, settings
+from hypothesis.extra.numpy import arrays
+
+import grasping_ai
 from grasping_ai.perception.geometry import (
     apply_transform,
     grasp_pose_to_transform,
@@ -12,59 +24,69 @@ from grasping_ai.perception.geometry import (
     rotation_matrix_to_axis_angle,
 )
 
-import os
+UNIT_VECTOR_MIN_NORM = 1e-5
 
-import hypothesis.strategies as st
-import numpy as np
-import pytest
-import pytransform3d
-import scipy  # type: ignore[import-untyped]
-from hypothesis import HealthCheck, given, settings
-from hypothesis.extra.numpy import arrays
 
-import grasping_ai
-
-def test_package_imports():
+def test_package_imports() -> None:
     """Verify that grasping_ai is importable."""
-    assert grasping_ai.__name__ == "grasping_ai"
+    if not (grasping_ai.__name__ == "grasping_ai"):
+        raise AssertionError
 
-def test_math_dependencies_available():
+
+def test_math_dependencies_available() -> None:
     """Verify that core math libraries can be imported."""
-    import theseus
+    import theseus  # noqa: PLC0415  # deferred heavy import under test
 
-    assert pytransform3d.__version__ is not None
-    assert scipy.__version__ is not None
-    assert np.__version__ is not None
-    assert theseus.__version__ is not None
+    if not (pytransform3d.__version__ is not None):
+        raise AssertionError
+    if not (scipy.__version__ is not None):
+        raise AssertionError
+    if not (np.__version__ is not None):
+        raise AssertionError
+    if not (theseus.__version__ is not None):
+        raise AssertionError
 
-def test_base_config_file_exists():
+
+def test_base_config_file_exists() -> None:
     """Verify that configs/base.yaml exists."""
-    config_path = os.path.join("configs", "base.yaml")
-    assert os.path.isfile(config_path)
+    config_path = Path("configs") / "base.yaml"
+    if not (config_path.is_file()):
+        raise AssertionError
 
-def test_base_config_contains_contract_keys():
+
+def test_base_config_contains_contract_keys() -> None:
     """Verify base.yaml contains the required contract keys by plain text."""
-    config_path = os.path.join("configs", "base.yaml")
-    with open(config_path, encoding="utf-8") as f:
+    config_path = Path("configs") / "base.yaml"
+    with config_path.open(encoding="utf-8") as f:
         content = f.read()
-    assert "seed:" in content or "random_seed:" in content
-    assert "device:" in content
-    assert "output_dir:" in content
-    assert "paths:" in content
+    if not ("seed:" in content or "random_seed:" in content):
+        raise AssertionError
+    if "device:" not in content:
+        raise AssertionError
+    if "output_dir:" not in content:
+        raise AssertionError
+    if "paths:" not in content:
+        raise AssertionError
 
-def test_pyproject_preserves_src_package_layout():
+
+def test_pyproject_preserves_src_package_layout() -> None:
     """Verify pyproject.toml preserves src package layout."""
-    with open("pyproject.toml", encoding="utf-8") as f:
+    with Path("pyproject.toml").open(encoding="utf-8") as f:
         content = f.read()
-    assert 'packages = ["src"]' in content or "packages = ['src']" in content or '"src"' in content
+    if not ('packages = ["src"]' in content or "packages = ['src']" in content or '"src"' in content):
+        raise AssertionError
 
-def test_se3_primitive_identity_behavior():
+
+def test_se3_primitive_identity_behavior() -> None:
     """Verify that identity_transform returns identity matrix."""
     eye = identity_transform()
-    assert eye.shape == (4, 4)
-    assert np.allclose(eye, np.eye(4))
+    if not (eye.shape == (4, 4)):
+        raise AssertionError
+    if not (np.allclose(eye, np.eye(4))):
+        raise AssertionError
 
-def test_se3_primitive_invalid_shape():
+
+def test_se3_primitive_invalid_shape() -> None:
     """Verify type and shape errors raise appropriate exceptions."""
     with pytest.raises(ValueError, match="shape"):
         rotation_matrix_from_axis_angle(np.array([1, 0]), 0.0)
@@ -98,57 +120,74 @@ def test_se3_primitive_invalid_shape():
     with pytest.raises(TypeError, match="numpy array"):
         apply_transform(np.zeros((10, 3)), "invalid")
 
-def test_se3_primitive_non_finite_input():
+
+def test_se3_primitive_non_finite_input() -> None:
     """Verify non-finite inputs behavior (NaN or inf)."""
     with pytest.raises(ValueError, match="unit vector"):
         rotation_matrix_from_axis_angle(np.array([np.nan, 0.0, 0.0]), 0.0)
     with pytest.raises(ValueError, match="unit vector"):
         rotation_matrix_from_axis_angle(np.array([np.inf, 0.0, 0.0]), 0.0)
 
-def test_se3_primitive_no_global_side_effects():
+
+def test_se3_primitive_no_global_side_effects() -> None:
     """Verify that calling functions twice with different inputs has no side effects."""
     axis1 = np.array([1.0, 0.0, 0.0])
     axis2 = np.array([0.0, 1.0, 0.0])
     r1 = rotation_matrix_from_axis_angle(axis1, 0.5)
     r2 = rotation_matrix_from_axis_angle(axis2, 1.0)
     r1_second = rotation_matrix_from_axis_angle(axis1, 0.5)
-    assert np.allclose(r1, r1_second)
-    assert not np.allclose(r1, r2)
+    if not (np.allclose(r1, r1_second)):
+        raise AssertionError
+    if np.allclose(r1, r2):
+        raise AssertionError
 
-def test_geometry_rotation_matrix_axis_angle():
+
+def test_geometry_rotation_matrix_axis_angle() -> None:
     """Test rotation_matrix_from_axis_angle and rotation_matrix_to_axis_angle conversion."""
     axis = np.array([0.0, 0.0, 1.0])
     angle = np.pi / 2
     r = rotation_matrix_from_axis_angle(axis, angle)
     expected = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    assert np.allclose(r, expected)
+    if not (np.allclose(r, expected)):
+        raise AssertionError
 
     rec_axis, rec_angle = rotation_matrix_to_axis_angle(r)
     # Recaxis can be axis or opposite with negative angle
     if np.allclose(rec_axis, axis):
-        assert np.allclose(rec_angle, angle)
+        if not (np.allclose(rec_angle, angle)):
+            raise AssertionError
     else:
-        assert np.allclose(rec_axis, -axis)
-        assert np.allclose(rec_angle, -angle)
+        if not (np.allclose(rec_axis, -axis)):
+            raise AssertionError
+        if not (np.allclose(rec_angle, -angle)):
+            raise AssertionError
 
-def test_geometry_make_and_invert_transform():
+
+def test_geometry_make_and_invert_transform() -> None:
     """Test make_transform, invert_transform and grasp_pose_to_transform."""
     rotation = np.eye(3)
     translation = np.array([1.0, 2.0, 3.0])
     t = make_transform(rotation, translation)
-    assert t.shape == (4, 4)
-    assert np.allclose(t[:3, 3], translation)
-    assert np.allclose(t[:3, :3], rotation)
-    assert np.allclose(t[3, :], [0, 0, 0, 1])
+    if not (t.shape == (4, 4)):
+        raise AssertionError
+    if not (np.allclose(t[:3, 3], translation)):
+        raise AssertionError
+    if not (np.allclose(t[:3, :3], rotation)):
+        raise AssertionError
+    if not (np.allclose(t[3, :], [0, 0, 0, 1])):
+        raise AssertionError
 
     t_grasp = grasp_pose_to_transform(rotation, translation)
-    assert np.allclose(t, t_grasp)
+    if not (np.allclose(t, t_grasp)):
+        raise AssertionError
 
     t_inv = invert_transform(t)
     identity = np.matmul(t, t_inv)
-    assert np.allclose(identity, np.eye(4))
+    if not (np.allclose(identity, np.eye(4))):
+        raise AssertionError
 
-def test_geometry_apply_transform():
+
+def test_geometry_apply_transform() -> None:
     """Test apply_transform on a set of points."""
     points = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
     translation = np.array([1.0, 2.0, 3.0])
@@ -157,12 +196,15 @@ def test_geometry_apply_transform():
 
     transformed = apply_transform(points, t)
     expected = points + translation
-    assert np.allclose(transformed, expected)
+    if not (np.allclose(transformed, expected)):
+        raise AssertionError
+
 
 # --- Property-Based Testing (Hypothesis) ---
 
+
 @st.composite
-def unit_vectors(draw):
+def unit_vectors(draw: st.DrawFn) -> npt.NDArray[np.float64]:
     """Generate a 3D unit vector."""
     vec = draw(
         arrays(
@@ -172,16 +214,18 @@ def unit_vectors(draw):
         ),
     )
     norm = np.linalg.norm(vec)
-    if norm < 1e-5:
+    if norm < UNIT_VECTOR_MIN_NORM:
         return np.array([1.0, 0.0, 0.0])
     return vec / norm
 
+
 @st.composite
-def rotation_matrices(draw):
+def rotation_matrices(draw: st.DrawFn) -> npt.NDArray[np.float64]:
     """Generate a valid 3x3 rotation matrix using random axis and angle."""
     axis = draw(unit_vectors())
     angle = draw(st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False))
     return rotation_matrix_from_axis_angle(axis, angle)
+
 
 translations = arrays(
     np.float64,
@@ -189,8 +233,9 @@ translations = arrays(
     elements=st.floats(min_value=-1000.0, max_value=1000.0, allow_nan=False, allow_infinity=False),
 )
 
+
 @st.composite
-def point_clouds(draw):
+def point_clouds(draw: st.DrawFn) -> npt.NDArray[np.float64]:
     """Generate a variable-length point cloud of shape (N, 3)."""
     n = draw(st.integers(min_value=1, max_value=100))
     return draw(
@@ -206,74 +251,102 @@ def point_clouds(draw):
         ),
     )
 
+
 @given(
     axis=unit_vectors(),
     angle=st.floats(min_value=-2 * np.pi, max_value=2 * np.pi, allow_nan=False, allow_infinity=False),
 )
 @settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
-def test_property_rotation_matrix_validity(axis, angle):
+def test_property_rotation_matrix_validity(axis: npt.NDArray[np.float64], angle: float) -> None:
     """Property: rotation_matrix_from_axis_angle produces valid orthogonal matrix with det=1."""
     r = rotation_matrix_from_axis_angle(axis, angle)
-    assert r.shape == (3, 3)
+    if not (r.shape == (3, 3)):
+        raise AssertionError
     # Check orthogonality: r * r.T = I
-    assert np.allclose(np.matmul(r, r.T), np.eye(3), atol=1e-6)
+    if not (np.allclose(np.matmul(r, r.T), np.eye(3), atol=1e-6)):
+        raise AssertionError
     # Check determinant is ~ 1.0
-    assert np.isclose(np.linalg.det(r), 1.0, atol=1e-6)
+    if not (np.isclose(np.linalg.det(r), 1.0, atol=1e-6)):
+        raise AssertionError
+
 
 @given(
     axis=unit_vectors(),
     angle=st.floats(min_value=-np.pi, max_value=np.pi, allow_nan=False, allow_infinity=False),
 )
 @settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
-def test_property_rotation_matrix_axis_angle_roundtrip(axis, angle):
+def test_property_rotation_matrix_axis_angle_roundtrip(axis: npt.NDArray[np.float64], angle: float) -> None:
     """Property: converting matrix back to axis-angle reconstructs the same rotation matrix."""
     r = rotation_matrix_from_axis_angle(axis, angle)
     rec_axis, rec_angle = rotation_matrix_to_axis_angle(r)
     # Reconstruct matrix from recovered axis/angle and check equality with r
     r_rec = rotation_matrix_from_axis_angle(rec_axis, rec_angle)
-    assert np.allclose(r, r_rec, atol=1e-6)
+    if not (np.allclose(r, r_rec, atol=1e-6)):
+        raise AssertionError
+
 
 @given(rotation=rotation_matrices(), translation=translations)
 @settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
-def test_property_make_and_invert_transform(rotation, translation):
+def test_property_make_and_invert_transform(
+    rotation: npt.NDArray[np.float64],
+    translation: npt.NDArray[np.float64],
+) -> None:
     """Property: make_transform and invert_transform roundtrip and grasp pose consistency."""
     t = make_transform(rotation, translation)
-    assert t.shape == (4, 4)
-    assert np.allclose(t[:3, :3], rotation)
-    assert np.allclose(t[:3, 3], translation)
-    assert np.allclose(t[3, :], [0.0, 0.0, 0.0, 1.0])
+    if not (t.shape == (4, 4)):
+        raise AssertionError
+    if not (np.allclose(t[:3, :3], rotation)):
+        raise AssertionError
+    if not (np.allclose(t[:3, 3], translation)):
+        raise AssertionError
+    if not (np.allclose(t[3, :], [0.0, 0.0, 0.0, 1.0])):
+        raise AssertionError
 
     t_grasp = grasp_pose_to_transform(rotation, translation)
-    assert np.allclose(t, t_grasp)
+    if not (np.allclose(t, t_grasp)):
+        raise AssertionError
 
     t_inv = invert_transform(t)
     # Check roundtrip invert(invert(t)) = t
-    assert np.allclose(invert_transform(t_inv), t, atol=1e-6)
+    if not (np.allclose(invert_transform(t_inv), t, atol=1e-6)):
+        raise AssertionError
     # Check matrix multiplication product is identity
-    assert np.allclose(np.matmul(t, t_inv), np.eye(4), atol=1e-6)
-    assert np.allclose(np.matmul(t_inv, t), np.eye(4), atol=1e-6)
+    if not (np.allclose(np.matmul(t, t_inv), np.eye(4), atol=1e-6)):
+        raise AssertionError
+    if not (np.allclose(np.matmul(t_inv, t), np.eye(4), atol=1e-6)):
+        raise AssertionError
+
 
 @given(points=point_clouds(), rotation=rotation_matrices(), translation=translations)
 @settings(max_examples=1000, suppress_health_check=[HealthCheck.large_base_example])
-def test_property_apply_transform(points, rotation, translation):
+def test_property_apply_transform(
+    points: npt.NDArray[np.float64],
+    rotation: npt.NDArray[np.float64],
+    translation: npt.NDArray[np.float64],
+) -> None:
     """Property: apply_transform correctly transforms points and invert_transform reverts them."""
     t = make_transform(rotation, translation)
     transformed = apply_transform(points, t)
-    assert transformed.shape == points.shape
+    if not (transformed.shape == points.shape):
+        raise AssertionError
 
     # Explicit computation: P * R^T + t^T
     expected = np.matmul(points, rotation.T) + translation
-    assert np.allclose(transformed, expected, atol=1e-6)
+    if not (np.allclose(transformed, expected, atol=1e-6)):
+        raise AssertionError
 
     # Inverted transform reverts the points
     t_inv = invert_transform(t)
     reverted = apply_transform(transformed, t_inv)
-    assert np.allclose(reverted, points, atol=1e-6)
+    if not (np.allclose(reverted, points, atol=1e-6)):
+        raise AssertionError
+
 
 def test_geometry_additional_validation_branches() -> None:
     """Verify validation checks on invalid rotations, translations, axes, angles, and transform shapes."""
     # identity_transform
-    assert np.allclose(identity_transform(), np.eye(4))
+    if not (np.allclose(identity_transform(), np.eye(4))):
+        raise AssertionError
 
     # rotation_matrix_from_axis_angle
     with pytest.raises(TypeError, match="Axis must be a numpy array"):
@@ -318,4 +391,5 @@ def test_geometry_additional_validation_branches() -> None:
         apply_transform(np.zeros((5, 3)), np.eye(3))
 
     # grasp_pose_to_transform
-    assert np.allclose(grasp_pose_to_transform(np.eye(3), np.zeros(3)), np.eye(4))
+    if not (np.allclose(grasp_pose_to_transform(np.eye(3), np.zeros(3)), np.eye(4))):
+        raise AssertionError

@@ -2,36 +2,41 @@
 
 from __future__ import annotations
 
-from grasping_ai.data.pointcloud_dataset import save_grasp_sample
+import copy
+from datetime import UTC, datetime
+from pathlib import Path
+from unittest.mock import patch
 
+import numpy as np
+import pytest
+import torch
+from loguru import logger
+
+from grasping_ai.data.pointcloud_dataset import save_grasp_sample
 from grasping_ai.pipelines.evaluate import (
     read_jsonl_records,
     write_evaluation_report,
 )
-
 from grasping_ai.pipelines.train_diffusion import run_diffusion_training_pipeline
-
 from grasping_ai.training.trainer import (
     build_training_step,
     load_training_checkpoint,
     run_training_loop,
     save_training_checkpoint,
 )
-
 from grasping_ai.utils.logging_utils import (
     init_mlflow,
     setup_logging,
 )
 
-import copy
+EXPECTED_TWO_CALLS = 2
+EXPECTED_SEED = 42
 
-import numpy as np
-import torch
 
 class DummyModel(torch.nn.Module):
     """A simple, un-parameterized dummy model to simulate neural net structures during testing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize DummyModel with standard fully connected layers and dimensions."""
         super().__init__()
         self.fc = torch.nn.Linear(9, 9)
@@ -39,11 +44,12 @@ class DummyModel(torch.nn.Module):
         self.hidden_dim = 256
         self.num_layers = 4
 
-    def forward(self, x, t, cond):
+    def forward(self, x: torch.Tensor, _t: object, _cond: object) -> torch.Tensor:
         """Perform a dummy forward pass returning the linear mapping of the input."""
         return self.fc(x)
 
-def test_build_training_step_seeding():
+
+def test_build_training_step_seeding() -> None:
     """Verify that the built training step functions produce identical outputs given the same seed."""
     model = DummyModel()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -60,9 +66,11 @@ def test_build_training_step_seeding():
 
     res1 = step1(inputs, targets)
     res2 = step2(inputs, targets)
-    assert np.allclose(res1["loss"], res2["loss"])
+    if not (np.allclose(res1["loss"], res2["loss"])):
+        raise AssertionError
 
-def test_training_loop_tracking(tmp_path):
+
+def test_training_loop_tracking(tmp_path: Path) -> None:
     """Verify that training loop processes logs to Tensorboard and checkpoints parameters under correct keys."""
     model = DummyModel()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -75,11 +83,12 @@ def test_training_loop_tracking(tmp_path):
 
     metadata = {"lr": 1e-3, "batch_size": 2}
 
-    from unittest.mock import patch
-    with patch("mlflow.active_run", return_value=True), \
-         patch("mlflow.log_param") as mock_log_param, \
-         patch("mlflow.log_metric") as mock_log_metric, \
-         patch("mlflow.log_artifact") as mock_log_art:
+    with (
+        patch("mlflow.active_run", return_value=True),
+        patch("mlflow.log_param") as mock_log_param,
+        patch("mlflow.log_metric") as mock_log_metric,
+        patch("mlflow.log_artifact") as mock_log_art,
+    ):
         run_training_loop(
             step,
             dataloader,
@@ -90,21 +99,28 @@ def test_training_loop_tracking(tmp_path):
             metadata=metadata,
             seed=42,
         )
-        assert mock_log_param.call_count == 2
-        assert mock_log_metric.call_count == 1
-        assert mock_log_art.call_count == 1
+        if not (mock_log_param.call_count == EXPECTED_TWO_CALLS):
+            raise AssertionError
+        if not (mock_log_metric.call_count == 1):
+            raise AssertionError
+        if not (mock_log_art.call_count == 1):
+            raise AssertionError
 
-    assert checkpoint_path.is_file()
-    assert log_dir.is_dir()
+    if not (checkpoint_path.is_file()):
+        raise AssertionError
+    if not (log_dir.is_dir()):
+        raise AssertionError
     event_files = list(log_dir.glob("events.out.tfevents.*"))
-    assert len(event_files) > 0
+    if not (len(event_files) > 0):
+        raise AssertionError
 
     checkpoint = torch.load(checkpoint_path)
-    assert checkpoint.get("seed") == 42
+    if not (checkpoint.get("seed") == EXPECTED_SEED):
+        raise AssertionError
 
-def test_evaluation_tracking(tmp_path):
+
+def test_evaluation_tracking(tmp_path: Path) -> None:
     """Verify that evaluation reports log the expected summary records and push events to Tensorboard."""
-    
     report_path = tmp_path / "report.jsonl"
     log_dir = tmp_path / "tb_eval_logs"
 
@@ -116,24 +132,29 @@ def test_evaluation_tracking(tmp_path):
 
     write_evaluation_report(report_path, results, experiment_log_dir=log_dir)
 
-    assert report_path.is_file()
+    if not (report_path.is_file()):
+        raise AssertionError
     loaded = next(record for record in read_jsonl_records(report_path) if record.get("record_type") == "summary")
-    assert loaded == {"record_type": "summary", **results}
+    if not (loaded == {"record_type": "summary", **results}):
+        raise AssertionError
 
-    assert log_dir.is_dir()
+    if not (log_dir.is_dir()):
+        raise AssertionError
     event_files = list(log_dir.glob("events.out.tfevents.*"))
-    assert len(event_files) > 0
+    if not (len(event_files) > 0):
+        raise AssertionError
 
-def test_supervised_reproducibility(tmp_path):
+
+def test_supervised_reproducibility(tmp_path: Path) -> None:
     """Verify that supervised model training is reproducible with matching seeds and stochastic with different seeds."""
-    
     dataset_root = tmp_path / "mock_dataset"
     dataset_root.mkdir()
 
+    rng = np.random.default_rng()
     save_grasp_sample(
         dataset_root / "test_object.npz",
         {
-            "point_cloud": np.random.randn(10, 3).astype(np.float32),
+            "point_cloud": rng.standard_normal((10, 3)).astype(np.float32),
             "grasp_poses": np.array([np.eye(4) for _ in range(2)], dtype=np.float32),
             "scores": None,
             "object_id": "test_object",
@@ -188,17 +209,19 @@ def test_supervised_reproducibility(tmp_path):
     chk3 = torch.load(checkpoint_path3)
 
     for k in chk1["model_state_dict"]:
-        assert torch.allclose(chk1["model_state_dict"][k], chk2["model_state_dict"][k])
+        if not (torch.allclose(chk1["model_state_dict"][k], chk2["model_state_dict"][k])):
+            raise AssertionError
 
     diff = False
     for k in chk1["model_state_dict"]:
         if not torch.allclose(chk1["model_state_dict"][k], chk3["model_state_dict"][k]):
             diff = True
             break
-    assert diff, "Different seeds should produce different model initialization and noise"
+    if not (diff):
+        msg = "Different seeds should produce different model initialization and noise"
+        raise AssertionError(msg)
 
     # Test invalid pretrained_encoder_path type
-    import pytest
     with pytest.raises(TypeError):
         run_diffusion_training_pipeline(
             dataset_root=dataset_root,
@@ -227,12 +250,9 @@ def test_supervised_reproducibility(tmp_path):
         pretrained_encoder_path=checkpoint_path1,
     )
 
-def test_setup_logging():
-    """Test setup_logging with console and file logs."""
-    from datetime import UTC, datetime
-    from pathlib import Path
 
-    
+def test_setup_logging() -> None:
+    """Test setup_logging with console and file logs."""
     current_date = datetime.now(tz=UTC).date().isoformat()
     expected_file = Path("logs") / f"{current_date}-test_run.log"
 
@@ -241,29 +261,28 @@ def test_setup_logging():
 
     setup_logging(module_name="test_run", level="DEBUG")
 
-    from loguru import logger
     logger.debug("test log message")
 
-    assert expected_file.is_file()
+    if not (expected_file.is_file()):
+        raise AssertionError
     content = expected_file.read_text()
-    assert "test log message" in content
+    if "test log message" not in content:
+        raise AssertionError
 
     # Clean up
     logger.remove()
     expected_file.unlink()
 
-def test_init_mlflow():
+
+def test_init_mlflow() -> None:
     """Test init_mlflow with different configurations."""
-    
     # 1. backend != mlflow
     config_none = {"tracking": {"backend": "none"}}
-    assert init_mlflow(config_none) is False
+    if init_mlflow(config_none) is not False:
+        raise AssertionError
 
     # 2. backend == mlflow
-    from unittest.mock import patch
-    with patch("mlflow.set_tracking_uri") as mock_set_uri, \
-         patch("mlflow.set_experiment") as mock_set_exp:
-
+    with patch("mlflow.set_tracking_uri") as mock_set_uri, patch("mlflow.set_experiment") as mock_set_exp:
         config_mlflow = {
             "tracking": {
                 "backend": "mlflow",
@@ -273,15 +292,14 @@ def test_init_mlflow():
                 },
             },
         }
-        assert init_mlflow(config_mlflow) is True
+        if init_mlflow(config_mlflow) is not True:
+            raise AssertionError
         mock_set_uri.assert_called_once_with("http://localhost:5000")
         mock_set_exp.assert_called_once_with("test_experiment")
 
-def test_save_training_checkpoint_errors():
-    """Verify that trainer functions check input types and raise errors."""
-    import pytest
 
-    
+def test_save_training_checkpoint_errors() -> None:
+    """Verify that trainer functions check input types and raise errors."""
     model = DummyModel()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
@@ -291,9 +309,9 @@ def test_save_training_checkpoint_errors():
     with pytest.raises(TypeError):
         load_training_checkpoint("not_a_path_object", model, optimizer, "cpu")
 
-def test_training_loop_dataloader_types(tmp_path):
+
+def test_training_loop_dataloader_types(tmp_path: Path) -> None:
     """Test trainer.py run_training_loop with different dataloader types."""
-    
     model = DummyModel()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn = torch.nn.MSELoss()
@@ -303,7 +321,7 @@ def test_training_loop_dataloader_types(tmp_path):
     batch = (torch.randn(2, 128), torch.randn(2, 9))
 
     # 1. Callable dataloader
-    def callable_dl():
+    def callable_dl() -> list[tuple[torch.Tensor, torch.Tensor]]:
         return [batch]
 
     run_training_loop(step, callable_dl, num_epochs=1, checkpoint_path=checkpoint_path, log_every=1)
@@ -311,4 +329,3 @@ def test_training_loop_dataloader_types(tmp_path):
     # 2. Iterator dataloader
     iter_dl = iter([batch])
     run_training_loop(step, iter_dl, num_epochs=1, checkpoint_path=checkpoint_path, log_every=1)
-

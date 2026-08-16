@@ -1,5 +1,4 @@
 defaults:
   - /scripts/base
-  - override /model: flow
-  - override /training: flow
+  - override /training@_global_: flow
   - _self_

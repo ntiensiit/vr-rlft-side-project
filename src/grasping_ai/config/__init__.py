@@ -24,10 +24,10 @@ from grasping_ai.config.flattened_yaml_config import (
 __all__ = [
     "DEFAULT_CONFIG_DIR",
     "DEFAULT_DIFFUSION_SCHEDULE",
-    "DiffusionSchedule",
     "FLATTENED_YAML_CONFIG",
-    "FlattenedYAMLConfig",
     "SCRIPTS_CONFIG_PATH",
+    "DiffusionSchedule",
+    "FlattenedYAMLConfig",
     "compose_config",
     "config_get",
     "config_value",

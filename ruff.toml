@@ -5,6 +5,8 @@ extend-exclude = [".venv", "build", "dist", "notebooks"]
 
 [lint]
 select = ["ALL"]
+# Text-style rules (not code or comments): copyright notices and exception-message wording.
+ignore = ["CPY001", "EM101", "EM102", "TRY003"]
 
 [lint.pydocstyle]
 convention = "google"

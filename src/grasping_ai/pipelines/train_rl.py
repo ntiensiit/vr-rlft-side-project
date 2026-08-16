@@ -2,36 +2,88 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import torch
+from stable_baselines3 import PPO
+
 from grasping_ai.models.rl_policy import (
     build_policy_network,
     build_sb3_net_arch,
     copy_sb3_policy_weights,
     save_rl_policy_checkpoint,
 )
-
-from grasping_ai.simulation.mujoco_env import (
-    MuJoCoGraspingEnv,
-    RewardConfig,
-)
-
+from grasping_ai.simulation import mujoco_env
 from grasping_ai.simulation.scene import build_scene_xml
-
 from grasping_ai.simulation.ycb import (
     find_ycb_mjcf,
     resolve_ycb_object_directory,
 )
-
 from grasping_ai.utils.path_validation import require_path
-
-from typing import TYPE_CHECKING
-
-import torch
-from stable_baselines3 import PPO
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-def run_rl_training_pipeline(
+
+@dataclass(frozen=True)
+class _RLHyperparameters:
+    """Scalar hyperparameters for PPO training and the exported policy."""
+
+    observation_dim: int
+    action_dim: int
+    hidden_dim: int
+    learning_rate: float
+    num_updates: int
+    gamma: float
+    n_steps: int
+    batch_size: int
+    n_epochs: int
+    policy_num_layers: int
+
+
+def _validate_rl_paths(robot_xml_path: Path, ycb_root: Path, object_ids: list[str]) -> None:
+    """Validate RL pipeline filesystem inputs."""
+    require_path(robot_xml_path, "robot_xml_path")
+    if not robot_xml_path.is_file():
+        msg = f"Robot XML file not found: {robot_xml_path}"
+        raise FileNotFoundError(msg)
+    if object_ids:
+        require_path(ycb_root, "ycb_root")
+    if object_ids and not ycb_root.is_dir():
+        msg = f"YCB root directory not found: {ycb_root}"
+        raise FileNotFoundError(msg)
+
+
+def _validate_rl_hyperparameters(hp: _RLHyperparameters) -> None:
+    """Validate scalar PPO/policy hyperparameters."""
+    positive_scalars: list[tuple[str, float]] = [
+        ("observation_dim", hp.observation_dim),
+        ("action_dim", hp.action_dim),
+        ("hidden_dim", hp.hidden_dim),
+        ("learning_rate", hp.learning_rate),
+        ("num_updates", hp.num_updates),
+    ]
+    for name, value in positive_scalars:
+        if value <= 0:
+            msg = f"{name} must be positive"
+            raise ValueError(msg)
+    if not 0.0 <= hp.gamma <= 1.0:
+        msg = "gamma must be in [0, 1]"
+        raise ValueError(msg)
+    ppo_scalars: list[tuple[str, int]] = [
+        ("n_steps", hp.n_steps),
+        ("batch_size", hp.batch_size),
+        ("n_epochs", hp.n_epochs),
+        ("policy_num_layers", hp.policy_num_layers),
+    ]
+    for name, value in ppo_scalars:
+        if value <= 0:
+            msg = f"{name} must be positive"
+            raise ValueError(msg)
+
+
+def run_rl_training_pipeline(  # noqa: PLR0913, PLR0917  # public pipeline API; tests call it positionally
     robot_xml_path: Path,
     ycb_root: Path,
     object_ids: list[str],
@@ -73,80 +125,72 @@ def run_rl_training_pipeline(
         n_epochs: Number of PPO optimization epochs per update.
         policy_num_layers: Hidden-layer count for the exported legacy policy MLP.
     """
-    require_path(robot_xml_path, "robot_xml_path")
-    if not robot_xml_path.is_file():
-        raise FileNotFoundError(f"Robot XML file not found: {robot_xml_path}")
-    if object_ids:
-        require_path(ycb_root, "ycb_root")
-    if object_ids and not ycb_root.is_dir():
-        raise FileNotFoundError(f"YCB root directory not found: {ycb_root}")
-    if observation_dim <= 0:
-        raise ValueError("observation_dim must be positive")
-    if action_dim <= 0:
-        raise ValueError("action_dim must be positive")
-    if hidden_dim <= 0:
-        raise ValueError("hidden_dim must be positive")
-    if learning_rate <= 0:
-        raise ValueError("learning_rate must be positive")
-    if num_updates <= 0:
-        raise ValueError("num_updates must be positive")
-    if not 0.0 <= gamma <= 1.0:
-        raise ValueError("gamma must be in [0, 1]")
-    if n_steps <= 0:
-        raise ValueError("n_steps must be positive")
-    if batch_size <= 0:
-        raise ValueError("batch_size must be positive")
-    if n_epochs <= 0:
-        raise ValueError("n_epochs must be positive")
-    if policy_num_layers <= 0:
-        raise ValueError("policy_num_layers must be positive")
+    hp = _RLHyperparameters(
+        observation_dim=observation_dim,
+        action_dim=action_dim,
+        hidden_dim=hidden_dim,
+        learning_rate=learning_rate,
+        num_updates=num_updates,
+        gamma=gamma,
+        n_steps=n_steps,
+        batch_size=batch_size,
+        n_epochs=n_epochs,
+        policy_num_layers=policy_num_layers,
+    )
+    _validate_rl_paths(robot_xml_path, ycb_root, object_ids)
+    _validate_rl_hyperparameters(hp)
     if len(object_ids) > 1:
+        msg = (
+            "object_ids must contain at most one object; the environment tracks a single object body during RL training"
+        )
         raise ValueError(
-            "object_ids must contain at most one object; "
-            "the environment tracks a single object body during RL training",
+            msg,
         )
 
     env_xml_path = robot_xml_path
     object_name: str | None = None
     if object_ids:
-                
         object_dir = resolve_ycb_object_directory(ycb_root, object_ids[0])
         object_xml_path = find_ycb_mjcf(object_dir)
         object_name = object_ids[0]
         env_xml_path = build_scene_xml(robot_xml_path, object_xml_path, None, object_name)
 
     try:
-        reward_config = RewardConfig.load_from_config()
-    except Exception:
-        reward_config = RewardConfig()
-    env = MuJoCoGraspingEnv(env_xml_path, object_name=object_name, reward_config=reward_config)
+        reward_config = mujoco_env.RewardConfig.load_from_config()
+    except Exception:  # noqa: BLE001  # any config-load failure falls back to default rewards
+        reward_config = mujoco_env.RewardConfig()
+    env = mujoco_env.MuJoCoGraspingEnv(env_xml_path, object_name=object_name, reward_config=reward_config)
 
     obs_shape = env.observation_space.shape
     act_shape = env.action_space.shape
     if obs_shape is None or act_shape is None:
-        raise ValueError("Environment space shapes cannot be None")
+        msg = "Environment space shapes cannot be None"
+        raise ValueError(msg)
 
-    if observation_dim != obs_shape[0]:
-        raise ValueError(
-            f"observation_dim ({observation_dim}) does not match environment observation dimension ({obs_shape[0]})",
+    if hp.observation_dim != obs_shape[0]:
+        msg = (
+            f"observation_dim ({hp.observation_dim}) does not match environment observation dimension ({obs_shape[0]})"
         )
-    if action_dim != act_shape[0]:
-        raise ValueError(f"action_dim ({action_dim}) does not match environment action dimension ({act_shape[0]})")
+        raise ValueError(
+            msg,
+        )
+    if hp.action_dim != act_shape[0]:
+        msg = f"action_dim ({hp.action_dim}) does not match environment action dimension ({act_shape[0]})"
+        raise ValueError(msg)
 
-    
     policy_kwargs = {
-        "net_arch": build_sb3_net_arch(hidden_dim, policy_num_layers),
+        "net_arch": build_sb3_net_arch(hp.hidden_dim, hp.policy_num_layers),
         "activation_fn": torch.nn.Tanh,
     }
 
     sb3_model = PPO(
         "MlpPolicy",
         env,
-        learning_rate=learning_rate,
-        n_steps=n_steps,
-        batch_size=batch_size,
-        n_epochs=n_epochs,
-        gamma=gamma,
+        learning_rate=hp.learning_rate,
+        n_steps=hp.n_steps,
+        batch_size=hp.batch_size,
+        n_epochs=hp.n_epochs,
+        gamma=hp.gamma,
         device=device,
         seed=seed,
         policy_kwargs=policy_kwargs,
@@ -154,20 +198,19 @@ def run_rl_training_pipeline(
         verbose=1,
     )
 
-    total_timesteps = num_updates * n_steps
+    total_timesteps = hp.num_updates * hp.n_steps
     sb3_model.learn(total_timesteps=total_timesteps)
 
-    
-    legacy_policy = build_policy_network(observation_dim, action_dim, hidden_dim, policy_num_layers)
+    legacy_policy = build_policy_network(hp.observation_dim, hp.action_dim, hp.hidden_dim, hp.policy_num_layers)
     copy_sb3_policy_weights(sb3_model.policy, legacy_policy)
 
     save_rl_policy_checkpoint(
         policy=legacy_policy,
         policy_checkpoint_path=policy_checkpoint_path,
-        epoch=num_updates,
-        observation_dim=observation_dim,
-        action_dim=action_dim,
-        hidden_dim=hidden_dim,
-        num_layers=policy_num_layers,
+        epoch=hp.num_updates,
+        observation_dim=hp.observation_dim,
+        action_dim=hp.action_dim,
+        hidden_dim=hp.hidden_dim,
+        num_layers=hp.policy_num_layers,
         seed=seed,
     )

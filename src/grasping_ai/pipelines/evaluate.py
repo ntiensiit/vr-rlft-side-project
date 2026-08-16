@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import json
+from typing import TYPE_CHECKING
+
+import numpy as np
+from loguru import logger
+from torch.utils.tensorboard import SummaryWriter
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.evaluation.collision import (
     build_collision_checker,
     check_collision,
     filter_collision_free_grasps,
     generate_analytical_contacts,
 )
-
 from grasping_ai.evaluation.force_closure import (
     build_force_closure_judge,
     compute_grasp_quality,
@@ -16,19 +23,8 @@ from grasping_ai.evaluation.force_closure import (
     evaluate_force_closure,
     load_contact_set,
 )
-
 from grasping_ai.evaluation.metrics import aggregate_grasp_success_rate
-
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
 from grasping_ai.utils.path_validation import require_path
-
-import json
-from typing import TYPE_CHECKING
-
-import numpy as np
-from loguru import logger
-from torch.utils.tensorboard import SummaryWriter
 
 GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
@@ -38,11 +34,46 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-def evaluate_generated_grasps(
+
+def _validate_evaluation_args(
+    grasp_poses: np.ndarray,
+    friction_coefficient: float,
+    lift_height_threshold: float,
+    clearance: float,
+    wrench_regularization: float,
+) -> np.ndarray:
+    """Validate evaluation inputs and normalize ``grasp_poses`` to ``(K, 4, 4)``."""
+    if grasp_poses.ndim == POINT_CLOUD_NDIM:
+        if grasp_poses.shape == (4, 4):
+            grasp_poses = grasp_poses.reshape(1, 4, 4)
+        else:
+            msg = "grasp_poses must have shape (K, 4, 4) or (4, 4)"
+            raise ValueError(msg)
+
+    if grasp_poses.ndim != GRASP_POSES_NDIM or grasp_poses.shape[1:] != SE3_MATRIX_SHAPE:
+        msg = "grasp_poses must have shape (K, 4, 4)"
+        raise ValueError(msg)
+    if friction_coefficient < 0:
+        msg = "friction_coefficient must be non-negative"
+        raise ValueError(msg)
+    if lift_height_threshold < 0:
+        msg = "lift_height_threshold must be non-negative"
+        raise ValueError(msg)
+    if clearance < 0:
+        msg = "clearance must be non-negative"
+        raise ValueError(msg)
+    if wrench_regularization < 0:
+        msg = "wrench_regularization must be non-negative"
+        raise ValueError(msg)
+    return grasp_poses
+
+
+def evaluate_generated_grasps(  # noqa: PLR0913  # public evaluation API; tests/scripts pass metric options as keywords
     grasp_poses: np.ndarray,
     object_point_cloud: np.ndarray,
     gripper_point_cloud: np.ndarray,
     contact_set_provider: Callable[[np.ndarray], list[dict[str, np.ndarray]]] | None = None,
+    *,
     friction_coefficient: float = 0.5,
     lift_height_threshold: float = 0.05,
     clearance: float = 0.005,
@@ -72,22 +103,13 @@ def evaluate_generated_grasps(
     Raises:
         ValueError: If ``grasp_poses`` shape or metric parameters are invalid.
     """
-    if grasp_poses.ndim == POINT_CLOUD_NDIM:
-        if grasp_poses.shape == (4, 4):
-            grasp_poses = grasp_poses.reshape(1, 4, 4)
-        else:
-            raise ValueError("grasp_poses must have shape (K, 4, 4) or (4, 4)")
-
-    if grasp_poses.ndim != GRASP_POSES_NDIM or grasp_poses.shape[1:] != SE3_MATRIX_SHAPE:
-        raise ValueError("grasp_poses must have shape (K, 4, 4)")
-    if friction_coefficient < 0:
-        raise ValueError("friction_coefficient must be non-negative")
-    if lift_height_threshold < 0:
-        raise ValueError("lift_height_threshold must be non-negative")
-    if clearance < 0:
-        raise ValueError("clearance must be non-negative")
-    if wrench_regularization < 0:
-        raise ValueError("wrench_regularization must be non-negative")
+    grasp_poses = _validate_evaluation_args(
+        grasp_poses,
+        friction_coefficient,
+        lift_height_threshold,
+        clearance,
+        wrench_regularization,
+    )
 
     collision_checker = build_collision_checker(object_point_cloud, gripper_point_cloud, clearance=clearance)
     logger.info("Evaluating {} grasp poses", grasp_poses.shape[0])
@@ -132,6 +154,7 @@ def evaluate_generated_grasps(
         )
     return results
 
+
 def aggregate_evaluation_results(
     per_object_results: dict[str, list[dict[str, float | bool]]],
 ) -> dict[str, float]:
@@ -147,7 +170,8 @@ def aggregate_evaluation_results(
         TypeError: If ``per_object_results`` is not a dictionary.
     """
     if not isinstance(per_object_results, dict):
-        raise TypeError("per_object_results must be a dictionary")
+        msg = "per_object_results must be a dictionary"
+        raise TypeError(msg)
 
     total_grasps = 0
     collision_free_count = 0
@@ -205,6 +229,7 @@ def aggregate_evaluation_results(
         "max_grasp_quality": max_q,
     }
 
+
 def write_jsonl_records(
     output_path: Path,
     records: list[dict[str, object]],
@@ -229,7 +254,9 @@ def write_jsonl_records(
                 fp.write(json.dumps(record, allow_nan=True))
                 fp.write("\n")
     except Exception as e:
-        raise ValueError(f"Failed to write JSONL records: {e}") from e
+        msg = f"Failed to write JSONL records: {e}"
+        raise ValueError(msg) from e
+
 
 def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
     """Read JSON Lines records from disk.
@@ -251,7 +278,8 @@ def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
         with input_path.open(encoding="utf-8") as fp:
             lines = [line.strip() for line in fp]
     except OSError as e:
-        raise ValueError(f"Failed to read JSONL records: {e}") from e
+        msg = f"Failed to read JSONL records: {e}"
+        raise ValueError(msg) from e
 
     records: list[dict[str, object]] = []
     for line_number, stripped_line in enumerate(lines, start=1):
@@ -260,11 +288,14 @@ def read_jsonl_records(input_path: Path) -> list[dict[str, object]]:
         try:
             loaded = json.loads(stripped_line)
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to read JSONL records: {e}") from e
+            msg = f"Failed to read JSONL records: {e}"
+            raise ValueError(msg) from e
         if not isinstance(loaded, dict):
-            raise TypeError(f"JSONL line {line_number} in {input_path} must be a mapping")
+            msg = f"JSONL line {line_number} in {input_path} must be a mapping"
+            raise TypeError(msg)
         records.append(loaded)
     return records
+
 
 def write_evaluation_report(
     report_path: Path,

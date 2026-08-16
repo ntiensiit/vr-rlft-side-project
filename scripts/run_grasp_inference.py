@@ -2,30 +2,34 @@
 
 from __future__ import annotations
 
-from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
-
-from grasping_ai.inference.grasp_inference_runtime import run_single_object_grasp_inference
-
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import hydra
-from omegaconf import DictConfig
+
+from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+from grasping_ai.inference.grasp_inference_runtime import run_single_object_grasp_inference
+
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
+
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/run_grasp_inference")
 def main(cfg: DictConfig) -> None:
+    """Run single-object grasp inference from the hydra configuration."""
     yaml_config = FlattenedYAMLConfig(cfg)
     observation_path = yaml_config.value("observation", value_type=Path, script_or=True)
     run_single_object_grasp_inference(
         checkpoint_path=yaml_config.value(
-            "checkpoint", "model", "checkpoint", value_type=Path, script_or=True, required=True
+            "checkpoint", "model", "checkpoint", value_type=Path, script_or=True, required=True,
         ),
         output_path=yaml_config.value(
-            "output", "model", "exports", "inference_candidates", value_type=Path, script_or=True, required=True
+            "output", "model", "exports", "inference_candidates", value_type=Path, script_or=True, required=True,
         ),
         method=str(
             yaml_config.value(
-                "method", value_type=object, default=str(yaml_config.get("default_method")), script_or=True
-            )
+                "method", value_type=object, default=str(yaml_config.get("default_method")), script_or=True,
+            ),
         ),
         feature_dim=yaml_config.value("architecture", "feature_dim", value_type=int),
         num_steps=yaml_config.value("model", "inference_steps", value_type=int, default=5),

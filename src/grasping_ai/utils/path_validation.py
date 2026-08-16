@@ -19,7 +19,8 @@ def require_path(value: object, name: str) -> Path:
         TypeError: If ``value`` is not a ``pathlib.Path`` instance.
     """
     if not isinstance(value, Path):
-        raise TypeError(f"{name} must be a pathlib.Path instance")
+        msg = f"{name} must be a pathlib.Path instance"
+        raise TypeError(msg)
     return value
 
 
@@ -41,5 +42,6 @@ def require_optional_path(value: object | None, name: str) -> Path | None:
     if value is None:
         return None
     if not isinstance(value, Path):
-        raise TypeError(f"{name} must be a pathlib.Path instance or None")
+        msg = f"{name} must be a pathlib.Path instance or None"
+        raise TypeError(msg)
     return value

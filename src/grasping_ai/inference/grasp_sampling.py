@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from grasping_ai.data.grasp_vector import vec_to_se3
+from typing import TYPE_CHECKING
 
+import torch
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+from grasping_ai.data.grasp_vector import vec_to_se3
 from grasping_ai.models.equivariant_encoder import (
     compose_with_se3_frame,
     compute_se3_frame,
@@ -11,17 +15,12 @@ from grasping_ai.models.equivariant_encoder import (
     pool_object_features,
 )
 
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
-from typing import TYPE_CHECKING
-
-import torch
-
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 
 if TYPE_CHECKING:
     import numpy as np
+
 
 def prepare_point_cloud_tensor(point_cloud: np.ndarray, device: str) -> torch.Tensor:
     """Validate and batch a numpy point cloud for grasp inference.
@@ -34,11 +33,14 @@ def prepare_point_cloud_tensor(point_cloud: np.ndarray, device: str) -> torch.Te
         Point cloud tensor with shape ``(1, N, 3)`` on ``device``.
     """
     if point_cloud.ndim != POINT_CLOUD_NDIM or point_cloud.shape[1] != SPATIAL_DIM:
-        raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
+        msg = f"point_cloud must have shape (N, 3), got {point_cloud.shape}"
+        raise ValueError(msg)
     return torch.from_numpy(point_cloud).float().to(device).unsqueeze(0)
 
+
 def encode_grasp_conditioning(
-    encoder: torch.nn.Module, point_cloud: torch.Tensor,
+    encoder: torch.nn.Module,
+    point_cloud: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Compute SE(3) frame features and pooled conditioning for grasp sampling.
 
@@ -53,6 +55,7 @@ def encode_grasp_conditioning(
     features = encode_point_cloud(encoder, point_cloud)
     conditioning = pool_object_features(features)
     return conditioning, frame, centroid
+
 
 def sample_to_world_frame(
     samples: torch.Tensor,

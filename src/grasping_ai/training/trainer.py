@@ -2,21 +2,6 @@
 
 from __future__ import annotations
 
-from grasping_ai.config.diffusion import (
-    DEFAULT_DIFFUSION_SCHEDULE,
-    linear_beta_schedule,
-)
-
-from grasping_ai.training.checkpoint_io import load_torch_checkpoint
-
-from grasping_ai.training.experiment_logging import (
-    try_log_mlflow_artifact,
-    try_log_mlflow_metric,
-    try_log_mlflow_param,
-)
-
-from grasping_ai.utils.path_validation import require_path
-
 from collections.abc import Callable, Iterable, Iterator
 from typing import TYPE_CHECKING
 
@@ -24,12 +9,25 @@ import torch
 from loguru import logger
 from torch.utils.tensorboard import SummaryWriter
 
+from grasping_ai.config.diffusion import (
+    DEFAULT_DIFFUSION_SCHEDULE,
+    linear_beta_schedule,
+)
+from grasping_ai.training.checkpoint_io import load_torch_checkpoint
+from grasping_ai.training.experiment_logging import (
+    try_log_mlflow_artifact,
+    try_log_mlflow_metric,
+    try_log_mlflow_param,
+)
+from grasping_ai.utils.path_validation import require_path
+
 if TYPE_CHECKING:
     from pathlib import Path
 
 BatchSource = Iterable[tuple[torch.Tensor, torch.Tensor]] | Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]]
 OptimizerFactory = Callable[[Iterator[torch.nn.Parameter]], torch.optim.Optimizer]
 LossForward = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+
 
 class SupervisedTrainingStep:
     """Callable supervised training step that retains model and optimizer references."""
@@ -56,6 +54,7 @@ class SupervisedTrainingStep:
         self.optimizer.step()
         return {"loss": float(loss.item())}
 
+
 def build_supervised_training_step(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -64,6 +63,7 @@ def build_supervised_training_step(
 ) -> SupervisedTrainingStep:
     """Build a generic supervised step closure with pluggable forward/loss logic."""
     return SupervisedTrainingStep(model, optimizer, device, forward_fn)
+
 
 def build_adam_optimizer(parameters: Iterator[torch.nn.Parameter], learning_rate: float) -> torch.optim.Optimizer:
     """Create an Adam optimizer for the given parameters.
@@ -76,8 +76,10 @@ def build_adam_optimizer(parameters: Iterator[torch.nn.Parameter], learning_rate
         A configured ``torch.optim.Optimizer`` instance.
     """
     if learning_rate <= 0:
-        raise ValueError("learning_rate must be positive")
+        msg = "learning_rate must be positive"
+        raise ValueError(msg)
     return torch.optim.Adam(list(parameters), lr=learning_rate)
+
 
 def build_training_step(
     model: torch.nn.Module,
@@ -106,7 +108,7 @@ def build_training_step(
 
     def diffusion_forward(cond: torch.Tensor, x_0: torch.Tensor) -> torch.Tensor:
         batch_size_val = x_0.shape[0]
-        
+
         num_steps = DEFAULT_DIFFUSION_SCHEDULE.num_steps
         t = torch.randint(0, num_steps, (batch_size_val,), device=device_obj, generator=generator)
         noise = torch.randn(x_0.shape, dtype=x_0.dtype, device=device_obj, generator=generator)
@@ -120,11 +122,53 @@ def build_training_step(
 
     return build_supervised_training_step(model, optimizer, device, diffusion_forward)
 
-def run_training_loop(
+
+def _init_writer(experiment_log_dir: Path | None, metadata: dict[str, object] | None) -> SummaryWriter | None:
+    """Create a TensorBoard writer and log run metadata when configured."""
+    if experiment_log_dir is None:
+        return None
+    writer = SummaryWriter(log_dir=str(experiment_log_dir))
+    if metadata:
+        for k, v in metadata.items():
+            writer.add_text(f"metadata/{k}", str(v), global_step=0)
+        for k, v in metadata.items():
+            try_log_mlflow_param(k, str(v))
+    return writer
+
+
+def _resolve_epoch_batches(dataloader: BatchSource) -> Iterable[tuple[torch.Tensor, torch.Tensor]]:
+    """Return a fresh batch stream for one epoch from any dataloader flavor."""
+    if callable(dataloader):
+        return dataloader()
+    if hasattr(dataloader, "__next__"):
+        return dataloader
+    return iter(dataloader)
+
+
+def _log_training_step(
+    writer: SummaryWriter | None,
+    metrics: dict[str, float],
+    epoch: int,
+    step_count: int,
+    log_every: int,
+) -> None:
+    """Emit per-step training logs when the logging interval is reached."""
+    if log_every <= 0 or step_count % log_every != 0:
+        return
+    loss_val = metrics.get("loss", 0.0)
+    logger.info("Epoch {}, Step {}: Loss = {:.4f}", epoch, step_count, loss_val)
+    if writer is not None:
+        writer.add_scalar("loss", float(loss_val), global_step=step_count)
+    try_log_mlflow_metric("loss", float(loss_val), step_count)
+
+
+# Public API: pipelines and tests pass loop options by keyword.
+def run_training_loop(  # noqa: PLR0913
     training_step: SupervisedTrainingStep,
     dataloader: BatchSource,
     num_epochs: int,
     checkpoint_path: Path,
+    *,
     log_every: int,
     experiment_log_dir: Path | None = None,
     metadata: dict[str, object] | None = None,
@@ -143,36 +187,15 @@ def run_training_loop(
         metadata: Optional dictionary of experiment hyperparameters/run metadata.
         seed: Optional training seed to record in the checkpoint.
     """
-    writer = None
-    if experiment_log_dir is not None:
-        writer = SummaryWriter(log_dir=str(experiment_log_dir))
-        if metadata:
-            for k, v in metadata.items():
-                writer.add_text(f"metadata/{k}", str(v), global_step=0)
-            for k, v in metadata.items():
-                try_log_mlflow_param(k, str(v))
+    writer = _init_writer(experiment_log_dir, metadata)
 
     try:
         step_count = 0
-        # To support both iterator and iterable dataloaders
         for epoch in range(num_epochs):
-            batches: Iterable[tuple[torch.Tensor, torch.Tensor]]
-            if callable(dataloader):
-                batches = dataloader()
-            elif hasattr(dataloader, "__next__"):
-                batches = dataloader
-            else:
-                batches = iter(dataloader)
-
-            for inputs, targets in batches:
+            for inputs, targets in _resolve_epoch_batches(dataloader):
                 metrics = training_step(inputs, targets)
                 step_count += 1
-                if log_every > 0 and step_count % log_every == 0:
-                    loss_val = metrics.get("loss", 0.0)
-                    logger.info("Epoch {}, Step {}: Loss = {:.4f}", epoch, step_count, loss_val)
-                    if writer is not None:
-                        writer.add_scalar("loss", float(loss_val), global_step=step_count)
-                    try_log_mlflow_metric("loss", float(loss_val), step_count)
+                _log_training_step(writer, metrics, epoch, step_count, log_every)
     finally:
         if writer is not None:
             writer.close()
@@ -185,6 +208,7 @@ def run_training_loop(
         seed,
     )
     try_log_mlflow_artifact(str(checkpoint_path))
+
 
 def save_training_checkpoint(
     model: torch.nn.Module,
@@ -224,7 +248,9 @@ def save_training_checkpoint(
     try:
         torch.save(checkpoint, checkpoint_path)
     except Exception as e:
-        raise ValueError(f"Failed to save checkpoint: {e}") from e
+        msg = f"Failed to save checkpoint: {e}"
+        raise ValueError(msg) from e
+
 
 def load_training_checkpoint(
     checkpoint_path: Path,
@@ -245,7 +271,6 @@ def load_training_checkpoint(
     """
     require_path(checkpoint_path, "checkpoint_path")
 
-    
     checkpoint = load_torch_checkpoint(checkpoint_path, device)
 
     model.load_state_dict(checkpoint["model_state_dict"])

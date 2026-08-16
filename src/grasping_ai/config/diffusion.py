@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
 import torch
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 
 DIFFUSION_BETA_START = float(FLATTENED_YAML_CONFIG.get("diffusion.beta_start", 1e-4))
 DIFFUSION_BETA_END = float(FLATTENED_YAML_CONFIG.get("diffusion.beta_end", 0.02))
 DIFFUSION_NUM_STEPS = int(FLATTENED_YAML_CONFIG.get("diffusion.num_steps", 100))
+
 
 @dataclass(frozen=True)
 class DiffusionSchedule:
@@ -26,7 +27,9 @@ class DiffusionSchedule:
     beta_end: float = DIFFUSION_BETA_END
     num_steps: int = DIFFUSION_NUM_STEPS
 
+
 DEFAULT_DIFFUSION_SCHEDULE = DiffusionSchedule()
+
 
 def linear_beta_schedule(
     schedule: DiffusionSchedule = DEFAULT_DIFFUSION_SCHEDULE,
@@ -41,9 +44,12 @@ def linear_beta_schedule(
         values from ``beta_start`` to ``beta_end`` inclusive.
     """
     if not isinstance(schedule, DiffusionSchedule):
-        raise TypeError("schedule must be a DiffusionSchedule instance")
+        msg = "schedule must be a DiffusionSchedule instance"
+        raise TypeError(msg)
     if schedule.num_steps <= 0:
-        raise ValueError("num_steps must be positive")
+        msg = "num_steps must be positive"
+        raise ValueError(msg)
     if schedule.beta_start < 0.0 or schedule.beta_end < 0.0:
-        raise ValueError("beta_start and beta_end must be non-negative")
+        msg = "beta_start and beta_end must be non-negative"
+        raise ValueError(msg)
     return torch.linspace(schedule.beta_start, schedule.beta_end, schedule.num_steps)

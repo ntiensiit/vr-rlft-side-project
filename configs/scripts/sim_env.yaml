@@ -1,5 +1,5 @@
 # @package _global_
 script:
   robot_xml: ${robot.description}
-  table_xml: ${env.table_xml}
+  table_xml: ${table_xml}
   ycb_root: ${paths.ycb_mjcf}

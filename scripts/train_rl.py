@@ -2,22 +2,29 @@
 
 from __future__ import annotations
 
-from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
-
-from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
-
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import hydra
-from omegaconf import DictConfig
+
+from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
+
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
+
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/train_rl")
 def main(cfg: DictConfig) -> None:
+    """Train the RL grasp policy from the hydra configuration."""
     yaml_config = FlattenedYAMLConfig(cfg)
+    configured_objects = yaml_config.value("objects", "ids", value_type=list[str])
     run_rl_training_pipeline(
         robot_xml_path=yaml_config.value("robot", "description", value_type=Path, required=True),
         ycb_root=yaml_config.value("paths", "ycb_mjcf", value_type=Path, required=True),
-        object_ids=yaml_config.value("objects", "ids", value_type=list[str]),
+        # The environment has one tracked object; use the first configured
+        # object while the library API still rejects ambiguous direct calls.
+        object_ids=configured_objects[:1],
         policy_checkpoint_path=yaml_config.value("rl", "checkpoint", value_type=Path, required=True),
         observation_dim=yaml_config.value("rl", "observation_dim", value_type=int),
         action_dim=yaml_config.value("rl", "action_dim", value_type=int),

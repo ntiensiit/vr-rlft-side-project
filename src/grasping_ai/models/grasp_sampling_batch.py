@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
 from typing import TYPE_CHECKING
 
 import torch
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
 
 def batch_conditioned_grasp_samples(
     conditioning: torch.Tensor,
@@ -34,11 +35,14 @@ def batch_conditioned_grasp_samples(
         Sampled grasp poses with shape ``(B, num_samples, grasp_dim)``.
     """
     if conditioning.ndim != POINT_CLOUD_NDIM:
-        raise ValueError(f"conditioning must have shape (B, F), got {conditioning.shape}")
+        msg = f"conditioning must have shape (B, F), got {conditioning.shape}"
+        raise ValueError(msg)
     if num_samples <= 0:
-        raise ValueError("num_samples must be a positive integer")
+        msg = "num_samples must be a positive integer"
+        raise ValueError(msg)
     if not isinstance(rng, torch.Generator):
-        raise TypeError("rng must be a torch.Generator instance")
+        msg = "rng must be a torch.Generator instance"
+        raise TypeError(msg)
 
     batch_size, feature_size = conditioning.shape
     device = conditioning.device

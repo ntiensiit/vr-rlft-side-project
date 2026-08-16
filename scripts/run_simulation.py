@@ -2,32 +2,32 @@
 
 from __future__ import annotations
 
-from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
-
-from grasping_ai.perception.geometry import identity_transform
-
-from grasping_ai.pipelines.evaluate import write_jsonl_records
-
-from grasping_ai.pipelines.simulate_grasp import run_simulation_sweep
-
-from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
-
-from grasping_ai.utils.logging_utils import setup_logging
-
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import hydra
 import numpy as np
-from omegaconf import DictConfig
+
+from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+from grasping_ai.perception.geometry import identity_transform
+from grasping_ai.pipelines.evaluate import write_jsonl_records
+from grasping_ai.pipelines.simulate_grasp import run_simulation_sweep
+from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
+from grasping_ai.utils.logging_utils import setup_logging
+
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
+
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/run_simulation")
 def main(cfg: DictConfig) -> None:
+    """Run the MuJoCo grasp simulation sweep and write outcome records."""
     setup_logging(module_name="simulation")
     yaml_config = FlattenedYAMLConfig(cfg)
 
     grasp_pose_format = str(yaml_config.value("grasp_pose_format", value_type=object, default="world", script_or=True))
     grasp_poses = np.load(
-        yaml_config.value("grasps", "model", "exports", "grasp_poses", value_type=Path, script_or=True, required=True)
+        yaml_config.value("grasps", "model", "exports", "grasp_poses", value_type=Path, script_or=True, required=True),
     )
     if grasp_pose_format == "object":
         grasp_poses = convert_grasps_to_world_frame(grasp_poses, identity_transform())
@@ -46,7 +46,7 @@ def main(cfg: DictConfig) -> None:
         object_id=object_id,
         ycb_root=yaml_config.value("ycb_root", "paths", "ycb_mjcf", value_type=Path, script_or=True, required=True),
         robot_xml_path=yaml_config.value(
-            "robot_xml", "robot", "description", value_type=Path, script_or=True, required=True
+            "robot_xml", "robot", "description", value_type=Path, script_or=True, required=True,
         ),
         table_xml_path=yaml_config.value("table_xml", "env", "table_xml", value_type=Path, script_or=True),
         num_simulation_steps=yaml_config.value("num_steps", value_type=int),
@@ -54,7 +54,7 @@ def main(cfg: DictConfig) -> None:
     )
 
     output_path = yaml_config.value(
-        "output", "model", "exports", "simulation_report", value_type=Path, script_or=True, required=True
+        "output", "model", "exports", "simulation_report", value_type=Path, script_or=True, required=True,
     )
     serialized: list[dict[str, object]] = []
     for grasp_index, outcome in enumerate(outcomes):

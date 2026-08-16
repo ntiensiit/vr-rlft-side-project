@@ -1,5 +1,3 @@
 defaults:
-  - project
   - training: diffusion
-  - override evaluation: diffusion
   - _self_

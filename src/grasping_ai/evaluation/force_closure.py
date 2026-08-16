@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
-from grasping_ai.utils.path_validation import require_path
-
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -13,6 +9,9 @@ import numpy as np
 from loguru import logger
 from scipy.optimize import linprog  # type: ignore[import-untyped]
 from scipy.spatial import ConvexHull  # type: ignore[import-untyped]
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+from grasping_ai.utils.path_validation import require_path
 
 ALIGNMENT_DOT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("tolerances.alignment_dot_threshold", 0.9))
 HULL_HALFSPACE_EPS = float(FLATTENED_YAML_CONFIG.get("metrics.hull_halfspace_eps", 1e-9))
@@ -28,6 +27,7 @@ if TYPE_CHECKING:
 ContactSet = list[dict[str, np.ndarray]]
 ForceClosureJudge = Callable[[ContactSet], bool]
 
+
 def _parse_contact_record(record: object) -> dict[str, np.ndarray]:
     """Validate one contact record from a serialized contact set.
 
@@ -42,15 +42,19 @@ def _parse_contact_record(record: object) -> dict[str, np.ndarray]:
             keys or non-array values.
     """
     if not isinstance(record, dict):
-        raise TypeError("Each contact record must be a dictionary")
+        msg = "Each contact record must be a dictionary"
+        raise TypeError(msg)
     parsed: dict[str, np.ndarray] = {}
     for key, value in record.items():
         if not isinstance(key, str):
-            raise TypeError("Contact record keys must be strings")
+            msg = "Contact record keys must be strings"
+            raise TypeError(msg)
         if not isinstance(value, np.ndarray):
-            raise TypeError(f"Contact record value for '{key}' must be a numpy array")
+            msg = f"Contact record value for '{key}' must be a numpy array"
+            raise TypeError(msg)
         parsed[key] = value
     return parsed
+
 
 def parse_contact_set(loaded: object) -> ContactSet:
     """Validate a deserialized contact-set payload.
@@ -71,8 +75,10 @@ def parse_contact_set(loaded: object) -> ContactSet:
     if isinstance(loaded, dict):
         loaded = [loaded]
     if not isinstance(loaded, list):
-        raise TypeError("Contact set must deserialize to a list of contact records")
+        msg = "Contact set must deserialize to a list of contact records"
+        raise TypeError(msg)
     return [_parse_contact_record(record) for record in loaded]
+
 
 def load_contact_set(contact_path: Path) -> ContactSet:
     """Load a contact set from a serialized file.
@@ -91,17 +97,70 @@ def load_contact_set(contact_path: Path) -> ContactSet:
     """
     require_path(contact_path, "contact_path")
     if not contact_path.exists():
-        raise FileNotFoundError(f"Contact file not found at: {contact_path}")
+        msg = f"Contact file not found at: {contact_path}"
+        raise FileNotFoundError(msg)
 
     try:
         data = np.load(contact_path, allow_pickle=True)
-        if data.ndim == 0:
-            loaded = data.item()
-        else:
-            loaded = list(data)
+        loaded = data.item() if data.ndim == 0 else list(data)
         return parse_contact_set(loaded)
     except Exception as e:
-        raise ValueError(f"Failed to load contact set: {e}") from e
+        msg = f"Failed to load contact set: {e}"
+        raise ValueError(msg) from e
+
+
+def _solve_wrench_lp_margin(g_mat: np.ndarray, failure_log: str) -> float | None:
+    """Solve the wrench-margin LP for a grasp wrench matrix.
+
+    Maximize ``t`` subject to ``G @ alpha = 0``, ``sum(alpha) = 1``, and
+    ``alpha_i >= t``. Variables: ``x = [alpha_0, ..., alpha_{m-1}, t]^T``.
+
+    Args:
+        g_mat: Grasp wrench matrix with shape ``(6, m)``.
+        failure_log: Warning prefix logged when the LP raises.
+
+    Returns:
+        The optimal ``t`` value, or ``None`` when the LP fails or does not
+        converge.
+    """
+    m = g_mat.shape[1]
+    c = np.zeros(m + 1)
+    c[-1] = -1.0  # We want to maximize t (minimize -t)
+
+    # Equality constraints: G @ alpha = 0, sum(alpha) = 1
+    a_eq = np.zeros((WRENCH_LP_EQUALITY_ROWS, m + 1))
+    a_eq[:6, :m] = g_mat
+    a_eq[6, :m] = 1.0
+    b_eq = np.zeros(WRENCH_LP_EQUALITY_ROWS)
+    b_eq[WRENCH_DIM] = 1.0
+
+    # Inequality constraints: t - alpha_i <= 0 => -alpha_i + t <= 0
+    a_ub = np.zeros((m, m + 1))
+    a_ub[:, :m] = -np.eye(m)
+    a_ub[:, -1] = 1.0
+    b_ub = np.zeros(m)
+
+    # Bounds: alpha_i >= 0, t can be negative
+    bounds = [(0.0, None) for _ in range(m)] + [(None, None)]
+
+    try:
+        res = linprog(
+            c,
+            A_ub=a_ub,
+            b_ub=b_ub,
+            A_eq=a_eq,
+            b_eq=b_eq,
+            bounds=bounds,
+            method="highs",
+        )
+    # Any solver failure is reported as "no margin".
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("{}: {}", failure_log, exc)
+        return None
+    if res.success:
+        return float(res.x[-1])
+    return None
+
 
 def build_force_closure_judge(friction_coefficient: float, wrench_regularization: float) -> ForceClosureJudge:
     """Construct a callable force-closure judge for a contact set.
@@ -116,9 +175,11 @@ def build_force_closure_judge(friction_coefficient: float, wrench_regularization
         force closure and ``False`` otherwise.
     """
     if friction_coefficient < 0:
-        raise ValueError("friction_coefficient must be non-negative")
+        msg = "friction_coefficient must be non-negative"
+        raise ValueError(msg)
     if wrench_regularization < 0:
-        raise ValueError("wrench_regularization must be non-negative")
+        msg = "wrench_regularization must be non-negative"
+        raise ValueError(msg)
 
     def judge(contact_set: ContactSet) -> bool:
         if not contact_set:
@@ -139,46 +200,11 @@ def build_force_closure_judge(friction_coefficient: float, wrench_regularization
             return False
 
         # Solve LP: Maximize t subject to G @ alpha = 0, sum(alpha) = 1, alpha_i >= t
-        # Variables: x = [alpha_0, ..., alpha_{m-1}, t]^T
-        m = g_mat.shape[1]
-        c = np.zeros(m + 1)
-        c[-1] = -1.0  # We want to maximize t (minimize -t)
-
-        # Equality constraints: G @ alpha = 0, sum(alpha) = 1
-        a_eq = np.zeros((WRENCH_LP_EQUALITY_ROWS, m + 1))
-        a_eq[:6, :m] = g_mat
-        a_eq[6, :m] = 1.0
-        b_eq = np.zeros(WRENCH_LP_EQUALITY_ROWS)
-        b_eq[WRENCH_DIM] = 1.0
-
-        # Inequality constraints: t - alpha_i <= 0 => -alpha_i + t <= 0
-        a_ub = np.zeros((m, m + 1))
-        a_ub[:, :m] = -np.eye(m)
-        a_ub[:, -1] = 1.0
-        b_ub = np.zeros(m)
-
-        # Bounds: alpha_i >= 0, t can be negative
-        bounds = [(0.0, None) for _ in range(m)] + [(None, None)]
-
-        try:
-            res = linprog(
-                c,
-                A_ub=a_ub,
-                b_ub=b_ub,
-                A_eq=a_eq,
-                b_eq=b_eq,
-                bounds=bounds,
-                method="highs",
-            )
-            if res.success:
-                t_val = res.x[-1]
-                return bool(t_val > LP_FEASIBILITY_EPS)
-            return False
-        except Exception as exc:
-            logger.warning("Force-closure LP failed: {}", exc)
-            return False
+        t_val = _solve_wrench_lp_margin(g_mat, "Force-closure LP failed")
+        return t_val is not None and bool(t_val > LP_FEASIBILITY_EPS)
 
     return judge
+
 
 def evaluate_force_closure(judge: ForceClosureJudge, contact_set: ContactSet) -> bool:
     """Evaluate whether a contact set provides force closure.
@@ -192,6 +218,7 @@ def evaluate_force_closure(judge: ForceClosureJudge, contact_set: ContactSet) ->
     """
     return judge(contact_set)
 
+
 def compute_grasp_wrench_matrix(contact_set: ContactSet, friction_coefficient: float) -> np.ndarray:
     """Compute the grasp wrench matrix from a contact set.
 
@@ -203,7 +230,8 @@ def compute_grasp_wrench_matrix(contact_set: ContactSet, friction_coefficient: f
         A ``(6, m)`` wrench matrix where ``m`` depends on the contact model.
     """
     if friction_coefficient < 0:
-        raise ValueError("friction_coefficient must be non-negative")
+        msg = "friction_coefficient must be non-negative"
+        raise ValueError(msg)
 
     wrenches = []
     for c in contact_set:
@@ -258,6 +286,7 @@ def compute_grasp_wrench_matrix(contact_set: ContactSet, friction_coefficient: f
 
     return np.stack(wrenches, axis=1)
 
+
 def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) -> float:
     """Compute the standardized scalar grasp-quality metric for a contact set.
 
@@ -273,7 +302,8 @@ def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) 
         A non-negative float representing the margin, or 0.0 if not force-closed.
     """
     if friction_coefficient < 0:
-        raise ValueError("friction_coefficient must be non-negative")
+        msg = "friction_coefficient must be non-negative"
+        raise ValueError(msg)
 
     if not contact_set:
         return 0.0
@@ -285,10 +315,7 @@ def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) 
     # Normalize column vectors of g_mat by maximum finite column norm
     col_norms = np.linalg.norm(g_mat, axis=0)
     max_norm = np.max(col_norms)
-    if max_norm > NORM_EPS:
-        g_mat_normalized = g_mat / max_norm
-    else:
-        g_mat_normalized = g_mat
+    g_mat_normalized = g_mat / max_norm if max_norm > NORM_EPS else g_mat
 
     # Try convex hull in 6D
     if g_mat_normalized.shape[1] >= WRENCH_LP_EQUALITY_ROWS:
@@ -298,41 +325,12 @@ def compute_grasp_quality(contact_set: ContactSet, friction_coefficient: float) 
             if np.all(hull.equations[:, -1] <= HULL_HALFSPACE_EPS):
                 # distance is -offset / norm(normal). Since normal has norm 1:
                 return float(np.min(-hull.equations[:, -1]))
-        except Exception as exc:
+        # Degenerate hulls (QhullError) or bad input must fall back to the LP margin.
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Convex hull grasp-quality computation failed: {}", exc)
 
     # Fallback to LP formulation (similar to Ferrari-Canny sum-of-forces margin)
-    m = g_mat_normalized.shape[1]
-    c = np.zeros(m + 1)
-    c[-1] = -1.0  # Maximize t (minimize -t)
-
-    a_eq = np.zeros((WRENCH_LP_EQUALITY_ROWS, m + 1))
-    a_eq[:6, :m] = g_mat_normalized
-    a_eq[6, :m] = 1.0
-    b_eq = np.zeros(WRENCH_LP_EQUALITY_ROWS)
-    b_eq[WRENCH_DIM] = 1.0
-
-    a_ub = np.zeros((m, m + 1))
-    a_ub[:, :m] = -np.eye(m)
-    a_ub[:, -1] = 1.0
-    b_ub = np.zeros(m)
-
-    bounds = [(0.0, None) for _ in range(m)] + [(None, None)]
-
-    try:
-        res = linprog(
-            c,
-            A_ub=a_ub,
-            b_ub=b_ub,
-            A_eq=a_eq,
-            b_eq=b_eq,
-            bounds=bounds,
-            method="highs",
-        )
-        if res.success:
-            t_val = res.x[-1]
-            return max(0.0, float(t_val))
-    except Exception as exc:
-        logger.warning("Grasp-quality LP fallback failed: {}", exc)
-
-    return 0.0
+    t_val = _solve_wrench_lp_margin(g_mat_normalized, "Grasp-quality LP fallback failed")
+    if t_val is None:
+        return 0.0
+    return max(0.0, t_val)

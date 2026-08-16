@@ -2,20 +2,6 @@
 
 from __future__ import annotations
 
-from grasping_ai.simulation.mujoco_env import (
-    ContactReporter,
-    create_simulation,
-    load_mujoco_model,
-    read_body_pose,
-    set_actuator_controls,
-    SimulationStep,
-)
-
-from grasping_ai.utils.path_validation import (
-    require_optional_path,
-    require_path,
-)
-
 import os
 import re
 import tempfile
@@ -28,7 +14,21 @@ import mujoco  # type: ignore[import-untyped]
 import numpy as np
 from loguru import logger
 
+from grasping_ai.simulation.mujoco_env import (
+    ContactReporter,
+    SimulationStep,
+    create_simulation,
+    load_mujoco_model,
+    read_body_pose,
+    set_actuator_controls,
+)
+from grasping_ai.utils.path_validation import (
+    require_optional_path,
+    require_path,
+)
+
 SceneCommand = Callable[[], None]
+
 
 def _resolve_scene_output_dir(output_dir: Path | None) -> Path:
     """Return a writable directory for assembled scene XML artifacts.
@@ -48,6 +48,7 @@ def _resolve_scene_output_dir(output_dir: Path | None) -> Path:
     temp_root = Path(tempfile.gettempdir()) / "grasping_ai_scenes"
     temp_root.mkdir(parents=True, exist_ok=True)
     return temp_root
+
 
 def _xml_with_absolute_meshdir(xml_path: Path, out_dir: Path) -> Path:
     """Rewrite ``meshdir`` to an absolute path so includes from a temp scene resolve.
@@ -73,6 +74,7 @@ def _xml_with_absolute_meshdir(xml_path: Path, out_dir: Path) -> Path:
     dest = Path(path_str)
     dest.write_text(rewritten, encoding="utf-8")
     return dest
+
 
 def build_scene_xml(
     robot_xml_path: Path,
@@ -100,14 +102,18 @@ def build_scene_xml(
     require_path(object_xml_path, "object_xml_path")
     require_optional_path(table_xml_path, "table_xml_path")
     if object_name is not None and not isinstance(object_name, str):
-        raise TypeError("object_name must be a string or None")
+        msg = "object_name must be a string or None"
+        raise TypeError(msg)
 
     if not robot_xml_path.is_file():
-        raise FileNotFoundError(f"Robot XML path '{robot_xml_path}' does not exist")
+        msg = f"Robot XML path '{robot_xml_path}' does not exist"
+        raise FileNotFoundError(msg)
     if not object_xml_path.is_file():
-        raise FileNotFoundError(f"Object XML path '{object_xml_path}' does not exist")
+        msg = f"Object XML path '{object_xml_path}' does not exist"
+        raise FileNotFoundError(msg)
     if table_xml_path is not None and not table_xml_path.is_file():
-        raise FileNotFoundError(f"Table XML path '{table_xml_path}' does not exist")
+        msg = f"Table XML path '{table_xml_path}' does not exist"
+        raise FileNotFoundError(msg)
 
     logger.info(
         "Assembling scene XML with robot: {}, object: {} (name={}), table: {}",
@@ -140,6 +146,7 @@ def build_scene_xml(
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
+
 def _rename_object_body(object_xml_path: Path, object_name: str, out_dir: Path) -> Path:
     """Write a copy of an object XML with its first body renamed.
 
@@ -155,10 +162,12 @@ def _rename_object_body(object_xml_path: Path, object_name: str, out_dir: Path) 
         ValueError: If the object XML cannot be parsed or contains no body.
     """
     try:
-        tree = ET.parse(object_xml_path)
+        # Only local project MJCF assets are parsed here, not untrusted XML.
+        tree = ET.parse(object_xml_path)  # noqa: S314
         root = tree.getroot()
     except Exception as e:
-        raise ValueError(f"Failed to parse object XML file '{object_xml_path}': {e}") from e
+        msg = f"Failed to parse object XML file '{object_xml_path}': {e}"
+        raise ValueError(msg) from e
 
     body_renamed = False
     for body in root.findall(".//body"):
@@ -167,13 +176,15 @@ def _rename_object_body(object_xml_path: Path, object_name: str, out_dir: Path) 
         break
 
     if not body_renamed:
-        raise ValueError(f"No body element found in object XML '{object_xml_path}' to rename")
+        msg = f"No body element found in object XML '{object_xml_path}' to rename"
+        raise ValueError(msg)
 
     fd, obj_path_str = tempfile.mkstemp(suffix=f"_{object_name}.xml", dir=str(out_dir))
     os.close(fd)
     modified_object_xml_path = Path(obj_path_str)
     tree.write(modified_object_xml_path, encoding="utf-8", xml_declaration=True)
     return modified_object_xml_path
+
 
 def attach_object_to_scene(
     state: object,
@@ -190,38 +201,21 @@ def attach_object_to_scene(
         output_dir: Optional directory for temporary assembled XML files.
     """
     if not isinstance(state, dict) or "model" not in state or "data" not in state:
-        raise TypeError("state must be a simulation state dictionary")
+        msg = "state must be a simulation state dictionary"
+        raise TypeError(msg)
     require_path(object_xml_path, "object_xml_path")
     if not isinstance(object_name, str):
-        raise TypeError("object_name must be a string")
+        msg = "object_name must be a string"
+        raise TypeError(msg)
 
     state_dict = cast("dict[str, Any]", state)
 
     if not object_xml_path.is_file():
-        raise FileNotFoundError(f"Object XML file '{object_xml_path}' does not exist")
-
-    try:
-        tree = ET.parse(object_xml_path)
-        root = tree.getroot()
-    except Exception as e:
-        raise ValueError(f"Failed to parse object XML file '{object_xml_path}': {e}") from e
-
-    body_renamed = False
-    for body in root.findall(".//body"):
-        body.set("name", object_name)
-        body_renamed = True
-        break
-
-    if not body_renamed:
-        raise ValueError(f"No body element found in object XML '{object_xml_path}' to rename")
+        msg = f"Object XML file '{object_xml_path}' does not exist"
+        raise FileNotFoundError(msg)
 
     out_dir = _resolve_scene_output_dir(output_dir)
-
-    fd_obj, obj_path_str = tempfile.mkstemp(suffix=f"_{object_name}.xml", dir=str(out_dir))
-    os.close(fd_obj)
-    modified_object_xml_path = Path(obj_path_str)
-    tree.write(modified_object_xml_path, encoding="utf-8", xml_declaration=True)
-
+    modified_object_xml_path = _rename_object_body(object_xml_path, object_name, out_dir)
     state_dict["attached_xml_paths"].append(modified_object_xml_path)
 
     fd_scene, scene_path_str = tempfile.mkstemp(suffix="_scene.xml", dir=str(out_dir))
@@ -233,8 +227,9 @@ def attach_object_to_scene(
     if original_xml is not None:
         robot_for_include = _xml_with_absolute_meshdir(original_xml, out_dir)
         lines.append(f'    <include file="{robot_for_include.resolve().as_posix()}"/>')
-    for path in state_dict["attached_xml_paths"]:
-        lines.append(f'    <include file="{path.resolve().as_posix()}"/>')
+    lines.extend(
+        [f'    <include file="{path.resolve().as_posix()}"/>' for path in state_dict["attached_xml_paths"]],
+    )
     lines.append("</mujoco>")
 
     new_scene_xml_path.write_text("\n".join(lines), encoding="utf-8")
@@ -243,7 +238,8 @@ def attach_object_to_scene(
         new_model: Any = mujoco.MjModel.from_xml_path(str(new_scene_xml_path))
         new_data: Any = mujoco.MjData(new_model)
     except Exception as e:
-        raise ValueError(f"Failed to reload MuJoCo simulation after attaching object: {e}") from e
+        msg = f"Failed to reload MuJoCo simulation after attaching object: {e}"
+        raise ValueError(msg) from e
 
     old_model: Any = state_dict["model"]
     old_data: Any = state_dict["data"]
@@ -261,6 +257,7 @@ def attach_object_to_scene(
     state_dict["model"] = new_model
     state_dict["data"] = new_data
 
+
 def step_scene(step: SimulationStep, dt: float, num_steps: int) -> None:
     """Advance a scene by a fixed number of simulation steps.
 
@@ -270,18 +267,24 @@ def step_scene(step: SimulationStep, dt: float, num_steps: int) -> None:
         num_steps: Number of steps to execute.
     """
     if not callable(step):
-        raise TypeError("step must be a callable (SimulationStep)")
+        msg = "step must be a callable (SimulationStep)"
+        raise TypeError(msg)
     if not isinstance(dt, (int, float, np.floating, np.integer)):
-        raise TypeError("dt must be a float or integer")
+        msg = "dt must be a float or integer"
+        raise TypeError(msg)
     if not isinstance(num_steps, (int, np.integer)):
-        raise TypeError("num_steps must be an integer")
+        msg = "num_steps must be an integer"
+        raise TypeError(msg)
     if dt <= 0 or not np.isfinite(dt):
-        raise ValueError("dt must be a positive finite number")
+        msg = "dt must be a positive finite number"
+        raise ValueError(msg)
     if num_steps <= 0:
-        raise ValueError("num_steps must be a positive integer")
+        msg = "num_steps must be a positive integer"
+        raise ValueError(msg)
 
     for _ in range(num_steps):
         step(dt)
+
 
 def collect_contacts(contacts: ContactReporter, body_names: set[str]) -> list[dict[str, object]]:
     """Filter contact reports to only those involving the supplied body names.
@@ -294,12 +297,15 @@ def collect_contacts(contacts: ContactReporter, body_names: set[str]) -> list[di
         A list of filtered contact records.
     """
     if not callable(contacts):
-        raise TypeError("contacts must be a callable (ContactReporter)")
+        msg = "contacts must be a callable (ContactReporter)"
+        raise TypeError(msg)
     if not isinstance(body_names, set):
-        raise TypeError("body_names must be a set")
+        msg = "body_names must be a set"
+        raise TypeError(msg)
     for name in body_names:
         if not isinstance(name, str):
-            raise TypeError("All elements in body_names must be strings")
+            msg = "All elements in body_names must be strings"
+            raise TypeError(msg)
 
     all_contacts = contacts()
     filtered: list[dict[str, object]] = []
@@ -308,6 +314,7 @@ def collect_contacts(contacts: ContactReporter, body_names: set[str]) -> list[di
         if c_body_names.intersection(body_names):
             filtered.append(dict(c))
     return filtered
+
 
 class MuJoCoScene:
     """Composed MuJoCo scene with snapshot-based reset.
@@ -342,7 +349,8 @@ class MuJoCoScene:
         require_optional_path(object_xml_path, "object_xml_path")
         require_optional_path(table_xml_path, "table_xml_path")
         if object_name is not None and not isinstance(object_name, str):
-            raise TypeError("object_name must be a string or None")
+            msg = "object_name must be a string or None"
+            raise TypeError(msg)
         require_optional_path(scene_output_dir, "scene_output_dir")
 
         self.robot_xml_path = robot_xml_path
@@ -384,12 +392,12 @@ class MuJoCoScene:
         return self._state
 
     @property
-    def model(self) -> Any:
+    def model(self) -> mujoco.MjModel:
         """Return the underlying MuJoCo model."""
         return cast("dict[str, Any]", self._state)["model"]
 
     @property
-    def data(self) -> Any:
+    def data(self) -> mujoco.MjData:
         """Return the underlying MuJoCo data."""
         return cast("dict[str, Any]", self._state)["data"]
 

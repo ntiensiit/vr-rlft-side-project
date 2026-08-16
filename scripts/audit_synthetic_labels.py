@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import hydra
+from loguru import logger
+
 from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
 from grasping_ai.pipelines.synthetic_audit import audit_synthetic_labels
 
-from pathlib import Path
-
-import hydra
-import json
-from loguru import logger
-from omegaconf import DictConfig
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
 
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/audit_synthetic_labels")
 def main(cfg: DictConfig) -> None:
+    """Run the synthetic label audit and log each report entry."""
     yaml_config = FlattenedYAMLConfig(cfg)
     report = audit_synthetic_labels(
         dataset_root=yaml_config.value("paths", "dataset_root", value_type=Path, required=True),

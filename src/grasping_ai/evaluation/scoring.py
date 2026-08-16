@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from grasping_ai.evaluation.collision import generate_analytical_contacts
 from grasping_ai.evaluation.force_closure import compute_grasp_quality
 
-import numpy as np
+if TYPE_CHECKING:
+    import numpy as np
+
+MIN_GRASP_CONTACTS = 2
 
 
-def score_grasp_poses_by_contacts(
+# Pipelines call this with six positional arguments.
+def score_grasp_poses_by_contacts(  # noqa: PLR0913,PLR0917
     grasp_poses: np.ndarray,
     object_point_cloud: np.ndarray,
     gripper_point_cloud: np.ndarray,
@@ -30,7 +36,7 @@ def score_grasp_poses_by_contacts(
             pose,
             contact_clearance=contact_clearance,
         )
-        if len(contacts) < 2:
+        if len(contacts) < MIN_GRASP_CONTACTS:
             continue
         score = compute_grasp_quality(contacts, friction_coefficient)
         if score >= min_quality_score:
@@ -61,7 +67,7 @@ def recompute_contact_scores(
             pose,
             contact_clearance=contact_clearance,
         )
-        if len(contacts) < 2:
+        if len(contacts) < MIN_GRASP_CONTACTS:
             continue
         contact_scored += 1
         recomputed_scores.append(compute_grasp_quality(contacts, friction_coefficient))

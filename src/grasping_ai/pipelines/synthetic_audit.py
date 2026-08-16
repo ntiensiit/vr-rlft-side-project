@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from grasping_ai.data.pointcloud_dataset import iterate_grasp_dataset
-from grasping_ai.evaluation.collision import build_collision_checker, filter_collision_free_grasps
-from grasping_ai.evaluation.scoring import recompute_contact_scores
-from grasping_ai.robotics.gripper import default_gripper_point_cloud
-
 import json
 from pathlib import Path
 
 import numpy as np
+
+from grasping_ai.data.pointcloud_dataset import iterate_grasp_dataset
+from grasping_ai.evaluation.collision import build_collision_checker, filter_collision_free_grasps
+from grasping_ai.evaluation.scoring import recompute_contact_scores
+from grasping_ai.robotics.gripper import default_gripper_point_cloud
 
 
 def audit_synthetic_labels(

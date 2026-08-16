@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from grasping_ai.models.mlp import build_tanh_mlp
-
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
-from grasping_ai.utils.path_validation import require_path
-
 from typing import TYPE_CHECKING, Any
 
 import torch
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+from grasping_ai.models.mlp import build_tanh_mlp
+from grasping_ai.utils.path_validation import require_path
 
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 
@@ -23,7 +21,9 @@ ValueNetwork = torch.nn.Sequential
 RL_CHECKPOINT_FORMAT_VERSION = 1
 RL_POLICY_ARCHITECTURE = "mlp"
 
-def save_rl_policy_checkpoint(
+
+# Tests call this with up to seven positional arguments.
+def save_rl_policy_checkpoint(  # noqa: PLR0913,PLR0917
     policy: torch.nn.Module,
     policy_checkpoint_path: Path,
     epoch: int,
@@ -56,13 +56,17 @@ def save_rl_policy_checkpoint(
             instance.
     """
     if observation_dim <= 0:
-        raise ValueError("observation_dim must be positive")
+        msg = "observation_dim must be positive"
+        raise ValueError(msg)
     if action_dim <= 0:
-        raise ValueError("action_dim must be positive")
+        msg = "action_dim must be positive"
+        raise ValueError(msg)
     if hidden_dim <= 0:
-        raise ValueError("hidden_dim must be positive")
+        msg = "hidden_dim must be positive"
+        raise ValueError(msg)
     if num_layers <= 0:
-        raise ValueError("num_layers must be positive")
+        msg = "num_layers must be positive"
+        raise ValueError(msg)
     require_path(policy_checkpoint_path, "policy_checkpoint_path")
 
     checkpoint: dict[str, Any] = {
@@ -80,6 +84,7 @@ def save_rl_policy_checkpoint(
 
     policy_checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(checkpoint, policy_checkpoint_path)
+
 
 def read_rl_policy_metadata(
     checkpoint: dict[str, object],
@@ -109,6 +114,7 @@ def read_rl_policy_metadata(
     except (TypeError, ValueError):
         return None
 
+
 def _sequential_linear_layers(module: torch.nn.Module) -> list[torch.nn.Linear]:
     """Return ``Linear`` submodules in ``Sequential`` child order.
 
@@ -122,8 +128,10 @@ def _sequential_linear_layers(module: torch.nn.Module) -> list[torch.nn.Linear]:
         TypeError: If ``module`` is not a ``torch.nn.Sequential`` instance.
     """
     if not isinstance(module, torch.nn.Sequential):
-        raise TypeError("module must be a torch.nn.Sequential instance")
+        msg = "module must be a torch.nn.Sequential instance"
+        raise TypeError(msg)
     return [child for child in module if isinstance(child, torch.nn.Linear)]
+
 
 def build_sb3_net_arch(hidden_dim: int, num_layers: int) -> dict[str, list[int]]:
     """Build SB3 ``net_arch`` matching ``build_policy_network`` depth.
@@ -140,11 +148,14 @@ def build_sb3_net_arch(hidden_dim: int, num_layers: int) -> dict[str, list[int]]
         ValueError: If ``hidden_dim`` or ``num_layers`` is non-positive.
     """
     if hidden_dim <= 0:
-        raise ValueError("hidden_dim must be positive")
+        msg = "hidden_dim must be positive"
+        raise ValueError(msg)
     if num_layers <= 0:
-        raise ValueError("num_layers must be positive")
+        msg = "num_layers must be positive"
+        raise ValueError(msg)
     hidden_layers = [hidden_dim] * num_layers
     return {"pi": hidden_layers, "vf": hidden_layers}
+
 
 def copy_sb3_policy_weights(
     sb3_policy: torch.nn.Module,
@@ -166,43 +177,56 @@ def copy_sb3_policy_weights(
         ValueError: If expected SB3 submodules are missing or layer counts differ.
     """
     if not isinstance(sb3_policy, torch.nn.Module):
-        raise TypeError("sb3_policy must be a torch.nn.Module instance")
+        msg = "sb3_policy must be a torch.nn.Module instance"
+        raise TypeError(msg)
     if not isinstance(legacy_policy, torch.nn.Module):
-        raise TypeError("legacy_policy must be a torch.nn.Module instance")
+        msg = "legacy_policy must be a torch.nn.Module instance"
+        raise TypeError(msg)
 
     policy_net = getattr(getattr(sb3_policy, "mlp_extractor", None), "policy_net", None)
     action_net = getattr(sb3_policy, "action_net", None)
     if policy_net is None or action_net is None:
-        raise ValueError("sb3_policy must expose mlp_extractor.policy_net and action_net")
+        msg = "sb3_policy must expose mlp_extractor.policy_net and action_net"
+        raise ValueError(msg)
     if not isinstance(action_net, torch.nn.Linear):
-        raise TypeError("SB3 action_net must be a Linear layer")
+        msg = "SB3 action_net must be a Linear layer"
+        raise TypeError(msg)
 
     sb3_hidden = _sequential_linear_layers(policy_net)
     legacy_linears = _sequential_linear_layers(legacy_policy)
     if len(legacy_linears) != len(sb3_hidden) + 1:
-        raise ValueError(
+        msg = (
             f"Legacy policy has {len(legacy_linears)} Linear layers but SB3 policy_net "
-            f"has {len(sb3_hidden)} hidden layers",
+            f"has {len(sb3_hidden)} hidden layers"
+        )
+        raise ValueError(
+            msg,
         )
 
     legacy_hidden = legacy_linears[:-1]
     legacy_output = legacy_linears[-1]
     for sb3_layer, legacy_layer in zip(sb3_hidden, legacy_hidden, strict=True):
         if sb3_layer.weight.shape != legacy_layer.weight.shape:
+            msg = (
+                f"Shape mismatch copying SB3 layer {sb3_layer.weight.shape} to legacy layer {legacy_layer.weight.shape}"
+            )
             raise ValueError(
-                f"Shape mismatch copying SB3 layer {sb3_layer.weight.shape} "
-                f"to legacy layer {legacy_layer.weight.shape}",
+                msg,
             )
         legacy_layer.weight.data.copy_(sb3_layer.weight.data)
         legacy_layer.bias.data.copy_(sb3_layer.bias.data)
 
     if action_net.weight.shape != legacy_output.weight.shape:
-        raise ValueError(
+        msg = (
             f"Shape mismatch copying SB3 action_net {action_net.weight.shape} "
-            f"to legacy output {legacy_output.weight.shape}",
+            f"to legacy output {legacy_output.weight.shape}"
+        )
+        raise ValueError(
+            msg,
         )
     legacy_output.weight.data.copy_(action_net.weight.data)
     legacy_output.bias.data.copy_(action_net.bias.data)
+
 
 def build_policy_network(observation_dim: int, action_dim: int, hidden_dim: int, num_layers: int) -> PolicyNetwork:
     """Construct a policy network mapping observations to action distributions.
@@ -219,15 +243,20 @@ def build_policy_network(observation_dim: int, action_dim: int, hidden_dim: int,
         ``(B, action_dim)``.
     """
     if observation_dim <= 0:
-        raise ValueError("observation_dim must be positive")
+        msg = "observation_dim must be positive"
+        raise ValueError(msg)
     if action_dim <= 0:
-        raise ValueError("action_dim must be positive")
+        msg = "action_dim must be positive"
+        raise ValueError(msg)
     if hidden_dim <= 0:
-        raise ValueError("hidden_dim must be positive")
+        msg = "hidden_dim must be positive"
+        raise ValueError(msg)
     if num_layers <= 0:
-        raise ValueError("num_layers must be positive")
+        msg = "num_layers must be positive"
+        raise ValueError(msg)
 
     return build_tanh_mlp(observation_dim, hidden_dim, action_dim, num_layers)
+
 
 def build_value_network(observation_dim: int, hidden_dim: int, num_layers: int) -> ValueNetwork:
     """Construct a value network for actor-critic style algorithms.
@@ -241,13 +270,17 @@ def build_value_network(observation_dim: int, hidden_dim: int, num_layers: int) 
         A callable value network mapping observations to scalar values.
     """
     if observation_dim <= 0:
-        raise ValueError("observation_dim must be positive")
+        msg = "observation_dim must be positive"
+        raise ValueError(msg)
     if hidden_dim <= 0:
-        raise ValueError("hidden_dim must be positive")
+        msg = "hidden_dim must be positive"
+        raise ValueError(msg)
     if num_layers <= 0:
-        raise ValueError("num_layers must be positive")
+        msg = "num_layers must be positive"
+        raise ValueError(msg)
 
     return build_tanh_mlp(observation_dim, hidden_dim, 1, num_layers)
+
 
 def select_action(
     policy: PolicyNetwork,
@@ -268,11 +301,14 @@ def select_action(
         A sampled action tensor with shape ``(B, action_dim)``.
     """
     if observation.ndim != POINT_CLOUD_NDIM:
-        raise ValueError(f"observation must have shape (B, obs_dim), got {observation.shape}")
+        msg = f"observation must have shape (B, obs_dim), got {observation.shape}"
+        raise ValueError(msg)
     if not isinstance(rng, torch.Generator):
-        raise TypeError("rng must be a torch.Generator instance")
+        msg = "rng must be a torch.Generator instance"
+        raise TypeError(msg)
     if noise_scale < 0.0:
-        raise ValueError("noise_scale must be non-negative")
+        msg = "noise_scale must be non-negative"
+        raise ValueError(msg)
 
     action_mean = policy(observation)
     noise = torch.randn(

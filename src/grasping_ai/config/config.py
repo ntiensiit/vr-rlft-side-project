@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
-from omegaconf import DictConfig, MISSING, OmegaConf
+from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 
 # Relative to ``scripts/*.py`` when using ``@hydra.main(config_path=...)``.
 SCRIPTS_CONFIG_PATH = "../configs"
@@ -68,7 +69,168 @@ def config_get(
     return value
 
 
-def config_value(
+_NO_EARLY_RESULT = object()
+
+
+@dataclass(frozen=True)
+class _ConfigValueQuery:
+    """Resolved lookup context for a typed config read."""
+
+    value_type: type[object]
+    default: object
+    required: bool
+    script_or: bool
+    config_default: bool
+    script_key: str
+    domain_keys: tuple[str, ...]
+
+
+def _domain_or_default(domain_keys: tuple[str, ...], default: object) -> tuple[tuple[str, ...], object]:
+    """Return domain lookup keys when present, otherwise an early ``default`` result."""
+    if domain_keys:
+        return domain_keys, _NO_EARLY_RESULT
+    return (), default
+
+
+def _missing_script_key_result(
+    script_key: str,
+    value_type: type[object],
+    default: object,
+) -> tuple[tuple[str, ...], object]:
+    """Handle a missing script override that has no domain keys."""
+    if default is MISSING and value_type in {list[str], list[float], list[Path]}:
+        msg = f"Missing config key: script.{script_key}"
+        raise ValueError(msg)
+    if default is MISSING:
+        return (), default
+    return (), list(default)  # type: ignore[arg-type]
+
+
+def _script_lookup_keys(
+    cfg: DictConfig,
+    keys: tuple[str, ...],
+    value_type: type[object],
+    default: object,
+) -> tuple[tuple[str, ...], object]:
+    """Resolve lookup keys for ``script_or=True``; may yield an early result value."""
+    if not keys:
+        msg = "Script override accessors require a script key"
+        raise TypeError(msg)
+    script_key, domain_keys = keys[0], keys[1:]
+    script_override = OmegaConf.select(cfg, f"script.{script_key}", default=MISSING)
+    has_override = script_override is not MISSING and script_override is not None
+    if value_type is bool:
+        if script_override is not MISSING:
+            return ("script", script_key), _NO_EARLY_RESULT
+    elif value_type is object:
+        if has_override:
+            return (), script_override
+    elif has_override:
+        return ("script", script_key), _NO_EARLY_RESULT
+    elif domain_keys:
+        return domain_keys, _NO_EARLY_RESULT
+    else:
+        return _missing_script_key_result(script_key, value_type, default)
+    return _domain_or_default(domain_keys, default)
+
+
+def _lookup_path_value(
+    cfg: DictConfig,
+    lookup_keys: tuple[str, ...],
+    query: _ConfigValueQuery,
+) -> tuple[object, bool]:
+    """Fetch a raw ``Path`` value, honoring required-path errors."""
+    if query.default is MISSING and query.required:
+        value = config_get(cfg, *lookup_keys, default=None)
+    else:
+        value = config_get(cfg, *lookup_keys, default=query.default)
+    if value is not query.default and value is not None:
+        return value, True
+    if query.required:
+        if query.script_or:
+            msg = f"Missing config path: script.{query.script_key} or {'.'.join(query.domain_keys)}"
+        else:
+            msg = f"Missing config path: {_key_path(*lookup_keys)}"
+        raise ValueError(msg)
+    if query.default is MISSING:
+        return None, False
+    return query.default, False
+
+
+def _lookup_typed_value(
+    cfg: DictConfig,
+    lookup_keys: tuple[str, ...],
+    query: _ConfigValueQuery,
+) -> tuple[object, bool]:
+    """Fetch the raw value; the bool result is ``False`` when coercion must be skipped."""
+    if query.config_default:
+        value = config_get(cfg, *lookup_keys, default=query.default)
+        if value is query.default or (query.value_type in {list[str], list[float], Path} and value is None):
+            return query.default, False
+        return value, True
+    if query.value_type is Path:
+        return _lookup_path_value(cfg, lookup_keys, query)
+    if query.default is MISSING:
+        return config_get(cfg, *lookup_keys, required=True), True
+    value = config_get(cfg, *lookup_keys, default=query.default)
+    if query.required and value is None:
+        msg = f"Missing config key: {_key_path(*lookup_keys)}"
+        raise ValueError(msg)
+    return value, True
+
+
+def _coerce_config_value(value_type: type[object], raw: object, path: str, *, use_config_default: bool) -> object:
+    """Coerce a raw config value to ``value_type`` or raise a descriptive error."""
+    coerce_strategies: dict[type[object], object] = {
+        object: lambda raw, _path, _use_config_default: raw,
+        float: lambda raw, path, _use_config_default: (
+            float(raw)
+            if isinstance(raw, int | float) and not isinstance(raw, bool)
+            else (_ for _ in ()).throw(TypeError(f"Config path {path!r} must be a number"))
+        ),
+        int: lambda raw, path, _use_config_default: (
+            int(raw)
+            if isinstance(raw, int | float) and not isinstance(raw, bool)
+            else (_ for _ in ()).throw(TypeError(f"Config path {path!r} must be an integer"))
+        ),
+        bool: lambda raw, path, _use_config_default: (
+            raw
+            if isinstance(raw, bool)
+            else (_ for _ in ()).throw(TypeError(f"Config path {path!r} must be a boolean"))
+        ),
+        Path: lambda raw, path, _use_config_default: (
+            Path(raw)
+            if isinstance(raw, str) and raw
+            else (_ for _ in ()).throw(ValueError(f"Config path {path!r} must be a non-empty string path"))
+        ),
+        list[str]: lambda raw, path, use_config_default: (
+            raw
+            if use_config_default and isinstance(raw, (list, ListConfig)) and all(isinstance(item, str) for item in raw)
+            else list(raw)
+            if isinstance(raw, (list, ListConfig)) and all(isinstance(item, str) for item in raw)
+            else (_ for _ in ()).throw(ValueError(f"Config path {path!r} must be a list of strings"))
+        ),
+        list[float]: lambda raw, path, _use_config_default: (
+            [float(item) for item in raw]
+            if isinstance(raw, (list, ListConfig))
+            and all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in raw)
+            else (_ for _ in ()).throw(TypeError(f"Config path {path!r} must be a list of numbers"))
+        ),
+        list[Path]: lambda raw, path, use_config_default: (
+            [Path(item) for item in (raw if use_config_default else list(raw))]
+            if isinstance(raw, (list, ListConfig)) and all(isinstance(item, str) for item in raw)
+            else (_ for _ in ()).throw(ValueError(f"Config path {path!r} must be a list of strings"))
+        ),
+    }
+
+    coerce = coerce_strategies.get(value_type)
+    if coerce is None:
+        msg = f"Unsupported typed config value: {value_type!r}"
+        raise TypeError(msg)
+    return coerce(raw, path, use_config_default)
+
+
+def config_value(  # noqa: PLR0913  # keyword flags are part of the public typed-access API used by tests
     cfg: DictConfig,
     *keys: str,
     value_type: type[object],
@@ -83,112 +245,23 @@ def config_value(
     lookup_keys: tuple[str, ...]
 
     if script_or:
-        if not keys:
-            msg = "Script override accessors require a script key"
-            raise TypeError(msg)
-        script_key = keys[0]
-        domain_keys = keys[1:]
-        script_override = OmegaConf.select(cfg, f"script.{script_key}", default=MISSING)
-        if value_type is bool:
-            if script_override is not MISSING:
-                lookup_keys = ("script", script_key)
-            elif domain_keys:
-                lookup_keys = domain_keys
-            else:
-                return default
-        elif value_type is object:
-            if script_override is not MISSING and script_override is not None:
-                return script_override
-            elif domain_keys:
-                lookup_keys = domain_keys
-            else:
-                return default
-        elif script_override is not MISSING and script_override is not None:
-            lookup_keys = ("script", script_key)
-        elif domain_keys:
-            lookup_keys = domain_keys
-        else:
-            if default is MISSING and value_type in {list[str], list[float], list[Path]}:
-                msg = f"Missing config key: script.{script_key}"
-                raise ValueError(msg)
-            return list(default) if default is not MISSING else default  # type: ignore[arg-type]
+        lookup_keys, early_result = _script_lookup_keys(cfg, keys, value_type, default)
+        script_key, domain_keys = keys[0], keys[1:]
+        if early_result is not _NO_EARLY_RESULT:
+            return early_result
     else:
         lookup_keys = keys
 
-    key_path = _key_path(*lookup_keys)
-
-    if config_default:
-        value = config_get(cfg, *lookup_keys, default=default)
-        if value is default:
-            return default
-        elif value_type in {list[str], list[float], Path} and value is None:
-            return default
-    elif value_type is Path:
-        if default is MISSING and required:
-            value = config_get(cfg, *lookup_keys, default=None)
-        else:
-            value = config_get(cfg, *lookup_keys, default=default)
-        if value is default or value is None:
-            if required:
-                if script_or:
-                    msg = f"Missing config path: script.{script_key} or {'.'.join(domain_keys)}"
-                else:
-                    msg = f"Missing config path: {key_path}"
-                raise ValueError(msg)
-            else:
-                return default if default is not MISSING else None
-    elif default is MISSING:
-        value = config_get(cfg, *lookup_keys, required=True)
-    else:
-        value = config_get(cfg, *lookup_keys, default=default)
-        if required and value is None:
-            msg = f"Missing config key: {key_path}"
-            raise ValueError(msg)
-
-    coerce_strategies: dict[type[object], object] = {
-        object: lambda raw, path, use_config_default: raw,
-        float: lambda raw, path, use_config_default: (
-            float(raw)
-            if isinstance(raw, int | float) and not isinstance(raw, bool)
-            else (_ for _ in ()).throw(TypeError(f"Config path {path!r} must be a number"))
-        ),
-        int: lambda raw, path, use_config_default: (
-            int(raw)
-            if isinstance(raw, int | float) and not isinstance(raw, bool)
-            else (_ for _ in ()).throw(TypeError(f"Config path {path!r} must be an integer"))
-        ),
-        bool: lambda raw, path, use_config_default: (
-            raw
-            if isinstance(raw, bool)
-            else (_ for _ in ()).throw(TypeError(f"Config path {path!r} must be a boolean"))
-        ),
-        Path: lambda raw, path, use_config_default: (
-            Path(raw)
-            if isinstance(raw, str) and raw
-            else (_ for _ in ()).throw(ValueError(f"Config path {path!r} must be a non-empty string path"))
-        ),
-        list[str]: lambda raw, path, use_config_default: (
-            raw
-            if use_config_default and isinstance(raw, list) and all(isinstance(item, str) for item in raw)
-            else list(raw)
-            if isinstance(raw, list) and all(isinstance(item, str) for item in raw)
-            else (_ for _ in ()).throw(ValueError(f"Config path {path!r} must be a list of strings"))
-        ),
-        list[float]: lambda raw, path, use_config_default: (
-            [float(item) for item in raw]
-            if isinstance(raw, list)
-            and all(isinstance(item, int | float) and not isinstance(item, bool) for item in raw)
-            else (_ for _ in ()).throw(TypeError(f"Config path {path!r} must be a list of numbers"))
-        ),
-        list[Path]: lambda raw, path, use_config_default: (
-            [Path(item) for item in (raw if use_config_default else list(raw))]
-            if isinstance(raw, list) and all(isinstance(item, str) for item in raw)
-            else (_ for _ in ()).throw(ValueError(f"Config path {path!r} must be a list of strings"))
-        ),
-    }
-
-    coerce = coerce_strategies.get(value_type)
-    if coerce is None:
-        msg = f"Unsupported typed config value: {value_type!r}"
-        raise TypeError(msg)
-    return coerce(value, key_path, config_default)
+    query = _ConfigValueQuery(
+        value_type=value_type,
+        default=default,
+        required=required,
+        script_or=script_or,
+        config_default=config_default,
+        script_key=script_key,
+        domain_keys=domain_keys,
+    )
+    value, should_coerce = _lookup_typed_value(cfg, lookup_keys, query)
+    if not should_coerce:
+        return value
+    return _coerce_config_value(value_type, value, _key_path(*lookup_keys), use_config_default=config_default)

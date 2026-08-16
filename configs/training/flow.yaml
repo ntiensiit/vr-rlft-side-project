@@ -1,9 +1,9 @@
 # @package _global_
 defaults:
   - entrypoint
-  - override /model: flow
   - supervised
   - _self_
+  - override /model: flow
 
 notebook:
   experiment: flow_grasp_colab

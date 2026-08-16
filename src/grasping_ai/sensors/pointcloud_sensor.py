@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
-from grasping_ai.utils.path_validation import require_path
-
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 import open3d as o3d  # type: ignore[import-untyped]
+import numpy as np
 from loguru import logger
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+from grasping_ai.utils.path_validation import require_path
 
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
@@ -20,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 PointCloudBatch = np.ndarray
+
 
 def acquire_point_cloud_from_observation(observation_path: Path) -> np.ndarray:
     """Load a single point cloud observation from a sensor data file.
@@ -35,18 +35,23 @@ def acquire_point_cloud_from_observation(observation_path: Path) -> np.ndarray:
     """
     require_path(observation_path, "observation_path")
     if not observation_path.exists():
-        raise FileNotFoundError(f"Observation path '{observation_path}' does not exist")
+        msg = f"Observation path '{observation_path}' does not exist"
+        raise FileNotFoundError(msg)
     try:
         pts = np.load(observation_path)
     except Exception as e:
-        raise ValueError(f"Failed to load observation: {e}") from e
+        msg = f"Failed to load observation: {e}"
+        raise ValueError(msg) from e
     if not isinstance(pts, np.ndarray) or pts.ndim != POINT_CLOUD_NDIM or pts.shape[1] != SPATIAL_DIM:
-        raise ValueError("Invalid observation shape: expected (N, 3)")
+        msg = "Invalid observation shape: expected (N, 3)"
+        raise ValueError(msg)
     if not np.isfinite(pts).all():
-        raise ValueError("Observation point cloud contains non-finite values")
+        msg = "Observation point cloud contains non-finite values"
+        raise ValueError(msg)
 
     logger.info("Acquired point cloud observation from: {} (shape={})", observation_path, pts.shape)
     return pts
+
 
 def acquire_point_cloud_stream(observation_paths: list[Path]) -> Iterator[np.ndarray]:
     """Yield point clouds from a sequence of sensor observation files.
@@ -62,9 +67,11 @@ def acquire_point_cloud_stream(observation_paths: list[Path]) -> Iterator[np.nda
             instances.
     """
     if not isinstance(observation_paths, list) or not all(isinstance(path, Path) for path in observation_paths):
-        raise TypeError("observation_paths must be a list of pathlib.Path instances")
+        msg = "observation_paths must be a list of pathlib.Path instances"
+        raise TypeError(msg)
     for path in observation_paths:
         yield acquire_point_cloud_from_observation(path)
+
 
 def merge_point_clouds(clouds: list[np.ndarray]) -> np.ndarray:
     """Merge multiple point clouds into a single observation.
@@ -80,13 +87,16 @@ def merge_point_clouds(clouds: list[np.ndarray]) -> np.ndarray:
         ValueError: If any cloud is not a 2D array with three columns.
     """
     if not isinstance(clouds, list) or not all(isinstance(cloud, np.ndarray) for cloud in clouds):
-        raise TypeError("clouds must be a list of numpy arrays")
+        msg = "clouds must be a list of numpy arrays"
+        raise TypeError(msg)
     for cloud in clouds:
         if cloud.ndim != POINT_CLOUD_NDIM or cloud.shape[1] != SPATIAL_DIM:
-            raise ValueError("each cloud must have shape (N, 3)")
+            msg = "each cloud must have shape (N, 3)"
+            raise ValueError(msg)
     if not clouds:
         return np.empty((0, 3), dtype=np.float32)
     return np.concatenate(clouds, axis=0).astype(np.float32)
+
 
 def sample_point_cloud_from_mesh(mesh_path: Path, num_samples: int, rng: np.random.Generator) -> np.ndarray:
     """Sample a point cloud from a mesh resource on disk.
@@ -101,21 +111,26 @@ def sample_point_cloud_from_mesh(mesh_path: Path, num_samples: int, rng: np.rand
     """
     require_path(mesh_path, "mesh_path")
     if not mesh_path.exists():
-        raise FileNotFoundError(f"Mesh file '{mesh_path}' does not exist")
+        msg = f"Mesh file '{mesh_path}' does not exist"
+        raise FileNotFoundError(msg)
     if not isinstance(num_samples, int) or num_samples <= 0:
-        raise ValueError("num_samples must be a positive integer")
+        msg = "num_samples must be a positive integer"
+        raise ValueError(msg)
     if not isinstance(rng, np.random.Generator):
-        raise TypeError("rng must be a numpy random Generator")
+        msg = "rng must be a numpy random Generator"
+        raise TypeError(msg)
 
     mesh = o3d.io.read_triangle_mesh(str(mesh_path))
     if mesh.is_empty():
-        raise ValueError(f"Mesh file '{mesh_path}' is empty or invalid")
+        msg = f"Mesh file '{mesh_path}' is empty or invalid"
+        raise ValueError(msg)
 
     vertices = np.asarray(mesh.vertices)
     triangles = np.asarray(mesh.triangles)
 
     if len(triangles) == 0:
-        raise ValueError("Mesh has no triangles to sample from")
+        msg = "Mesh has no triangles to sample from"
+        raise ValueError(msg)
 
     v0 = vertices[triangles[:, 0]]
     v1 = vertices[triangles[:, 1]]

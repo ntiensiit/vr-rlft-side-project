@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
-from grasping_ai.config.flattened_yaml_config import FlattenedYAMLConfig
-from grasping_ai.utils.logging_utils import init_mlflow, setup_logging
-
-from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import mlflow
 
+from grasping_ai.utils.logging_utils import init_mlflow, setup_logging
 
-def build_supervised_training_kwargs(yaml_config: FlattenedYAMLConfig, experiment_log_dir: Path | None) -> dict[str, object]:
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from grasping_ai.config.flattened_yaml_config import FlattenedYAMLConfig
+
+
+def build_supervised_training_kwargs(
+    yaml_config: FlattenedYAMLConfig,
+    experiment_log_dir: Path | None,
+) -> dict[str, object]:
     """Build keyword arguments shared by diffusion and flow training pipelines."""
     return {
         "dataset_root": yaml_config.value("paths", "dataset_root", value_type=Path, required=True),

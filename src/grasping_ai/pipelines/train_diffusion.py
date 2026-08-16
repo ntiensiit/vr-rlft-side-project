@@ -2,46 +2,41 @@
 
 from __future__ import annotations
 
+from functools import partial
+from typing import TYPE_CHECKING
+
+import torch
+
 from grasping_ai.data.training_pairs import (
     build_supervised_training_pairs,
     validate_grasp_dataset,
 )
-
 from grasping_ai.models.diffusion import GraspGeneratorModel
-
 from grasping_ai.pipelines.supervised_training import iter_conditioned_training_batches
-
 from grasping_ai.training import (
     trainer as training_trainer,
 )
-
 from grasping_ai.training.checkpoint_io import load_torch_checkpoint
-
 from grasping_ai.training.losses import build_diffusion_score_loss
-
 from grasping_ai.training.trainer import (
     BatchSource,
     build_adam_optimizer,
     build_training_step,
     load_training_checkpoint,
 )
-
 from grasping_ai.utils.path_validation import require_path
-
-from functools import partial
-from typing import TYPE_CHECKING
-
-import torch
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-def run_diffusion_training_pipeline(
+
+def run_diffusion_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tests pass options as keywords
     dataset_root: Path,
     checkpoint_path: Path,
     feature_dim: int,
     hidden_dim: int,
     num_layers: int,
+    *,
     learning_rate: float,
     num_epochs: int,
     batch_size: int,
@@ -83,7 +78,8 @@ def run_diffusion_training_pipeline(
     """
     require_path(dataset_root, "dataset_root")
     if not dataset_root.exists():
-        raise FileNotFoundError(f"Dataset root does not exist: {dataset_root}")
+        msg = f"Dataset root does not exist: {dataset_root}"
+        raise FileNotFoundError(msg)
 
     validate_grasp_dataset(dataset_root)
 
@@ -125,11 +121,16 @@ def run_diffusion_training_pipeline(
             score_repeat_power=score_repeat_power,
         )
     except Exception as e:
-        raise ValueError(f"Failed to build supervised training pairs: {e}") from e
+        msg = f"Failed to build supervised training pairs: {e}"
+        raise ValueError(msg) from e
 
     loss_fn = build_diffusion_score_loss()
     training_step = build_training_step(
-        model, loss_fn, optimizer, device, seed=seed,
+        model,
+        loss_fn,
+        optimizer,
+        device,
+        seed=seed,
     )
 
     dataloader: BatchSource = partial(

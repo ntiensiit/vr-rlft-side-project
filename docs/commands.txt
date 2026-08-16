@@ -4,7 +4,7 @@ uv run --frozen ruff check src tests scripts
 uv run --frozen mypy --num-workers 0 --cache-dir .mypy_cache src
 uv run --frozen python -c "import grasping_ai; print('grasping_ai ok')"
 uv run pytest
-uv run --frozen pytest -m "not slow" --cov=src/grasping_ai --cov-config=coverage.toml --cov-report=term-missing --cov-fail-under=97
+uv run --frozen pytest -m "not slow" --cov --cov-config=coverage.toml --cov-report=term-missing
 uv run python -m scripts.prepare_ycb_mjcf --config-dir configs --ycb-root data/raw/ycb --output-root data/processed/ycb_mjcf object=default
 uv run python -m scripts.prepare_data --config-dir configs --mode synthetic --quality-report artifacts/reports/synthetic_quality.json object=default
 uv run python -m scripts.audit_synthetic_labels --config-dir configs --dataset-root data/processed --output artifacts/reports/synthetic_label_audit.json

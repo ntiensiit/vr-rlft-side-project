@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from omegaconf import DictConfig, MISSING, OmegaConf
+from omegaconf import MISSING, DictConfig, ListConfig, OmegaConf
 
 from .config import (
     DEFAULT_CONFIG_DIR,
@@ -15,6 +13,10 @@ from .config import (
     config_value,
     load_project_yaml_config,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
 
 # ``project.yaml`` omits the evaluation group; library modules still need its metrics.
 _DEFAULT_LIBRARY_OVERRIDES = ("+evaluation=default",)
@@ -24,6 +26,7 @@ class FlattenedYAMLConfig:
     """Read nested configuration through flattened dot keys backed by Hydra."""
 
     def __init__(self, cfg: DictConfig | Mapping[str, Any]) -> None:
+        """Initialize from a composed Hydra config or a plain mapping."""
         self._cfg = cfg if isinstance(cfg, DictConfig) else OmegaConf.create(cfg)
 
     @classmethod
@@ -47,25 +50,28 @@ class FlattenedYAMLConfig:
     def _split_key(key: str) -> tuple[str, ...]:
         return tuple(part for part in key.split(".") if part)
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: object = None) -> object:
         """Return a nested configuration value addressed by a dot-separated key."""
         parts = self._split_key(key)
         if not parts:
             return default
         return config_get(self._cfg, *parts, default=default)
 
-    def get_path(self, *keys: str, default: Any = None) -> Any:
+    def get_path(self, *keys: str, default: object = None) -> object:
         """Return a nested configuration value addressed by path segments."""
         if not keys:
             return default
-        return config_get(self._cfg, *keys, default=default)
+        value = config_get(self._cfg, *keys, default=default)
+        if isinstance(value, (DictConfig, ListConfig)):
+            return OmegaConf.to_container(value, resolve=True)
+        return value
 
     def value(
         self,
         *keys: str,
         value_type: type[object],
         default: object = MISSING,
-        **kwargs: Any,
+        **kwargs: bool,
     ) -> object:
         """Return a typed nested configuration value.
 
@@ -106,17 +112,20 @@ class FlattenedYAMLConfig:
             raise TypeError(msg)
         return container
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str) -> object:
+        """Return the value at ``key``, raising when it is missing."""
         parts = self._split_key(key)
         return config_get(self._cfg, *parts, required=True)
 
     def __contains__(self, key: str) -> bool:
+        """Return whether ``key`` addresses an existing config value."""
         parts = self._split_key(key)
         if not parts:
             return False
         return OmegaConf.select(self._cfg, ".".join(parts), default=MISSING) is not MISSING
 
     def __repr__(self) -> str:
+        """Return a short summary of the flattened config."""
         return f"FlattenedYAMLConfig({len(self.source)} top-level keys)"
 
 

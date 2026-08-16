@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from grasping_ai.inference.grasp_sampling import encode_grasp_conditioning
-
 import random
 from typing import TYPE_CHECKING
 
 import torch
 
+from grasping_ai.inference.grasp_sampling import encode_grasp_conditioning
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
 
 def iter_supervised_training_batches(
     pairs: list[tuple[torch.Tensor, torch.Tensor]],
@@ -31,7 +32,7 @@ def iter_supervised_training_batches(
     """
     num_samples = len(pairs)
     indices = list(range(num_samples))
-    local_random = random.Random(seed if seed is not None else 42)
+    local_random = random.Random(seed if seed is not None else 42)  # noqa: S311  # batch shuffling, not security
     local_random.shuffle(indices)
 
     for i in range(0, num_samples, batch_size):
@@ -39,6 +40,7 @@ def iter_supervised_training_batches(
         point_clouds = torch.stack([pairs[idx][0] for idx in batch_indices]).to(device)
         targets = torch.stack([pairs[idx][1] for idx in batch_indices]).to(device)
         yield point_clouds, targets
+
 
 def iter_conditioned_training_batches(
     pairs: list[tuple[torch.Tensor, torch.Tensor]],

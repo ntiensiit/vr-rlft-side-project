@@ -2,15 +2,6 @@
 
 from __future__ import annotations
 
-from grasping_ai.config.flattened_yaml_config import (
-    FLATTENED_YAML_CONFIG,
-    FlattenedYAMLConfig,
-)
-
-from grasping_ai.perception.geometry import make_transform
-
-from grasping_ai.utils.path_validation import require_path
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
@@ -19,6 +10,13 @@ import gymnasium as gym
 import mujoco  # type: ignore[import-untyped]
 import numpy as np
 
+from grasping_ai.config.flattened_yaml_config import (
+    FLATTENED_YAML_CONFIG,
+    FlattenedYAMLConfig,
+)
+from grasping_ai.perception.geometry import make_transform
+from grasping_ai.utils.path_validation import require_path
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -26,6 +24,7 @@ if TYPE_CHECKING:
 
 SimulationStep = Callable[[float], None]
 ContactReporter = Callable[[], list[dict[str, np.ndarray]]]
+
 
 @dataclass(frozen=True)
 class RewardConfig:
@@ -69,30 +68,63 @@ class RewardConfig:
         yaml_config = FlattenedYAMLConfig(resolved_cfg)
         return cls(
             action_cost_weight=yaml_config.value(
-                "rl", "reward", "action_cost_weight", value_type=float, default=0.01
+                "rl",
+                "reward",
+                "action_cost_weight",
+                value_type=float,
+                default=0.01,
             ),
             survival_bonus=yaml_config.value(
-                "rl", "reward", "survival_bonus", value_type=float, default=1.0
+                "rl",
+                "reward",
+                "survival_bonus",
+                value_type=float,
+                default=1.0,
             ),
             contact_reward=yaml_config.value(
-                "rl", "reward", "contact_reward", value_type=float, default=0.0
+                "rl",
+                "reward",
+                "contact_reward",
+                value_type=float,
+                default=0.0,
             ),
             lift_reward_weight=yaml_config.value(
-                "rl", "reward", "lift_reward_weight", value_type=float, default=0.0
+                "rl",
+                "reward",
+                "lift_reward_weight",
+                value_type=float,
+                default=0.0,
             ),
             grasp_success_bonus=yaml_config.value(
-                "rl", "reward", "grasp_success_bonus", value_type=float, default=0.0
+                "rl",
+                "reward",
+                "grasp_success_bonus",
+                value_type=float,
+                default=0.0,
             ),
             lift_height_threshold=yaml_config.value(
-                "rl", "reward", "lift_height_threshold", value_type=float, default=0.05
+                "rl",
+                "reward",
+                "lift_height_threshold",
+                value_type=float,
+                default=0.05,
             ),
             drop_height_threshold=yaml_config.value(
-                "rl", "reward", "drop_height_threshold", value_type=float, default=0.1
+                "rl",
+                "reward",
+                "drop_height_threshold",
+                value_type=float,
+                default=0.1,
             ),
             terminate_on_non_finite=yaml_config.value(
-                "rl", "reward", "terminate_on_non_finite", value_type=bool, default=True
+                "rl",
+                "reward",
+                "terminate_on_non_finite",
+                value_type=bool,
+                default=True,
             ),
         )
+
 
 def load_mujoco_model(model_xml_path: Path) -> object:
     """Load a MuJoCo simulation model from an XML file.
@@ -105,17 +137,20 @@ def load_mujoco_model(model_xml_path: Path) -> object:
     """
     require_path(model_xml_path, "model_xml_path")
     if not model_xml_path.is_file():
-        raise FileNotFoundError(f"Model XML file not found at: {model_xml_path}")
+        msg = f"Model XML file not found at: {model_xml_path}"
+        raise FileNotFoundError(msg)
 
     try:
         mj_model = mujoco.MjModel.from_xml_path(str(model_xml_path))
     except Exception as e:
-        raise ValueError(f"Failed to load MuJoCo model from XML: {e}") from e
+        msg = f"Failed to load MuJoCo model from XML: {e}"
+        raise ValueError(msg) from e
 
     return {
         "mj_model": mj_model,
         "xml_path": model_xml_path,
     }
+
 
 def create_simulation(model: object) -> tuple[object, SimulationStep, ContactReporter]:
     """Create a stepping interface over a MuJoCo model.
@@ -147,11 +182,14 @@ def create_simulation(model: object) -> tuple[object, SimulationStep, ContactRep
 
     def step(dt: float) -> None:
         if not isinstance(dt, (int, float, np.floating, np.integer)):
-            raise TypeError("dt must be a float or integer")
+            msg = "dt must be a float or integer"
+            raise TypeError(msg)
         if dt <= 0:
-            raise ValueError("dt must be positive")
+            msg = "dt must be positive"
+            raise ValueError(msg)
         if not np.isfinite(dt):
-            raise ValueError("dt must be a finite number")
+            msg = "dt must be a finite number"
+            raise ValueError(msg)
 
         current_model: Any = state["model"]
         current_data: Any = state["data"]
@@ -184,6 +222,7 @@ def create_simulation(model: object) -> tuple[object, SimulationStep, ContactRep
 
     return state, step, contacts
 
+
 def reset_simulation(state: object) -> None:
     """Reset the simulation state to its initial configuration.
 
@@ -191,11 +230,13 @@ def reset_simulation(state: object) -> None:
         state: Opaque state handle returned by ``create_simulation``.
     """
     if not isinstance(state, dict) or "model" not in state or "data" not in state:
-        raise TypeError("state must be a simulation state dictionary")
+        msg = "state must be a simulation state dictionary"
+        raise TypeError(msg)
 
     state_dict = cast("dict[str, Any]", state)
     mujoco.mj_resetData(state_dict["model"], state_dict["data"])
     mujoco.mj_forward(state_dict["model"], state_dict["data"])
+
 
 def set_actuator_controls(state: object, ctrl: np.ndarray) -> None:
     """Write actuator controls into the simulation state.
@@ -215,11 +256,14 @@ def set_actuator_controls(state: object, ctrl: np.ndarray) -> None:
             shape.
     """
     if not isinstance(state, dict) or "model" not in state or "data" not in state:
-        raise TypeError("state must be a simulation state dictionary")
+        msg = "state must be a simulation state dictionary"
+        raise TypeError(msg)
     if not isinstance(ctrl, np.ndarray):
-        raise TypeError("ctrl must be a numpy array")
+        msg = "ctrl must be a numpy array"
+        raise TypeError(msg)
     if not np.isfinite(ctrl).all():
-        raise ValueError("ctrl must contain only finite values")
+        msg = "ctrl must contain only finite values"
+        raise ValueError(msg)
 
     state_dict = cast("dict[str, Any]", state)
     model: Any = state_dict["model"]
@@ -227,9 +271,11 @@ def set_actuator_controls(state: object, ctrl: np.ndarray) -> None:
 
     nu: int = model.nu
     if ctrl.shape != (nu,):
-        raise ValueError(f"ctrl shape {ctrl.shape} does not match model.nu ({nu})")
+        msg = f"ctrl shape {ctrl.shape} does not match model.nu ({nu})"
+        raise ValueError(msg)
 
     data.ctrl[:] = ctrl
+
 
 def read_joint_positions(state: object) -> np.ndarray:
     """Read the current joint positions from the simulation state.
@@ -241,10 +287,12 @@ def read_joint_positions(state: object) -> np.ndarray:
         Joint position vector with shape ``(num_joints,)``.
     """
     if not isinstance(state, dict) or "model" not in state or "data" not in state:
-        raise TypeError("state must be a simulation state dictionary")
+        msg = "state must be a simulation state dictionary"
+        raise TypeError(msg)
 
     state_dict = cast("dict[str, Any]", state)
     return np.array(state_dict["data"].qpos, copy=True)
+
 
 def set_joint_positions(state: object, positions: np.ndarray) -> None:
     """Write joint positions into the simulation state.
@@ -254,21 +302,26 @@ def set_joint_positions(state: object, positions: np.ndarray) -> None:
         positions: Joint position vector with shape ``(num_joints,)``.
     """
     if not isinstance(state, dict) or "model" not in state or "data" not in state:
-        raise TypeError("state must be a simulation state dictionary")
+        msg = "state must be a simulation state dictionary"
+        raise TypeError(msg)
     if not isinstance(positions, np.ndarray):
-        raise TypeError("positions must be a numpy array")
+        msg = "positions must be a numpy array"
+        raise TypeError(msg)
     if not np.isfinite(positions).all():
-        raise ValueError("positions must contain only finite values")
+        msg = "positions must contain only finite values"
+        raise ValueError(msg)
 
     state_dict = cast("dict[str, Any]", state)
     model: Any = state_dict["model"]
     data: Any = state_dict["data"]
 
     if positions.shape != (model.nq,):
-        raise ValueError(f"positions shape {positions.shape} does not match model.nq ({model.nq})")
+        msg = f"positions shape {positions.shape} does not match model.nq ({model.nq})"
+        raise ValueError(msg)
 
     data.qpos[:] = positions
     mujoco.mj_forward(model, data)
+
 
 def read_body_pose(state: object, body_name: str) -> np.ndarray:
     """Read the world-frame pose of a named body.
@@ -281,9 +334,11 @@ def read_body_pose(state: object, body_name: str) -> np.ndarray:
         A ``(4, 4)`` transformation matrix representing the body pose.
     """
     if not isinstance(state, dict) or "model" not in state or "data" not in state:
-        raise TypeError("state must be a simulation state dictionary")
+        msg = "state must be a simulation state dictionary"
+        raise TypeError(msg)
     if not isinstance(body_name, str):
-        raise TypeError("body_name must be a string")
+        msg = "body_name must be a string"
+        raise TypeError(msg)
 
     state_dict = cast("dict[str, Any]", state)
     model: Any = state_dict["model"]
@@ -291,9 +346,11 @@ def read_body_pose(state: object, body_name: str) -> np.ndarray:
 
     body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
     if body_id == -1:
-        raise ValueError(f"Body '{body_name}' not found in simulation model")
+        msg = f"Body '{body_name}' not found in simulation model"
+        raise ValueError(msg)
 
     return make_transform(data.xmat[body_id].reshape(3, 3), data.xpos[body_id])
+
 
 class MuJoCoGraspingEnv(gym.Env):
     """Gymnasium-compatible MuJoCo environment for RL policy training.
@@ -339,15 +396,18 @@ class MuJoCoGraspingEnv(gym.Env):
 
         require_path(robot_xml_path, "robot_xml_path")
         if object_name is not None and not isinstance(object_name, str):
-            raise TypeError("object_name must be a string or None")
+            msg = "object_name must be a string or None"
+            raise TypeError(msg)
         if reward_config is not None and not isinstance(reward_config, RewardConfig):
-            raise TypeError("reward_config must be a RewardConfig or None")
+            msg = "reward_config must be a RewardConfig or None"
+            raise TypeError(msg)
 
         self._object_name = object_name
         if reward_config is None:
             try:
                 reward_config = RewardConfig.load_from_config()
-            except Exception:
+            # Deliberate fallback: any config-loading failure uses default rewards.
+            except Exception:  # noqa: BLE001
                 reward_config = RewardConfig()
         self._reward_config = reward_config
         self._initial_object_height: float | None = None
@@ -364,7 +424,8 @@ class MuJoCoGraspingEnv(gym.Env):
         nu: int = mj_model.nu
 
         if nu == 0:
-            raise ValueError("MuJoCo model has zero actuators; the RL environment requires a non-empty action space")
+            msg = "MuJoCo model has zero actuators; the RL environment requires a non-empty action space"
+            raise ValueError(msg)
 
         obs_size = nq + nv
         space_dtype = FLATTENED_YAML_CONFIG.numpy_dtype()
@@ -434,7 +495,8 @@ class MuJoCoGraspingEnv(gym.Env):
         action = np.asarray(action, dtype=np.float32).flatten()
 
         if not np.isfinite(action).all():
-            raise ValueError("Action must contain only finite values")
+            msg = "Action must contain only finite values"
+            raise ValueError(msg)
 
         state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
         mj_model: Any = state_dict["model"]

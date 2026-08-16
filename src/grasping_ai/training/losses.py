@@ -59,4 +59,5 @@ def build_grasp_pose_regression_loss(loss_type: str) -> LossFunction:
             return torch.nn.functional.smooth_l1_loss(predicted_pose, target_pose)
 
         return loss_l1
-    raise ValueError(f"Unsupported loss_type: '{loss_type}'")
+    msg = f"Unsupported loss_type: '{loss_type}'"
+    raise ValueError(msg)

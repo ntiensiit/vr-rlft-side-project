@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from grasping_ai.perception.geometry import make_transform
-
-from grasping_ai.simulation.mujoco_env import set_actuator_controls
-
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +9,9 @@ import mujoco  # type: ignore[import-untyped]
 import numpy as np
 import pytransform3d.rotations as pr
 from loguru import logger
+
+from grasping_ai.perception.geometry import make_transform
+from grasping_ai.simulation.mujoco_env import set_actuator_controls
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -60,6 +59,7 @@ def panda_hand_to_contact_transform() -> np.ndarray:
     rotation = pr.matrix_from_quaternion(quaternion_wxyz)
     return make_transform(rotation, position)
 
+
 def panda_width_to_finger_joints(width: float) -> tuple[float, float]:
     """Map a Panda finger opening width in meters to slide-joint targets.
 
@@ -76,7 +76,8 @@ def panda_width_to_finger_joints(width: float) -> tuple[float, float]:
     target_q2 = float(np.clip(target_q2, -0.04, 0.0))
     return target_q1, target_q2
 
-def gripper_actuator_indices(mj_model: Any) -> list[int]:
+
+def gripper_actuator_indices(mj_model: mujoco.MjModel) -> list[int]:
     """Return actuator indices that drive the gripper rather than the arm."""
     indices: list[int] = []
     for i in range(int(mj_model.nu)):
@@ -95,6 +96,7 @@ def gripper_actuator_indices(mj_model: Any) -> list[int]:
     logger.info("Found gripper actuator indices: {}", indices)
     return indices
 
+
 def load_gripper_model(gripper_description_path: str) -> dict[str, object]:
     """Load a gripper description from disk.
 
@@ -106,18 +108,22 @@ def load_gripper_model(gripper_description_path: str) -> dict[str, object]:
         A dictionary describing the gripper kinematic and dynamic parameters.
     """
     if not isinstance(gripper_description_path, str):
-        raise TypeError("gripper_description_path must be a string")
+        msg = "gripper_description_path must be a string"
+        raise TypeError(msg)
     if not gripper_description_path:
-        raise ValueError("gripper_description_path must not be empty")
+        msg = "gripper_description_path must not be empty"
+        raise ValueError(msg)
 
     path = Path(gripper_description_path)
     if not path.is_file():
-        raise FileNotFoundError(f"Gripper description file '{gripper_description_path}' not found")
+        msg = f"Gripper description file '{gripper_description_path}' not found"
+        raise FileNotFoundError(msg)
 
     try:
         model = mujoco.MjModel.from_xml_path(str(path))
     except Exception as e:
-        raise ValueError(f"Failed to load MuJoCo gripper model: {e}") from e
+        msg = f"Failed to load MuJoCo gripper model: {e}"
+        raise ValueError(msg) from e
 
     actuator_names = []
     for i in range(model.nu):
@@ -131,6 +137,7 @@ def load_gripper_model(gripper_description_path: str) -> dict[str, object]:
         "nu": model.nu,
         "nq": model.nq,
     }
+
 
 def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[np.ndarray], None]:
     """Build a callable gripper controller that issues open/close commands.
@@ -149,28 +156,33 @@ def build_gripper_controller(gripper_model: dict[str, object]) -> Callable[[np.n
         underlying simulation environment.
     """
     if not isinstance(gripper_model, dict) or "model" not in gripper_model:
-        raise TypeError("gripper_model must be a dictionary returned by load_gripper_model")
+        msg = "gripper_model must be a dictionary returned by load_gripper_model"
+        raise TypeError(msg)
 
-    
     def controller(command: np.ndarray) -> None:
         if not isinstance(command, np.ndarray):
-            raise TypeError("command must be a numpy array")
+            msg = "command must be a numpy array"
+            raise TypeError(msg)
         if not np.isfinite(command).all():
-            raise ValueError("command must contain only finite values")
+            msg = "command must contain only finite values"
+            raise ValueError(msg)
 
         data: Any = gripper_model.get("data")
         model: Any = gripper_model.get("model")
 
         if data is None or model is None:
-            raise RuntimeError("Simulation data or model is not bound to gripper model")
+            msg = "Simulation data or model is not bound to gripper model"
+            raise RuntimeError(msg)
 
         expected_nu: Any = gripper_model["nu"]
         if command.shape != (expected_nu,):
-            raise ValueError(f"command shape {command.shape} does not match gripper actuators ({expected_nu},)")
+            msg = f"command shape {command.shape} does not match gripper actuators ({expected_nu},)"
+            raise ValueError(msg)
 
         set_actuator_controls({"model": model, "data": data}, command)
 
     return controller
+
 
 def make_open_command(gripper_model: dict[str, object]) -> np.ndarray:
     """Build an "open" gripper command for the supplied gripper model.
@@ -182,7 +194,8 @@ def make_open_command(gripper_model: dict[str, object]) -> np.ndarray:
         A gripper command vector that fully opens the gripper.
     """
     if not isinstance(gripper_model, dict) or "model" not in gripper_model:
-        raise TypeError("gripper_model must be a dictionary returned by load_gripper_model")
+        msg = "gripper_model must be a dictionary returned by load_gripper_model"
+        raise TypeError(msg)
 
     if "open_command" in gripper_model:
         return np.array(gripper_model["open_command"], dtype=float)
@@ -197,6 +210,7 @@ def make_open_command(gripper_model: dict[str, object]) -> np.ndarray:
             cmd[i] = 0.0
     return cmd
 
+
 def make_close_command(gripper_model: dict[str, object]) -> np.ndarray:
     """Build a "close" gripper command for the supplied gripper model.
 
@@ -207,7 +221,8 @@ def make_close_command(gripper_model: dict[str, object]) -> np.ndarray:
         A gripper command vector that closes the gripper.
     """
     if not isinstance(gripper_model, dict) or "model" not in gripper_model:
-        raise TypeError("gripper_model must be a dictionary returned by load_gripper_model")
+        msg = "gripper_model must be a dictionary returned by load_gripper_model"
+        raise TypeError(msg)
 
     if "close_command" in gripper_model:
         return np.array(gripper_model["close_command"], dtype=float)

@@ -36,7 +36,7 @@ synthetic:
   sim_validate_require_ik: true
   sim_validate_min_contacts: 1.0
   sim_validate_fallback_analytical: true
-  sim_table_xml: ${env.table_xml}
+  sim_table_xml: ${table_xml}
   sim_object_position:
     - 0.5
     - 0.0

@@ -2,30 +2,28 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import torch
+
 from grasping_ai.config.diffusion import (
     DEFAULT_DIFFUSION_SCHEDULE,
     linear_beta_schedule,
 )
-
 from grasping_ai.models.equivariant_encoder import (
     build_equivariant_encoder,
     encode_point_cloud,
     pool_object_features,
 )
-
 from grasping_ai.models.grasp_sampling_batch import batch_conditioned_grasp_samples
-
 from grasping_ai.models.mlp import build_mish_mlp
-
-from collections.abc import Callable
-
-import torch
 
 DiffusionScoreModel = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
 DiffusionSampler = Callable[
     [torch.Tensor, Callable[..., torch.Tensor], torch.Tensor, torch.Generator | None],
     torch.Tensor,
 ]
+
 
 class ScoreNetwork(torch.nn.Module):
     """Neural network predicting score (noise) conditioned on features."""
@@ -51,6 +49,7 @@ class ScoreNetwork(torch.nn.Module):
         inputs = torch.cat([x, t_emb, conditioning], dim=-1)
         return self.mlp(inputs)
 
+
 class GraspGeneratorModel(torch.nn.Module):
     """Complete generative model holding encoder and score network."""
 
@@ -60,7 +59,7 @@ class GraspGeneratorModel(torch.nn.Module):
         self.feature_dim = feature_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-        
+
         self.encoder = build_equivariant_encoder(feature_dim, num_layers)
         self.score_net = ScoreNetwork(feature_dim, hidden_dim, num_layers)
 
@@ -80,9 +79,9 @@ class GraspGeneratorModel(torch.nn.Module):
         Returns:
             Pooled conditioning features with shape ``(B, feature_dim)``.
         """
-        
         features = encode_point_cloud(self.encoder, point_clouds)
         return pool_object_features(features)
+
 
 def build_score_network(feature_dim: int, hidden_dim: int, num_layers: int) -> DiffusionScoreModel:
     """Construct a score network for grasp-pose diffusion.
@@ -97,6 +96,7 @@ def build_score_network(feature_dim: int, hidden_dim: int, num_layers: int) -> D
         a tensor with the same shape as ``x``.
     """
     return ScoreNetwork(feature_dim, hidden_dim, num_layers)
+
 
 def build_diffusion_sampler() -> DiffusionSampler:
     """Construct a score-based diffusion sampler for grasp poses.
@@ -150,7 +150,9 @@ def build_diffusion_sampler() -> DiffusionSampler:
 
     return sampler
 
-def sample_grasps_with_diffusion(
+
+# Tests call this with six positional arguments.
+def sample_grasps_with_diffusion(  # noqa: PLR0913,PLR0917
     sampler: DiffusionSampler,
     score_model: DiffusionScoreModel,
     conditioning: torch.Tensor,

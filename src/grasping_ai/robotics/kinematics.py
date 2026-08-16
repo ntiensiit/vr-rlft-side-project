@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from grasping_ai.perception.geometry import make_transform
-
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -15,6 +11,9 @@ import numpy as np
 import pytransform3d.rotations as pr
 import pytransform3d.transformations as pt
 from loguru import logger
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+from grasping_ai.perception.geometry import make_transform
 
 SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
 
@@ -30,7 +29,8 @@ _EE_BODY_CANDIDATES = (
     "hand",
 )
 
-def _resolve_end_effector_body_name(model: Any, robot_model: dict[str, object]) -> str:
+
+def _resolve_end_effector_body_name(model: mujoco.MjModel, robot_model: dict[str, object]) -> str:
     """Return the end-effector body name for FK/IK."""
     ee_body_name: Any = robot_model.get("end_effector_body_name")
     if ee_body_name is None:
@@ -43,6 +43,7 @@ def _resolve_end_effector_body_name(model: Any, robot_model: dict[str, object]) 
             ee_body_name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.nbody - 1)
     logger.info("Resolved end-effector body name: {}", ee_body_name)
     return str(ee_body_name)
+
 
 def _se3_pose_error(target_pose: RigidTransform, current_pose: RigidTransform) -> np.ndarray:
     """Compute a 6D SE(3) pose error using ``pytransform3d`` conventions.
@@ -59,6 +60,7 @@ def _se3_pose_error(target_pose: RigidTransform, current_pose: RigidTransform) -
     err_rot = pr.compact_axis_angle_from_matrix(delta[:3, :3])
     return np.hstack((err_pos, err_rot))
 
+
 def load_robot_model(robot_description_path: str) -> dict[str, object]:
     """Load a robot description from disk.
 
@@ -70,18 +72,22 @@ def load_robot_model(robot_description_path: str) -> dict[str, object]:
         A dictionary describing robot kinematic and dynamic parameters.
     """
     if not isinstance(robot_description_path, str):
-        raise TypeError("robot_description_path must be a string")
+        msg = "robot_description_path must be a string"
+        raise TypeError(msg)
     if not robot_description_path:
-        raise ValueError("robot_description_path must not be empty")
+        msg = "robot_description_path must not be empty"
+        raise ValueError(msg)
 
     path = Path(robot_description_path)
     if not path.is_file():
-        raise FileNotFoundError(f"Robot description file '{robot_description_path}' not found")
+        msg = f"Robot description file '{robot_description_path}' not found"
+        raise FileNotFoundError(msg)
 
     try:
         model = mujoco.MjModel.from_xml_path(str(path))
     except Exception as e:
-        raise ValueError(f"Failed to load MuJoCo robot model: {e}") from e
+        msg = f"Failed to load MuJoCo robot model: {e}"
+        raise ValueError(msg) from e
 
     return {
         "model": model,
@@ -89,6 +95,7 @@ def load_robot_model(robot_description_path: str) -> dict[str, object]:
         "nq": model.nq,
         "nv": model.nv,
     }
+
 
 def robot_model_nq(robot_model: dict[str, object]) -> int:
     """Return joint count from a ``load_robot_model`` dictionary.
@@ -104,10 +111,12 @@ def robot_model_nq(robot_model: dict[str, object]) -> int:
     """
     nq = robot_model.get("nq")
     if not isinstance(nq, int):
-        raise TypeError("robot_model['nq'] must be int")
+        msg = "robot_model['nq'] must be int"
+        raise TypeError(msg)
     return nq
 
-def robot_model_mj_model(robot_model: dict[str, object]) -> Any:
+
+def robot_model_mj_model(robot_model: dict[str, object]) -> mujoco.MjModel:
     """Return the MuJoCo model object from a ``load_robot_model`` dictionary.
 
     Args:
@@ -121,8 +130,10 @@ def robot_model_mj_model(robot_model: dict[str, object]) -> Any:
     """
     model = robot_model.get("model")
     if model is None:
-        raise TypeError("robot_model must contain 'model'")
+        msg = "robot_model must contain 'model'"
+        raise TypeError(msg)
     return model
+
 
 def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematics:
     """Build a callable forward-kinematics function for a robot.
@@ -134,24 +145,29 @@ def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematic
         A callable mapping joint configurations to end-effector transforms.
     """
     if not isinstance(robot_model, dict) or "model" not in robot_model:
-        raise TypeError("robot_model must be a dictionary returned by load_robot_model")
+        msg = "robot_model must be a dictionary returned by load_robot_model"
+        raise TypeError(msg)
 
     model: Any = robot_model["model"]
     ee_body_name = _resolve_end_effector_body_name(model, robot_model)
 
     body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, ee_body_name)
     if body_id == -1:
-        raise ValueError(f"End effector body '{ee_body_name}' not found in robot model")
+        msg = f"End effector body '{ee_body_name}' not found in robot model"
+        raise ValueError(msg)
 
     local_data = mujoco.MjData(model)
 
     def fk(joints: JointConfiguration) -> RigidTransform:
         if not isinstance(joints, np.ndarray):
-            raise TypeError("joints must be a numpy array")
+            msg = "joints must be a numpy array"
+            raise TypeError(msg)
         if joints.shape != (model.nq,):
-            raise ValueError(f"joints shape {joints.shape} does not match model.nq ({model.nq})")
+            msg = f"joints shape {joints.shape} does not match model.nq ({model.nq})"
+            raise ValueError(msg)
         if not np.isfinite(joints).all():
-            raise ValueError("joints must contain only finite values")
+            msg = "joints must contain only finite values"
+            raise ValueError(msg)
 
         local_data.qpos[:] = joints
         mujoco.mj_forward(model, local_data)
@@ -163,8 +179,45 @@ def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematic
 
     return fk
 
+
+def _validate_ik_inputs(target_pose: np.ndarray, initial_joints: np.ndarray, model: mujoco.MjModel) -> None:
+    """Validate an IK target pose and initial joint configuration."""
+    if not isinstance(target_pose, np.ndarray) or target_pose.shape != SE3_MATRIX_SHAPE:
+        msg = "target_pose must be a (4, 4) numpy array"
+        raise ValueError(msg)
+    if not isinstance(initial_joints, np.ndarray) or initial_joints.shape != (model.nq,):
+        msg = f"initial_joints shape {initial_joints.shape} does not match model.nq ({model.nq})"
+        raise ValueError(msg)
+    if not np.isfinite(target_pose).all():
+        msg = "target_pose must contain only finite values"
+        raise ValueError(msg)
+    if not np.isfinite(initial_joints).all():
+        msg = "initial_joints must contain only finite values"
+        raise ValueError(msg)
+
+
+def _ee_pose(local_data: mujoco.MjData, body_id: int) -> np.ndarray:
+    """Read the current pose of a body from simulation data."""
+    curr_pos = local_data.xpos[body_id]
+    curr_rot = local_data.xmat[body_id].reshape(3, 3)
+    return make_transform(curr_rot, curr_pos)
+
+
+def _clamp_joint_limits(q: np.ndarray, model: mujoco.MjModel) -> None:
+    """Clamp hinge/slide joint positions to their configured ranges in place."""
+    for j in range(model.njnt):
+        if model.jnt_limited[j] and model.jnt_type[j] in [
+            mujoco.mjtJoint.mjJNT_HINGE,
+            mujoco.mjtJoint.mjJNT_SLIDE,
+        ]:
+            qadr = model.jnt_qposadr[j]
+            q[qadr] = np.clip(q[qadr], model.jnt_range[j, 0], model.jnt_range[j, 1])
+
+
 def build_inverse_kinematics(
-    robot_model: dict[str, object], max_iterations: int, tolerance: float,
+    robot_model: dict[str, object],
+    max_iterations: int,
+    tolerance: float,
 ) -> Callable[..., np.ndarray]:
     """Build a numerical inverse-kinematics solver for a robot.
 
@@ -178,30 +231,27 @@ def build_inverse_kinematics(
         initial joint configuration and returns a solved joint configuration.
     """
     if not isinstance(robot_model, dict) or "model" not in robot_model:
-        raise TypeError("robot_model must be a dictionary returned by load_robot_model")
+        msg = "robot_model must be a dictionary returned by load_robot_model"
+        raise TypeError(msg)
     if not isinstance(max_iterations, int) or max_iterations <= 0:
-        raise ValueError("max_iterations must be a positive integer")
+        msg = "max_iterations must be a positive integer"
+        raise ValueError(msg)
     if not isinstance(tolerance, (int, float)) or tolerance <= 0:
-        raise ValueError("tolerance must be a positive float")
+        msg = "tolerance must be a positive float"
+        raise ValueError(msg)
 
     model: Any = robot_model["model"]
     ee_body_name = _resolve_end_effector_body_name(model, robot_model)
 
     body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, ee_body_name)
     if body_id == -1:
-        raise ValueError(f"End effector body '{ee_body_name}' not found in robot model")
+        msg = f"End effector body '{ee_body_name}' not found in robot model"
+        raise ValueError(msg)
 
     local_data = mujoco.MjData(model)
 
     def ik(target_pose: RigidTransform, initial_joints: JointConfiguration) -> JointConfiguration:
-        if not isinstance(target_pose, np.ndarray) or target_pose.shape != SE3_MATRIX_SHAPE:
-            raise ValueError("target_pose must be a (4, 4) numpy array")
-        if not isinstance(initial_joints, np.ndarray) or initial_joints.shape != (model.nq,):
-            raise ValueError(f"initial_joints shape {initial_joints.shape} does not match model.nq ({model.nq})")
-        if not np.isfinite(target_pose).all():
-            raise ValueError("target_pose must contain only finite values")
-        if not np.isfinite(initial_joints).all():
-            raise ValueError("initial_joints must contain only finite values")
+        _validate_ik_inputs(target_pose, initial_joints, model)
 
         q = np.copy(initial_joints)
         damping = 0.01
@@ -210,11 +260,7 @@ def build_inverse_kinematics(
             local_data.qpos[:] = q
             mujoco.mj_forward(model, local_data)
 
-            curr_pos = local_data.xpos[body_id]
-            curr_rot = local_data.xmat[body_id].reshape(3, 3)
-            current_pose = make_transform(curr_rot, curr_pos)
-
-            err = _se3_pose_error(target_pose, current_pose)
+            err = _se3_pose_error(target_pose, _ee_pose(local_data, body_id))
             if np.linalg.norm(err) < tolerance:
                 break
 
@@ -229,28 +275,21 @@ def build_inverse_kinematics(
 
             q += dq
 
-            for j in range(model.njnt):
-                if model.jnt_limited[j] and model.jnt_type[j] in [
-                    mujoco.mjtJoint.mjJNT_HINGE,
-                    mujoco.mjtJoint.mjJNT_SLIDE,
-                ]:
-                    qadr = model.jnt_qposadr[j]
-                    q[qadr] = np.clip(q[qadr], model.jnt_range[j, 0], model.jnt_range[j, 1])
+            _clamp_joint_limits(q, model)
 
         # Verify final error
         local_data.qpos[:] = q
         mujoco.mj_forward(model, local_data)
-        curr_pos = local_data.xpos[body_id]
-        curr_rot = local_data.xmat[body_id].reshape(3, 3)
-        current_pose = make_transform(curr_rot, curr_pos)
-        final_err = np.linalg.norm(_se3_pose_error(target_pose, current_pose))
+        final_err = np.linalg.norm(_se3_pose_error(target_pose, _ee_pose(local_data, body_id)))
 
         if final_err > tolerance:
-            raise ValueError(f"IK solver failed to converge within tolerance {tolerance} (final error: {final_err})")
+            msg = f"IK solver failed to converge within tolerance {tolerance} (final error: {final_err})"
+            raise ValueError(msg)
 
         return q
 
     return ik
+
 
 def solve_inverse_kinematics(
     ik_solver: Callable[..., np.ndarray],
@@ -268,5 +307,6 @@ def solve_inverse_kinematics(
         A joint configuration that achieves ``target_pose`` to within tolerance.
     """
     if not callable(ik_solver):
-        raise TypeError("ik_solver must be a callable")
+        msg = "ik_solver must be a callable"
+        raise TypeError(msg)
     return ik_solver(target_pose, initial_joints)

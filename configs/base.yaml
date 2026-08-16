@@ -2,8 +2,11 @@
 seed: 42
 device: cpu
 experiment_name: default
+output_dir: artifacts
 array_dtype: float32
 sim_dtype: float64
+paths:
+  output_dir: ${output_dir}
 tracking:
   backend: none
   project: vr-rlft-side-project

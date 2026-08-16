@@ -2,22 +2,26 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import open3d as _open3d  # noqa: F401
+import hydra
+import numpy as np
+
 from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
 from grasping_ai.pipelines.prepare_synthetic_data import (
     generate_synthetic_dataset,
     prepare_data_index,
 )
 
-from pathlib import Path
-
-import hydra
-import numpy as np
-import open3d as _open3d  # noqa: F401
-from omegaconf import DictConfig
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
 
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/prepare_data")
 def main(cfg: DictConfig) -> None:
+    """Prepare processed grasp datasets or rebuild the dataset index."""
     yaml_config = FlattenedYAMLConfig(cfg)
     mode = str(yaml_config.value("mode", "prepare", "mode", value_type=object, script_or=True))
     dataset_root = yaml_config.value("paths", "dataset_root", value_type=Path)
@@ -75,14 +79,14 @@ def main(cfg: DictConfig) -> None:
             max_linear_velocity=yaml_config.value("limits", "max_linear_velocity", value_type=float),
             max_angular_velocity=yaml_config.value("limits", "max_angular_velocity", value_type=float),
             quality_report_path=yaml_config.value(
-                "quality_report", "prepare", "quality_report", value_type=Path, script_or=True
+                "quality_report", "prepare", "quality_report", value_type=Path, script_or=True,
             ),
             sim_object_position=sim_object_position,
             sim_validate_require_lift=yaml_config.value("synthetic", "sim_validate_require_lift", value_type=bool),
             sim_validate_require_ik=yaml_config.value("synthetic", "sim_validate_require_ik", value_type=bool),
             sim_validate_min_contacts=yaml_config.value("synthetic", "sim_validate_min_contacts", value_type=float),
             sim_validate_fallback_analytical=yaml_config.value(
-                "synthetic", "sim_validate_fallback_analytical", value_type=bool
+                "synthetic", "sim_validate_fallback_analytical", value_type=bool,
             ),
             table_xml=table_xml,
         )

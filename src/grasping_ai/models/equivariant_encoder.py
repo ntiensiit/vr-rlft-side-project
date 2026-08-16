@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
 import torch
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 
 DEGENERATE_COMPONENT_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.degenerate_component_eps", 1e-9))
 DEGENERATE_SPAN_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.degenerate_span_eps", 1e-12))
@@ -12,6 +12,7 @@ GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
 MIN_ANTIPODAL_CONTACTS = int(FLATTENED_YAML_CONFIG.get("grasp.min_antipodal_contacts", 2))
 SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 TORCH_DEGENERATE_CLAMP_MIN = float(FLATTENED_YAML_CONFIG.get("grasp.torch_degenerate_clamp_min", 1e-12))
+
 
 def _compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute a deterministic SE(3)-equivariant frame and centroid.
@@ -71,6 +72,7 @@ def _compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor
     frame = torch.where(degenerate_cloud.view(b_size, 1, 1), identity_frame, frame)
     return frame, centroid.squeeze(1)
 
+
 def compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute a deterministic SE(3)-equivariant frame and centroid.
 
@@ -90,12 +92,16 @@ def compute_se3_frame(points: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]
             contains fewer than two points.
     """
     if not isinstance(points, torch.Tensor):
-        raise TypeError("points must be a torch.Tensor")
+        msg = "points must be a torch.Tensor"
+        raise TypeError(msg)
     if points.ndim != GRASP_POSES_NDIM or points.shape[2] != SPATIAL_DIM:
-        raise ValueError(f"points must have shape (B, N, 3), got {points.shape}")
+        msg = f"points must have shape (B, N, 3), got {points.shape}"
+        raise ValueError(msg)
     if points.shape[1] < MIN_ANTIPODAL_CONTACTS:
-        raise ValueError("point cloud must contain at least two points")
+        msg = "point cloud must contain at least two points"
+        raise ValueError(msg)
     return _compute_se3_frame(points)
+
 
 def world_transform_from_frame(frame: torch.Tensor, centroid: torch.Tensor) -> torch.Tensor:
     """Build the SE(3) transform mapping canonical coordinates to input coordinates.
@@ -117,6 +123,7 @@ def world_transform_from_frame(frame: torch.Tensor, centroid: torch.Tensor) -> t
     world[:, :3, 3] = centroid
     return world
 
+
 def invert_rigid_transform_batch(transforms: torch.Tensor) -> torch.Tensor:
     """Invert batched rigid ``(4, 4)`` SE(3) transformation matrices on device.
 
@@ -136,6 +143,7 @@ def invert_rigid_transform_batch(transforms: torch.Tensor) -> torch.Tensor:
     result[:, 3, 3] = 1.0
     return result
 
+
 def compose_with_se3_frame(transforms: torch.Tensor, frame: torch.Tensor, centroid: torch.Tensor) -> torch.Tensor:
     """Express canonical-frame grasp poses in the input point-cloud frame.
 
@@ -154,6 +162,7 @@ def compose_with_se3_frame(transforms: torch.Tensor, frame: torch.Tensor, centro
     world = world_transform_from_frame(frame, centroid)
     world_inv = invert_rigid_transform_batch(world)
     return torch.matmul(torch.matmul(world, transforms), world_inv)
+
 
 class SE3EquivariantPointNet(torch.nn.Module):
     """Point-cloud encoder with SE(3)-equivariant features.
@@ -190,6 +199,7 @@ class SE3EquivariantPointNet(torch.nn.Module):
             features = self.mlp(features)
         return features
 
+
 def build_equivariant_encoder(feature_dim: int, num_layers: int) -> SE3EquivariantPointNet:
     """Construct a callable SE(3)-equivariant point-cloud encoder.
 
@@ -208,6 +218,7 @@ def build_equivariant_encoder(feature_dim: int, num_layers: int) -> SE3Equivaria
     """
     return SE3EquivariantPointNet(feature_dim, num_layers)
 
+
 def encode_point_cloud(encoder: torch.nn.Module, points: torch.Tensor) -> torch.Tensor:
     """Run an SE(3)-equivariant encoder on a batched point cloud.
 
@@ -219,6 +230,7 @@ def encode_point_cloud(encoder: torch.nn.Module, points: torch.Tensor) -> torch.
         Equivariant features with shape ``(B, N, feature_dim)``.
     """
     return encoder(points)
+
 
 def pool_object_features(features: torch.Tensor) -> torch.Tensor:
     """Pool per-point equivariant features into an object-level descriptor.

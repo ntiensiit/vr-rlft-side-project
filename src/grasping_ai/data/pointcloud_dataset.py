@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-from grasping_ai.perception.geometry import make_transform
-
-from grasping_ai.perception.pointcloud import build_kdtree
-
-from grasping_ai.simulation.ycb import (
-    find_ycb_mesh_file,
-    resolve_ycb_object_directory,
-)
-
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
-from grasping_ai.utils.path_validation import require_path
-
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import numpy as np
 from loguru import logger
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+from grasping_ai.perception.geometry import make_transform
+from grasping_ai.perception.pointcloud import build_kdtree
+from grasping_ai.simulation.ycb import (
+    find_ycb_mesh_file,
+    resolve_ycb_object_directory,
+)
+from grasping_ai.utils.path_validation import require_path
 
 ALIGNMENT_DOT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("tolerances.alignment_dot_threshold", 0.9))
 GRASP_DISTANCE_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.grasp_distance_eps", 1e-4))
@@ -30,6 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+
 class GraspSample(TypedDict):
     """Single grasp-dataset record loaded from disk."""
 
@@ -37,6 +35,7 @@ class GraspSample(TypedDict):
     grasp_poses: np.ndarray | None
     scores: np.ndarray | None
     object_id: str | None
+
 
 def _validate_point_cloud(point_cloud: object) -> np.ndarray:
     """Validate a loaded point cloud array.
@@ -52,12 +51,16 @@ def _validate_point_cloud(point_cloud: object) -> np.ndarray:
         ValueError: If the array shape or values are invalid.
     """
     if not isinstance(point_cloud, np.ndarray):
-        raise TypeError("'point_cloud' must be a numpy array")
+        msg = "'point_cloud' must be a numpy array"
+        raise TypeError(msg)
     if point_cloud.ndim != POINT_CLOUD_NDIM or point_cloud.shape[1] != SPATIAL_DIM:
-        raise ValueError(f"point_cloud must have shape (N, 3), got {point_cloud.shape}")
+        msg = f"point_cloud must have shape (N, 3), got {point_cloud.shape}"
+        raise ValueError(msg)
     if not np.isfinite(point_cloud).all():
-        raise ValueError("point_cloud must contain only finite values")
+        msg = "point_cloud must contain only finite values"
+        raise ValueError(msg)
     return point_cloud
+
 
 def _decode_object_id(object_id: object) -> str | None:
     """Decode an optional object identifier stored in an NPZ archive.
@@ -79,6 +82,7 @@ def _decode_object_id(object_id: object) -> str | None:
         return object_id
     return str(object_id)
 
+
 def save_grasp_sample(record_path: Path, sample: GraspSample) -> None:
     """Persist a grasp-pose dataset record as a pickle-free NPZ archive.
 
@@ -92,7 +96,8 @@ def save_grasp_sample(record_path: Path, sample: GraspSample) -> None:
     """
     require_path(record_path, "record_path")
     if record_path.suffix != ".npz":
-        raise ValueError(f"Record path '{record_path}' must use the .npz extension")
+        msg = f"Record path '{record_path}' must use the .npz extension"
+        raise ValueError(msg)
 
     point_cloud = _validate_point_cloud(sample["point_cloud"])
 
@@ -115,6 +120,7 @@ def save_grasp_sample(record_path: Path, sample: GraspSample) -> None:
     record_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(record_path, **cast("Any", archive_fields))
 
+
 def discover_dataset_files(dataset_root: Path) -> list[Path]:
     """List dataset record files under a dataset root directory.
 
@@ -126,15 +132,19 @@ def discover_dataset_files(dataset_root: Path) -> list[Path]:
     """
     require_path(dataset_root, "dataset_root")
     if not dataset_root.exists():
-        raise FileNotFoundError(f"Dataset root directory '{dataset_root}' does not exist")
+        msg = f"Dataset root directory '{dataset_root}' does not exist"
+        raise FileNotFoundError(msg)
     if not dataset_root.is_dir():
-        raise ValueError(f"Dataset root '{dataset_root}' is not a directory")
+        msg = f"Dataset root '{dataset_root}' is not a directory"
+        raise ValueError(msg)
 
     records = sorted([p for p in dataset_root.rglob("*.npz") if p.is_file()])
     if not records:
-        raise ValueError(f"No dataset record files (.npz) found under '{dataset_root}'")
+        msg = f"No dataset record files (.npz) found under '{dataset_root}'"
+        raise ValueError(msg)
     logger.info("Discovered {} dataset record files under {}", len(records), dataset_root)
     return records
+
 
 def _read_grasp_sample_archive(archive: np.lib.npyio.NpzFile) -> GraspSample:
     """Parse a loaded NPZ archive into a ``GraspSample``.
@@ -149,7 +159,8 @@ def _read_grasp_sample_archive(archive: np.lib.npyio.NpzFile) -> GraspSample:
         ValueError: If required fields are missing or invalid.
     """
     if "point_cloud" not in archive:
-        raise ValueError("Record is missing 'point_cloud' key")
+        msg = "Record is missing 'point_cloud' key"
+        raise ValueError(msg)
 
     point_cloud = _validate_point_cloud(archive["point_cloud"])
     grasp_poses = archive["grasp_poses"] if "grasp_poses" in archive.files else None
@@ -162,6 +173,7 @@ def _read_grasp_sample_archive(archive: np.lib.npyio.NpzFile) -> GraspSample:
         "scores": scores,
         "object_id": object_id,
     }
+
 
 def load_grasp_sample(record_path: Path) -> GraspSample:
     """Load a single grasp-pose dataset record from disk.
@@ -179,11 +191,14 @@ def load_grasp_sample(record_path: Path) -> GraspSample:
     """
     require_path(record_path, "record_path")
     if not record_path.exists():
-        raise FileNotFoundError(f"Record file '{record_path}' not found")
+        msg = f"Record file '{record_path}' not found"
+        raise FileNotFoundError(msg)
     if not record_path.is_file():
-        raise ValueError(f"Record path '{record_path}' is not a file")
+        msg = f"Record path '{record_path}' is not a file"
+        raise ValueError(msg)
     if record_path.suffix != ".npz":
-        raise ValueError(f"Record path '{record_path}' must use the .npz extension")
+        msg = f"Record path '{record_path}' must use the .npz extension"
+        raise ValueError(msg)
 
     try:
         with np.load(record_path) as archive:
@@ -191,7 +206,9 @@ def load_grasp_sample(record_path: Path) -> GraspSample:
     except ValueError:
         raise
     except Exception as e:
-        raise ValueError(f"Failed to load record file: {e}") from e
+        msg = f"Failed to load record file: {e}"
+        raise ValueError(msg) from e
+
 
 def iterate_grasp_dataset(dataset_root: Path) -> Iterator[GraspSample]:
     """Iterate over all grasp-pose samples in a dataset directory.
@@ -208,6 +225,7 @@ def iterate_grasp_dataset(dataset_root: Path) -> Iterator[GraspSample]:
     for record in records:
         yield load_grasp_sample(record)
 
+
 def resolve_ycb_object_id(ycb_root: Path, object_name: str) -> Path:
     """Resolve the on-disk path of a YCB object mesh file.
 
@@ -220,24 +238,45 @@ def resolve_ycb_object_id(ycb_root: Path, object_name: str) -> Path:
     """
     require_path(ycb_root, "ycb_root")
     if not isinstance(object_name, str):
-        raise TypeError("object_name must be a string")
+        msg = "object_name must be a string"
+        raise TypeError(msg)
     if not ycb_root.exists():
-        raise FileNotFoundError(f"YCB root directory '{ycb_root}' does not exist")
+        msg = f"YCB root directory '{ycb_root}' does not exist"
+        raise FileNotFoundError(msg)
     if not ycb_root.is_dir():
-        raise ValueError(f"YCB root '{ycb_root}' is not a directory")
+        msg = f"YCB root '{ycb_root}' is not a directory"
+        raise ValueError(msg)
 
-    
     object_dir = resolve_ycb_object_directory(ycb_root, object_name)
     try:
         return find_ycb_mesh_file(object_dir)
     except FileNotFoundError:
         return object_dir
 
+
+@dataclass(frozen=True)
+class _ContactPair:
+    """Antipodal contact candidate: contact positions and outward normals."""
+
+    p_i: np.ndarray
+    n_i: np.ndarray
+    p_j: np.ndarray
+    n_j: np.ndarray
+
+
+@dataclass(frozen=True)
+class _AntipodalSearchConfig:
+    """Tunable knobs for one randomized antipodal contact-pair search pass."""
+
+    num_grasps: int
+    gripper_width: float
+    attempts: int
+    antipodal_dot: float
+    alignment_dot: float | None = None
+
+
 def _antipodal_grasp_from_contacts(
-    p_i: np.ndarray,
-    n_i: np.ndarray,
-    p_j: np.ndarray,
-    n_j: np.ndarray,
+    pair: _ContactPair,
     d_unit: np.ndarray,
     antipodal_dot: float,
     alignment_dot: float | None = None,
@@ -245,26 +284,23 @@ def _antipodal_grasp_from_contacts(
     """Build a single antipodal grasp pose from a contact pair when constraints pass.
 
     Args:
-        p_i: First contact position.
-        n_i: Outward normal at the first contact.
-        p_j: Second contact position.
-        n_j: Outward normal at the second contact.
-        d_unit: Unit vector from ``p_i`` to ``p_j``.
-        antipodal_dot: Minimum cosine similarity between ``n_i`` and ``-n_j``.
+        pair: Contact positions and outward normals of the contact pair.
+        d_unit: Unit vector from the first to the second contact.
+        antipodal_dot: Minimum cosine similarity between the two normals.
         alignment_dot: Optional minimum alignment between normals and ``d_unit``.
 
     Returns:
         A valid ``(4, 4)`` grasp transform, or ``None`` when constraints fail.
     """
-    if np.dot(n_i, -n_j) <= antipodal_dot:
+    if np.dot(pair.n_i, -pair.n_j) <= antipodal_dot:
         return None
     if alignment_dot is not None and (
-        np.dot(n_i, d_unit) <= alignment_dot or np.dot(n_j, -d_unit) <= alignment_dot
+        np.dot(pair.n_i, d_unit) <= alignment_dot or np.dot(pair.n_j, -d_unit) <= alignment_dot
     ):
         return None
 
     z_axis = d_unit
-    avg_normal = 0.5 * (n_i + n_j)
+    avg_normal = 0.5 * (pair.n_i + pair.n_j)
     x_axis = np.cross(z_axis, avg_normal)
     x_norm = np.linalg.norm(x_axis)
     if x_norm < GRASP_DISTANCE_EPS:
@@ -279,23 +315,20 @@ def _antipodal_grasp_from_contacts(
 
     pose = make_transform(
         np.column_stack([x_axis, y_axis, z_axis]),
-        0.5 * (p_i + p_j),
+        0.5 * (pair.p_i + pair.p_j),
     )
     det = np.linalg.det(pose[:3, :3])
     if np.abs(det - 1.0) >= ROTATION_DET_EPS:
         return None
     return pose
 
+
 def _search_antipodal_grasps(
     points: np.ndarray,
     normals: np.ndarray,
     tree: object,
-    num_grasps: int,
-    gripper_width: float,
     rng: np.random.Generator,
-    attempts: int,
-    antipodal_dot: float,
-    alignment_dot: float | None = None,
+    config: _AntipodalSearchConfig,
 ) -> list[np.ndarray]:
     """Collect antipodal grasps from randomized contact-pair search.
 
@@ -303,12 +336,8 @@ def _search_antipodal_grasps(
         points: Point cloud of shape ``(N, 3)``.
         normals: Point normals of shape ``(N, 3)``.
         tree: KD-tree built over ``points``.
-        num_grasps: Maximum number of grasps to return.
-        gripper_width: Maximum contact separation distance.
         rng: Random generator for sampling and shuffling.
-        attempts: Number of random seed contacts to try.
-        antipodal_dot: Antipodal normal cosine threshold.
-        alignment_dot: Optional action-line alignment threshold.
+        config: Search pass knobs (grasp count, width, attempts, thresholds).
 
     Returns:
         List of valid grasp transforms, each with shape ``(4, 4)``.
@@ -316,15 +345,15 @@ def _search_antipodal_grasps(
     valid_grasps: list[np.ndarray] = []
     n = points.shape[0]
 
-    for _ in range(attempts):
-        if len(valid_grasps) >= num_grasps:
+    for _ in range(config.attempts):
+        if len(valid_grasps) >= config.num_grasps:
             break
 
         i = int(rng.choice(n))
         p_i = points[i]
         n_i = normals[i]
 
-        neighbors = tree.query_ball_point(p_i, r=gripper_width)  # type: ignore[attr-defined]
+        neighbors = tree.query_ball_point(p_i, r=config.gripper_width)  # type: ignore[attr-defined]
         if not neighbors:
             continue
 
@@ -342,13 +371,10 @@ def _search_antipodal_grasps(
             d_unit = d / dist
 
             pose = _antipodal_grasp_from_contacts(
-                p_i,
-                n_i,
-                p_j,
-                n_j,
+                _ContactPair(p_i=p_i, n_i=n_i, p_j=p_j, n_j=n_j),
                 d_unit,
-                antipodal_dot,
-                alignment_dot,
+                config.antipodal_dot,
+                config.alignment_dot,
             )
             if pose is not None:
                 valid_grasps.append(pose)
@@ -356,12 +382,38 @@ def _search_antipodal_grasps(
 
     return valid_grasps
 
-def generate_analytical_grasps(
+
+def _validate_cloud_and_rng(points: np.ndarray, normals: np.ndarray, rng: np.random.Generator) -> None:
+    """Validate point/normal arrays and the random generator.
+
+    Args:
+        points: Point cloud expected to have shape ``(N, 3)``.
+        normals: Point normals expected to match ``points`` in length.
+        rng: Random generator, must be a ``numpy.random.Generator``.
+    """
+    if not isinstance(points, np.ndarray) or points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
+        msg = "points must be of shape (N, 3)"
+        raise ValueError(msg)
+    if not isinstance(normals, np.ndarray) or normals.ndim != POINT_CLOUD_NDIM or normals.shape[1] != SPATIAL_DIM:
+        msg = "normals must be of shape (N, 3)"
+        raise ValueError(msg)
+    if points.shape[0] != normals.shape[0]:
+        msg = "points and normals must have the same length"
+        raise ValueError(msg)
+    if not isinstance(rng, np.random.Generator):
+        msg = "rng must be a numpy random Generator"
+        raise TypeError(msg)
+
+
+# Public API: threshold knobs stay individual keyword arguments because
+# pipelines and tests pass them by name.
+def generate_analytical_grasps(  # noqa: PLR0913
     points: np.ndarray,
     normals: np.ndarray,
     num_grasps: int,
     gripper_width: float,
     rng: np.random.Generator,
+    *,
     allow_relaxed: bool = False,
     relaxed_antipodal_dot: float = 0.0,
     strict_antipodal_dot: float = 0.5,
@@ -395,52 +447,39 @@ def generate_analytical_grasps(
     Returns:
         Array of grasp poses of shape ``(K, 4, 4)`` where K <= num_grasps.
     """
-    if not isinstance(points, np.ndarray) or points.ndim != POINT_CLOUD_NDIM or points.shape[1] != SPATIAL_DIM:
-        raise ValueError("points must be of shape (N, 3)")
-    if not isinstance(normals, np.ndarray) or normals.ndim != POINT_CLOUD_NDIM or normals.shape[1] != SPATIAL_DIM:
-        raise ValueError("normals must be of shape (N, 3)")
-    if points.shape[0] != normals.shape[0]:
-        raise ValueError("points and normals must have the same length")
-    if not isinstance(rng, np.random.Generator):
-        raise TypeError("rng must be a numpy random Generator")
+    _validate_cloud_and_rng(points, normals, rng)
     if num_grasps <= 0:
-        raise ValueError("num_grasps must be positive")
+        msg = "num_grasps must be positive"
+        raise ValueError(msg)
     if not isinstance(allow_relaxed, bool):
-        raise TypeError("allow_relaxed must be a boolean")
+        msg = "allow_relaxed must be a boolean"
+        raise TypeError(msg)
     if not -1.0 <= relaxed_antipodal_dot <= 1.0:
-        raise ValueError("relaxed_antipodal_dot must be in [-1, 1]")
+        msg = "relaxed_antipodal_dot must be in [-1, 1]"
+        raise ValueError(msg)
     if not -1.0 <= strict_antipodal_dot <= 1.0:
-        raise ValueError("strict_antipodal_dot must be in [-1, 1]")
+        msg = "strict_antipodal_dot must be in [-1, 1]"
+        raise ValueError(msg)
     if not -1.0 <= strict_alignment_dot <= 1.0:
-        raise ValueError("strict_alignment_dot must be in [-1, 1]")
+        msg = "strict_alignment_dot must be in [-1, 1]"
+        raise ValueError(msg)
     if not isinstance(search_multiplier, int) or search_multiplier <= 0:
-        raise ValueError("search_multiplier must be a positive integer")
+        msg = "search_multiplier must be a positive integer"
+        raise ValueError(msg)
 
     tree = build_kdtree(points)
-    attempts = num_grasps * search_multiplier
-    valid_grasps = _search_antipodal_grasps(
-        points,
-        normals,
-        tree,
-        num_grasps,
-        gripper_width,
-        rng,
-        attempts,
-        strict_antipodal_dot,
-        strict_alignment_dot,
+    search = _AntipodalSearchConfig(
+        num_grasps=num_grasps,
+        gripper_width=gripper_width,
+        attempts=num_grasps * search_multiplier,
+        antipodal_dot=strict_antipodal_dot,
+        alignment_dot=strict_alignment_dot,
     )
+    valid_grasps = _search_antipodal_grasps(points, normals, tree, rng, search)
 
     if not valid_grasps and allow_relaxed:
-        valid_grasps = _search_antipodal_grasps(
-            points,
-            normals,
-            tree,
-            num_grasps,
-            gripper_width,
-            rng,
-            attempts,
-            relaxed_antipodal_dot,
-        )
+        relaxed_search = replace(search, antipodal_dot=relaxed_antipodal_dot, alignment_dot=None)
+        valid_grasps = _search_antipodal_grasps(points, normals, tree, rng, relaxed_search)
 
     if not valid_grasps:
         return np.empty((0, 4, 4), dtype=np.float32)

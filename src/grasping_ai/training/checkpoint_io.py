@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from grasping_ai.models.rl_policy import read_rl_policy_metadata
-
-from grasping_ai.utils.path_validation import require_path
-
 from typing import TYPE_CHECKING, Any
 
 import torch
 
+from grasping_ai.models.rl_policy import read_rl_policy_metadata
+from grasping_ai.utils.path_validation import require_path
+
 if TYPE_CHECKING:
     from pathlib import Path
+
 
 def read_checkpoint_model_state_dict(checkpoint: dict[str, Any]) -> dict[str, torch.Tensor] | None:
     """Extract ``model_state_dict`` tensor entries from a loaded checkpoint.
@@ -26,12 +26,9 @@ def read_checkpoint_model_state_dict(checkpoint: dict[str, Any]) -> dict[str, to
     raw = checkpoint.get("model_state_dict")
     if not isinstance(raw, dict):
         return None
-    state = {
-        key: value
-        for key, value in raw.items()
-        if isinstance(key, str) and isinstance(value, torch.Tensor)
-    }
+    state = {key: value for key, value in raw.items() if isinstance(key, str) and isinstance(value, torch.Tensor)}
     return state or None
+
 
 def load_torch_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
     """Load a PyTorch checkpoint from disk with shared validation and errors.
@@ -50,16 +47,21 @@ def load_torch_checkpoint(checkpoint_path: Path, device: str) -> dict[str, Any]:
     """
     require_path(checkpoint_path, "checkpoint_path")
     if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+        msg = f"Checkpoint file not found: {checkpoint_path}"
+        raise FileNotFoundError(msg)
 
     try:
         checkpoint = torch.load(checkpoint_path, map_location=device)
     except Exception as e:
-        raise ValueError(f"Failed to load checkpoint: {e}") from e
+        msg = f"Failed to load checkpoint: {e}"
+        raise ValueError(msg) from e
 
     if not isinstance(checkpoint, dict):
-        raise ValueError(f"Checkpoint at {checkpoint_path} must deserialize to a dictionary")
+        # Existing callers/tests rely on ValueError for non-dict payloads.
+        msg = f"Checkpoint at {checkpoint_path} must deserialize to a dictionary"
+        raise ValueError(msg)  # noqa: TRY004
     return checkpoint
+
 
 def checkpoint_scalar_int(value: object) -> int:
     """Coerce a checkpoint scalar value to ``int``.
@@ -81,7 +83,9 @@ def checkpoint_scalar_int(value: object) -> int:
         return value
     if isinstance(value, float):
         return int(value)
-    raise TypeError(f"Expected numeric checkpoint scalar, got {type(value)!r}")
+    msg = f"Expected numeric checkpoint scalar, got {type(value)!r}"
+    raise TypeError(msg)
+
 
 def read_model_checkpoint_metadata(
     checkpoint_path: Path,
@@ -102,7 +106,6 @@ def read_model_checkpoint_metadata(
     """
     checkpoint = load_torch_checkpoint(checkpoint_path, device)
 
-    
     rl_metadata = read_rl_policy_metadata(checkpoint)
     if rl_metadata is not None:
         kind = "rl_policy"

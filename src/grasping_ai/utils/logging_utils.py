@@ -10,7 +10,7 @@ import mlflow
 from loguru import logger
 
 
-def setup_logging(module_name: str | None = None, level: str = "INFO"):
+def setup_logging(module_name: str | None = None, level: str = "INFO") -> None:
     """Configure loguru logging to stderr and optionally to a log file.
 
     Args:
@@ -41,6 +41,7 @@ def setup_logging(module_name: str | None = None, level: str = "INFO"):
         )
 
     logger.info("Logging configured with level: {}", level)
+
 
 def init_mlflow(config: dict) -> bool:
     """Initialize MLflow tracking from the project configuration.

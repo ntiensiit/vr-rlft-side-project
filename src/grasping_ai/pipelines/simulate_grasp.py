@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
 
+import mujoco  # type: ignore[import-untyped]
+import numpy as np
+from loguru import logger
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.evaluation.metrics import (
     build_lift_outcome_judge,
     build_stability_judge,
     evaluate_lift_success,
     evaluate_stability,
 )
-
 from grasping_ai.perception.geometry import invert_transform
-
 from grasping_ai.robotics.gripper import (
     gripper_actuator_indices,
     load_gripper_model,
@@ -21,7 +26,6 @@ from grasping_ai.robotics.gripper import (
     panda_hand_to_contact_transform,
     panda_width_to_finger_joints,
 )
-
 from grasping_ai.robotics.kinematics import (
     build_forward_kinematics,
     build_inverse_kinematics,
@@ -30,30 +34,279 @@ from grasping_ai.robotics.kinematics import (
     robot_model_nq,
     solve_inverse_kinematics,
 )
-
 from grasping_ai.robotics.transforms import transform_grasp_pose
-
 from grasping_ai.simulation.scene import (
-    collect_contacts,
     MuJoCoScene,
+    collect_contacts,
     step_scene,
 )
-
 from grasping_ai.simulation.ycb import (
     find_ycb_mjcf,
     resolve_ycb_object_directory,
 )
 
-from pathlib import Path
+if TYPE_CHECKING:
+    from grasping_ai.robotics.kinematics import ForwardKinematics
 
-import mujoco  # type: ignore[import-untyped]
-import numpy as np
-from loguru import logger
+
+@dataclass(frozen=True)
+class _GraspSimParams:
+    """Tunable thresholds for one grasp simulation."""
+
+    num_simulation_steps: int
+    lift_height_threshold: float
+    max_linear_velocity: float
+    max_angular_velocity: float
+    grasp_width: float | None
+
 
 def _fallback_timestep() -> float:
     return float(FLATTENED_YAML_CONFIG.get("env.fallback_timestep", 0.002))
 
-def simulate_grasp(
+
+def _validate_simulate_grasp_args(
+    grasp_pose: np.ndarray,
+    robot_xml_path: Path,
+    ycb_root: Path,
+    params: _GraspSimParams,
+) -> None:
+    """Validate grasp pose shape, asset paths, and simulation thresholds."""
+    se3_matrix_shape = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
+    if grasp_pose.shape != se3_matrix_shape:
+        msg = f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}"
+        raise ValueError(msg)
+    if not isinstance(robot_xml_path, Path) or not robot_xml_path.is_file():
+        msg = f"robot_xml_path not found: {robot_xml_path}"
+        raise FileNotFoundError(msg)
+    if not isinstance(ycb_root, Path) or not ycb_root.is_dir():
+        msg = f"ycb_root not found: {ycb_root}"
+        raise FileNotFoundError(msg)
+    if params.num_simulation_steps <= 0:
+        msg = "num_simulation_steps must be positive"
+        raise ValueError(msg)
+    if params.lift_height_threshold < 0:
+        msg = "lift_height_threshold must be non-negative"
+        raise ValueError(msg)
+    if params.max_linear_velocity < 0:
+        msg = "max_linear_velocity must be non-negative"
+        raise ValueError(msg)
+    if params.max_angular_velocity < 0:
+        msg = "max_angular_velocity must be non-negative"
+        raise ValueError(msg)
+    if params.grasp_width is not None and params.grasp_width < 0:
+        msg = "grasp_width must be non-negative when provided"
+        raise ValueError(msg)
+
+
+def _solve_grasp_ik(
+    robot_xml_path: Path,
+    hand_pose: np.ndarray,
+    *,
+    quiet: bool,
+) -> tuple[np.ndarray, bool, ForwardKinematics]:
+    """Solve IK for the hand pose, falling back to the home keyframe joints."""
+    robot_model = load_robot_model(str(robot_xml_path))
+    nq_robot = robot_model_nq(robot_model)
+    ik_solver = build_inverse_kinematics(
+        robot_model,
+        max_iterations=400,
+        tolerance=float(FLATTENED_YAML_CONFIG.get("robot.ik.tolerance", 0.001)),
+    )
+    fk_solver = build_forward_kinematics(robot_model)
+    robot_mj = robot_model_mj_model(robot_model)
+    if int(robot_mj.nkey) > 0:
+        initial_joints = np.array(robot_mj.key_qpos[0, :nq_robot], dtype=np.float64)
+    else:
+        initial_joints = np.zeros(nq_robot)
+
+    ik_failed = False
+    try:
+        q_target = solve_inverse_kinematics(ik_solver, hand_pose, initial_joints)
+    except ValueError as exc:
+        if not quiet:
+            logger.warning("IK failed: {}", exc)
+        q_target = initial_joints
+        ik_failed = True
+    return q_target, ik_failed, fk_solver
+
+
+def _place_object_at_gripper(
+    scene: MuJoCoScene,
+    object_id: str,
+    ee_pose: np.ndarray,
+    hand_pose: np.ndarray,
+    *,
+    quiet: bool,
+) -> bool:
+    """Place the object at the gripper after IK failure; return ``False`` when impossible."""
+    mj_model = scene.model
+    mj_data = scene.data
+    body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, object_id)
+    qposadr: int | None = None
+    if body_id != -1:
+        joint_adr = int(mj_model.body_jntadr[body_id])
+        joint_count = int(mj_model.body_jntnum[body_id])
+        if joint_adr >= 0 and joint_count > 0:
+            for offset in range(joint_count):
+                joint_id = joint_adr + offset
+                if mj_model.jnt_type[joint_id] == mujoco.mjtJoint.mjJNT_FREE:
+                    qposadr = int(mj_model.jnt_qposadr[joint_id])
+                    break
+    if qposadr is None:
+        if not quiet:
+            logger.warning("IK failed and object has no freejoint; skipping physics for this grasp.")
+        return False
+    object_pose = scene.body_pose(object_id)
+    new_object_pose = ee_pose @ invert_transform(hand_pose) @ object_pose
+    mj_data.qpos[qposadr : qposadr + 3] = new_object_pose[:3, 3]
+    quat = np.zeros(4)
+    mujoco.mju_mat2Quat(
+        quat,
+        np.ascontiguousarray(new_object_pose[:3, :3], dtype=np.float64).reshape(9),
+    )
+    mj_data.qpos[qposadr + 3 : qposadr + 7] = quat
+    for joint_id in range(mj_model.njnt):
+        if int(mj_model.jnt_qposadr[joint_id]) == qposadr:
+            dofadr = int(mj_model.jnt_dofadr[joint_id])
+            mj_data.qvel[dofadr : dofadr + 6] = 0.0
+            break
+    mujoco.mj_forward(mj_model, mj_data)
+    if not quiet:
+        logger.warning("Placing object at the gripper because the arm cannot reach this pose.")
+    return True
+
+
+def _apply_finger_width_overrides(
+    mj_model: mujoco.MjModel,
+    gripper_ids: list[int],
+    open_cmd: np.ndarray,
+    close_cmd: np.ndarray,
+    grasp_width: float,
+) -> None:
+    """Override finger open/close targets from a desired gripper width."""
+    open_q1, open_q2 = panda_width_to_finger_joints(grasp_width)
+    close_q1, close_q2 = 0.0, -0.04
+    finger_open = {"finger_joint1": open_q1, "finger_joint2": open_q2}
+    finger_close = {"finger_joint1": close_q1, "finger_joint2": close_q2}
+    for idx in gripper_ids:
+        joint_id = int(mj_model.actuator_trnid[idx, 0])
+        joint_name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_id) or ""
+        for key, value in finger_open.items():
+            if key in joint_name:
+                open_cmd[idx] = value
+        for key, value in finger_close.items():
+            if key in joint_name:
+                close_cmd[idx] = value
+
+
+def _gripper_control_ranges(mj_model: mujoco.MjModel, gripper_ids: list[int]) -> tuple[list[float], list[float]]:
+    """Read per-actuator open (hi) and close (lo) targets from control ranges."""
+    open_vals = []
+    close_vals = []
+    for idx in gripper_ids:
+        if mj_model.actuator_ctrllimited[idx]:
+            lo, hi = mj_model.actuator_ctrlrange[idx]
+        else:
+            lo, hi = 0.0, 1.0
+        open_vals.append(float(hi))
+        close_vals.append(float(lo))
+    return open_vals, close_vals
+
+
+def _actuator_gripper_commands(
+    mj_model: mujoco.MjModel,
+    gripper_ids: list[int],
+    q_target: np.ndarray,
+    gripper_close_command: np.ndarray,
+    grasp_width: float | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build open/close commands from gripper actuator control ranges."""
+    open_vals, close_vals = _gripper_control_ranges(mj_model, gripper_ids)
+    open_cmd = np.zeros(int(mj_model.nu), dtype=np.float64)
+    close_cmd = np.zeros(int(mj_model.nu), dtype=np.float64)
+    gripper_set = set(gripper_ids)
+    for i in range(int(mj_model.nu)):
+        if i in gripper_set:
+            open_cmd[i] = open_vals[0]
+            close_cmd[i] = close_vals[0]
+            continue
+        if mj_model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_JOINT:
+            joint_id = int(mj_model.actuator_trnid[i, 0])
+            qadr = int(mj_model.jnt_qposadr[joint_id])
+            if qadr < q_target.shape[0]:
+                open_cmd[i] = q_target[qadr]
+                close_cmd[i] = q_target[qadr]
+    for i, idx in enumerate(gripper_ids):
+        open_cmd[idx] = open_vals[i]
+        close_cmd[idx] = close_vals[i]
+    if grasp_width is not None and len(gripper_ids) == int(
+        FLATTENED_YAML_CONFIG.get("robot.gripper.dual_count", 2),
+    ):
+        _apply_finger_width_overrides(mj_model, gripper_ids, open_cmd, close_cmd, grasp_width)
+    close_len = gripper_close_command.shape[0]
+    for i, idx in enumerate(gripper_ids):
+        if i >= close_len:
+            break
+        close_cmd[idx] = float(gripper_close_command[i])
+    return open_cmd, close_cmd
+
+
+def _model_gripper_commands(
+    mj_model: mujoco.MjModel,
+    gripper_model: dict[str, object],
+    gripper_close_command: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build open/close commands from the gripper model when no finger actuators exist."""
+    raw_open = make_open_command(gripper_model).astype(np.float64)
+    raw_close = make_close_command(gripper_model).astype(np.float64)
+    nu_robot = int(mj_model.nu)
+    if nu_robot < raw_open.shape[0]:
+        open_cmd = raw_open[:nu_robot]
+        close_cmd = raw_close[:nu_robot]
+    elif nu_robot > raw_open.shape[0]:
+        open_cmd = np.zeros(nu_robot, dtype=np.float64)
+        close_cmd = np.zeros(nu_robot, dtype=np.float64)
+        open_cmd[: raw_open.shape[0]] = raw_open
+        close_cmd[: raw_close.shape[0]] = raw_close
+    else:
+        open_cmd = raw_open
+        close_cmd = raw_close
+    close_len = gripper_close_command.shape[0]
+    if close_len > 0:
+        overlay_len = min(close_len, nu_robot)
+        close_cmd[:overlay_len] = gripper_close_command[:overlay_len]
+    return open_cmd, close_cmd
+
+
+def _evaluate_sim_state(
+    scene: MuJoCoScene,
+    object_id: str,
+    initial_height: float,
+    params: _GraspSimParams,
+) -> tuple[float, np.ndarray, float, bool]:
+    """Compute final height, velocity, contact count, and success from the sim state."""
+    mj_model = scene.model
+    mj_data = scene.data
+    final_pose = scene.body_pose(object_id)
+    final_height = float(final_pose[2, 3])
+
+    body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, object_id)
+    if body_id == -1:
+        msg = f"Body '{object_id}' not found in simulation model"
+        raise ValueError(msg)
+    object_velocity = np.array(mj_data.cvel[body_id], copy=True)
+
+    contact_count = float(len(collect_contacts(scene.contacts, {object_id})))
+
+    lift_judge = build_lift_outcome_judge(params.lift_height_threshold)
+    stability_judge = build_stability_judge(params.max_linear_velocity, params.max_angular_velocity)
+    lifted = evaluate_lift_success(lift_judge, initial_height, final_height)
+    stable = evaluate_stability(stability_judge, object_velocity)
+    success = bool(contact_count >= 1 and lifted and stable)
+    return final_height, object_velocity, contact_count, success
+
+
+def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests call it positionally
     grasp_pose: np.ndarray,
     object_id: str,
     ycb_root: Path,
@@ -61,6 +314,7 @@ def simulate_grasp(
     table_xml_path: Path | None,
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
+    *,
     lift_height_threshold: float = 0.05,
     max_linear_velocity: float = 0.05,
     max_angular_velocity: float = 0.1,
@@ -96,23 +350,14 @@ def simulate_grasp(
         ValueError: If inputs or simulation state are invalid.
         FileNotFoundError: If required robot or YCB assets are missing.
     """
-    se3_matrix_shape = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
-    if grasp_pose.shape != se3_matrix_shape:
-        raise ValueError(f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}")
-    if not isinstance(robot_xml_path, Path) or not robot_xml_path.is_file():
-        raise FileNotFoundError(f"robot_xml_path not found: {robot_xml_path}")
-    if not isinstance(ycb_root, Path) or not ycb_root.is_dir():
-        raise FileNotFoundError(f"ycb_root not found: {ycb_root}")
-    if num_simulation_steps <= 0:
-        raise ValueError("num_simulation_steps must be positive")
-    if lift_height_threshold < 0:
-        raise ValueError("lift_height_threshold must be non-negative")
-    if max_linear_velocity < 0:
-        raise ValueError("max_linear_velocity must be non-negative")
-    if max_angular_velocity < 0:
-        raise ValueError("max_angular_velocity must be non-negative")
-    if grasp_width is not None and grasp_width < 0:
-        raise ValueError("grasp_width must be non-negative when provided")
+    params = _GraspSimParams(
+        num_simulation_steps=num_simulation_steps,
+        lift_height_threshold=lift_height_threshold,
+        max_linear_velocity=max_linear_velocity,
+        max_angular_velocity=max_angular_velocity,
+        grasp_width=grasp_width,
+    )
+    _validate_simulate_grasp_args(grasp_pose, robot_xml_path, ycb_root, params)
 
     hand_to_contact = panda_hand_to_contact_transform()
     hand_pose = transform_grasp_pose(grasp_pose, invert_transform(hand_to_contact))
@@ -128,50 +373,21 @@ def simulate_grasp(
     )
     mj_model = scene.model
     mj_data = scene.data
+    object_body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, object_id)
+    if object_body_id == -1:
+        msg = f"Body '{object_id}' not found in simulation model"
+        raise ValueError(msg)
 
-    robot_model = load_robot_model(str(robot_xml_path))
-    nq_robot = robot_model_nq(robot_model)
-    ik_solver = build_inverse_kinematics(
-        robot_model,
-        max_iterations=400,
-        tolerance=float(FLATTENED_YAML_CONFIG.get("robot.ik.tolerance", 0.001)),
-    )
-    fk_solver = build_forward_kinematics(robot_model)
-    robot_mj = robot_model_mj_model(robot_model)
-    if int(robot_mj.nkey) > 0:
-        initial_joints = np.array(robot_mj.key_qpos[0, :nq_robot], dtype=np.float64)
-    else:
-        initial_joints = np.zeros(nq_robot)
-
-    ik_failed = False
-    try:
-        q_target = solve_inverse_kinematics(ik_solver, hand_pose, initial_joints)
-    except ValueError as exc:
-        if not quiet:
-            logger.warning("IK failed: {}", exc)
-        q_target = initial_joints
-        ik_failed = True
+    q_target, ik_failed, fk_solver = _solve_grasp_ik(robot_xml_path, hand_pose, quiet=quiet)
 
     scene.reset()
-    if mj_data.qpos.shape[0] >= nq_robot:
-        mj_data.qpos[:nq_robot] = q_target
+    if mj_data.qpos.shape[0] >= q_target.shape[0]:
+        mj_data.qpos[: q_target.shape[0]] = q_target
     mujoco.mj_forward(mj_model, mj_data)
     if ik_failed:
         ee_pose = fk_solver(q_target)
-        body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, object_id)
-        qposadr: int | None = None
-        if body_id != -1:
-            joint_adr = int(mj_model.body_jntadr[body_id])
-            joint_count = int(mj_model.body_jntnum[body_id])
-            if joint_adr >= 0 and joint_count > 0:
-                for offset in range(joint_count):
-                    joint_id = joint_adr + offset
-                    if mj_model.jnt_type[joint_id] == mujoco.mjtJoint.mjJNT_FREE:
-                        qposadr = int(mj_model.jnt_qposadr[joint_id])
-                        break
-        if qposadr is None:
-            if not quiet:
-                logger.warning("IK failed and object has no freejoint; skipping physics for this grasp.")
+        placed = _place_object_at_gripper(scene, object_id, ee_pose, hand_pose, quiet=quiet)
+        if not placed:
             return {
                 "success": False,
                 "initial_height": 0.0,
@@ -181,23 +397,6 @@ def simulate_grasp(
                 "grasp_pose": grasp_pose,
                 "fk_position_error": float("inf"),
             }
-        object_pose = scene.body_pose(object_id)
-        new_object_pose = ee_pose @ invert_transform(hand_pose) @ object_pose
-        mj_data.qpos[qposadr : qposadr + 3] = new_object_pose[:3, 3]
-        quat = np.zeros(4)
-        mujoco.mju_mat2Quat(
-            quat,
-            np.ascontiguousarray(new_object_pose[:3, :3], dtype=np.float64).reshape(9),
-        )
-        mj_data.qpos[qposadr + 3 : qposadr + 7] = quat
-        for joint_id in range(mj_model.njnt):
-            if int(mj_model.jnt_qposadr[joint_id]) == qposadr:
-                dofadr = int(mj_model.jnt_dofadr[joint_id])
-                mj_data.qvel[dofadr : dofadr + 6] = 0.0
-                break
-        mujoco.mj_forward(mj_model, mj_data)
-        if not quiet:
-            logger.warning("Placing object at the gripper because the arm cannot reach this pose.")
 
     initial_pose = scene.body_pose(object_id)
     initial_height = float(initial_pose[2, 3])
@@ -209,78 +408,21 @@ def simulate_grasp(
     gripper_model = load_gripper_model(str(robot_xml_path))
     gripper_model["model"] = mj_model
     gripper_model["data"] = mj_data
-    nu_robot = int(mj_model.nu)
 
     gripper_ids = gripper_actuator_indices(mj_model)
     if gripper_ids:
-        open_vals = []
-        close_vals = []
-        for idx in gripper_ids:
-            if mj_model.actuator_ctrllimited[idx]:
-                lo, hi = mj_model.actuator_ctrlrange[idx]
-            else:
-                lo, hi = 0.0, 1.0
-            open_vals.append(float(hi))
-            close_vals.append(float(lo))
-        open_cmd = np.zeros(int(mj_model.nu), dtype=np.float64)
-        close_cmd = np.zeros(int(mj_model.nu), dtype=np.float64)
-        gripper_set = set(gripper_ids)
-        for i in range(int(mj_model.nu)):
-            if i in gripper_set:
-                open_cmd[i] = open_vals[0]
-                close_cmd[i] = close_vals[0]
-                continue
-            if mj_model.actuator_trntype[i] == mujoco.mjtTrn.mjTRN_JOINT:
-                joint_id = int(mj_model.actuator_trnid[i, 0])
-                qadr = int(mj_model.jnt_qposadr[joint_id])
-                if qadr < q_target.shape[0]:
-                    open_cmd[i] = q_target[qadr]
-                    close_cmd[i] = q_target[qadr]
-        for i, idx in enumerate(gripper_ids):
-            open_cmd[idx] = open_vals[i]
-            close_cmd[idx] = close_vals[i]
-        if grasp_width is not None and len(gripper_ids) == int(
-            FLATTENED_YAML_CONFIG.get("robot.gripper.dual_count", 2)
-        ):
-            open_q1, open_q2 = panda_width_to_finger_joints(grasp_width)
-            close_q1, close_q2 = 0.0, -0.04
-            finger_open = {"finger_joint1": open_q1, "finger_joint2": open_q2}
-            finger_close = {"finger_joint1": close_q1, "finger_joint2": close_q2}
-            for idx in gripper_ids:
-                joint_id = int(mj_model.actuator_trnid[idx, 0])
-                joint_name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_JOINT, joint_id) or ""
-                for key, value in finger_open.items():
-                    if key in joint_name:
-                        open_cmd[idx] = value
-                for key, value in finger_close.items():
-                    if key in joint_name:
-                        close_cmd[idx] = value
-        close_len = gripper_close_command.shape[0]
-        for i, idx in enumerate(gripper_ids):
-            if i >= close_len:
-                break
-            close_cmd[idx] = float(gripper_close_command[i])
+        open_cmd, close_cmd = _actuator_gripper_commands(
+            mj_model,
+            gripper_ids,
+            q_target,
+            gripper_close_command,
+            params.grasp_width,
+        )
     else:
-        raw_open = make_open_command(gripper_model).astype(np.float64)
-        raw_close = make_close_command(gripper_model).astype(np.float64)
-        if nu_robot < raw_open.shape[0]:
-            open_cmd = raw_open[:nu_robot]
-            close_cmd = raw_close[:nu_robot]
-        elif nu_robot > raw_open.shape[0]:
-            open_cmd = np.zeros(nu_robot, dtype=np.float64)
-            close_cmd = np.zeros(nu_robot, dtype=np.float64)
-            open_cmd[: raw_open.shape[0]] = raw_open
-            close_cmd[: raw_close.shape[0]] = raw_close
-        else:
-            open_cmd = raw_open
-            close_cmd = raw_close
-        close_len = gripper_close_command.shape[0]
-        if close_len > 0:
-            overlay_len = min(close_len, nu_robot)
-            close_cmd[:overlay_len] = gripper_close_command[:overlay_len]
+        open_cmd, close_cmd = _model_gripper_commands(mj_model, gripper_model, gripper_close_command)
 
-    pre_grasp_steps = min(10, max(1, num_simulation_steps // 4))
-    close_steps = max(1, num_simulation_steps - pre_grasp_steps)
+    pre_grasp_steps = min(10, max(1, params.num_simulation_steps // 4))
+    close_steps = max(1, params.num_simulation_steps - pre_grasp_steps)
 
     step_scene(lambda step_dt: scene.step(open_cmd, step_dt), dt, pre_grasp_steps)
     step_scene(lambda step_dt: scene.step(close_cmd, step_dt), dt, close_steps)
@@ -291,36 +433,27 @@ def simulate_grasp(
         achieved_pose = fk_solver(q_target)
         fk_position_error = float(np.linalg.norm(achieved_pose[:3, 3] - hand_pose[:3, 3]))
 
-    final_pose = scene.body_pose(object_id)
-    final_height = float(final_pose[2, 3])
-
-    body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, object_id)
-    if body_id == -1:
-        raise ValueError(f"Body '{object_id}' not found in simulation model")
-    object_velocity = np.array(mj_data.cvel[body_id], copy=True)
-
-    object_contacts = collect_contacts(scene.contacts, {object_id})
-    contact_count = len(object_contacts)
-
-    
-    lift_judge = build_lift_outcome_judge(lift_height_threshold)
-    stability_judge = build_stability_judge(max_linear_velocity, max_angular_velocity)
-    lifted = evaluate_lift_success(lift_judge, initial_height, final_height)
-    stable = evaluate_stability(stability_judge, object_velocity)
-    success = bool(contact_count >= 1 and lifted and stable)
+    final_height, object_velocity, contact_count, success = _evaluate_sim_state(
+        scene,
+        object_id,
+        initial_height,
+        params,
+    )
 
     return {
         "success": success,
         "initial_height": initial_height,
         "final_height": final_height,
-        "contact_count": float(contact_count),
+        "contact_count": contact_count,
         "object_velocity": object_velocity,
         "grasp_pose": grasp_pose,
         "fk_position_error": fk_position_error,
     }
 
-def run_simulation_sweep(
+
+def run_simulation_sweep(  # noqa: PLR0913  # public sweep API; callers pass per-grasp options as keywords
     grasp_poses: np.ndarray,
+    *,
     object_id: str,
     ycb_root: Path,
     robot_xml_path: Path,
@@ -359,10 +492,12 @@ def run_simulation_sweep(
         if grasp_poses.shape == se3_matrix_shape:
             grasp_poses = grasp_poses.reshape(1, *se3_matrix_shape)
         else:
-            raise ValueError("grasp_poses must have shape (K, 4, 4) or (4, 4)")
+            msg = "grasp_poses must have shape (K, 4, 4) or (4, 4)"
+            raise ValueError(msg)
 
     if grasp_poses.ndim != grasp_poses_ndim or grasp_poses.shape[1:] != se3_matrix_shape:
-        raise ValueError("grasp_poses must have shape (K, 4, 4)")
+        msg = "grasp_poses must have shape (K, 4, 4)"
+        raise ValueError(msg)
 
     outcomes = []
     for i in range(grasp_poses.shape[0]):

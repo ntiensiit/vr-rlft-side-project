@@ -2,20 +2,8 @@
 
 from __future__ import annotations
 
-from grasping_ai.simulation.scene import MuJoCoScene
-
-from grasping_ai.simulation.ycb import (
-    find_ycb_mjcf,
-    resolve_ycb_object_directory,
-)
-
-from grasping_ai.utils.path_validation import (
-    require_optional_path,
-    require_path,
-)
-
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import mujoco  # type: ignore[import-untyped]
@@ -23,15 +11,26 @@ import mujoco.viewer  # type: ignore[import-untyped]
 import numpy as np
 from loguru import logger
 
+from grasping_ai.simulation.scene import MuJoCoScene
+from grasping_ai.simulation.ycb import (
+    find_ycb_mjcf,
+    resolve_ycb_object_directory,
+)
+from grasping_ai.utils.path_validation import (
+    require_optional_path,
+    require_path,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Callable
+
 
 def load_visualization_scene(
     robot_xml_path: Path,
     object_id: str | None = None,
     ycb_root: Path | None = None,
     table_xml_path: Path | None = None,
-) -> tuple[Any, Any]:
+) -> tuple[mujoco.MjModel, mujoco.MjData]:
     """Load a MuJoCo model and data for interactive viewing.
 
     Args:
@@ -46,22 +45,26 @@ def load_visualization_scene(
     """
     require_path(robot_xml_path, "robot_xml_path")
     if not robot_xml_path.is_file():
-        raise FileNotFoundError(f"robot_xml_path not found: {robot_xml_path}")
+        msg = f"robot_xml_path not found: {robot_xml_path}"
+        raise FileNotFoundError(msg)
     require_optional_path(table_xml_path, "table_xml_path")
     if table_xml_path is not None and not table_xml_path.is_file():
-        raise FileNotFoundError(f"table_xml_path not found: {table_xml_path}")
+        msg = f"table_xml_path not found: {table_xml_path}"
+        raise FileNotFoundError(msg)
     if object_id is not None and not isinstance(object_id, str):
-        raise TypeError("object_id must be a string or None")
+        msg = "object_id must be a string or None"
+        raise TypeError(msg)
     object_xml_path = None
     if object_id:
         if ycb_root is None or not isinstance(ycb_root, Path):
-            raise ValueError("ycb_root is required when object_id is set")
+            msg = "ycb_root is required when object_id is set"
+            raise ValueError(msg)
         if not ycb_root.is_dir():
-            raise FileNotFoundError(f"ycb_root not found: {ycb_root}")
-        
+            msg = f"ycb_root not found: {ycb_root}"
+            raise FileNotFoundError(msg)
+
         object_xml_path = find_ycb_mjcf(resolve_ycb_object_directory(ycb_root, object_id))
 
-    
     scene = MuJoCoScene(
         robot_xml_path,
         object_xml_path,
@@ -73,7 +76,8 @@ def load_visualization_scene(
         _place_object_on_table(scene.model, scene.data, object_id)
     return scene.model, scene.data
 
-def _place_object_on_table(mj_model: Any, mj_data: Any, object_name: str) -> None:
+
+def _place_object_on_table(mj_model: mujoco.MjModel, mj_data: mujoco.MjData, object_name: str) -> None:
     """Set the object freejoint so it rests on the table top surface.
 
     Finds the ``table`` body position and the ``table_top`` geom offset to
@@ -114,7 +118,8 @@ def _place_object_on_table(mj_model: Any, mj_data: Any, object_name: str) -> Non
 
     mujoco.mj_forward(mj_model, mj_data)
 
-def apply_home_keyframe(mj_model: Any, mj_data: Any) -> None:
+
+def apply_home_keyframe(mj_model: mujoco.MjModel, mj_data: mujoco.MjData) -> None:
     """Reset robot joints to keyframe 0 without wiping extra scene DOFs.
 
     Assembled scenes add object freejoints after the robot. Applying the
@@ -141,9 +146,10 @@ def apply_home_keyframe(mj_model: Any, mj_data: Any) -> None:
     mj_data.qvel[:] = 0.0
     mujoco.mj_forward(mj_model, mj_data)
 
-def run_robot_viewer(
-    mj_model: Any,
-    mj_data: Any,
+
+def run_robot_viewer(  # noqa: PLR0913  # viewer hooks are injected by tests as keywords
+    mj_model: mujoco.MjModel,
+    mj_data: mujoco.MjData,
     *,
     launch_passive: Callable[..., Any] | None = None,
     sleep: Callable[[float], None] | None = None,

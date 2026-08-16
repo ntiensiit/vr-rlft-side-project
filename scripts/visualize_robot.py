@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
-from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
+from pathlib import Path
+from typing import TYPE_CHECKING
 
+import hydra
+
+from grasping_ai.config import SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
 from grasping_ai.pipelines.visualize_robot import (
     load_visualization_scene,
     run_robot_viewer,
 )
 
-from pathlib import Path
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
 
-import hydra
-from omegaconf import DictConfig
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/visualize_robot")
 def main(cfg: DictConfig) -> None:
+    """Open the MuJoCo viewer for the configured robot scene."""
     yaml_config = FlattenedYAMLConfig(cfg)
     table_xml = yaml_config.value("table_xml", "env", "table_xml", value_type=Path, script_or=True)
     mj_model, mj_data = load_visualization_scene(

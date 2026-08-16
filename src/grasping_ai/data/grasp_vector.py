@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
-
 import numpy as np
 import torch
+
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 
 GRASP_VECTOR_DIM = int(FLATTENED_YAML_CONFIG.get("grasp.dim", 9))
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
 TORCH_NORM_CLAMP_MIN = float(FLATTENED_YAML_CONFIG.get("grasp.torch_norm_clamp_min", 1e-8))
+
 
 def se3_to_vec(t_matrix: np.ndarray) -> np.ndarray:
     """Convert a ``(4, 4)`` SE(3) matrix to a 9D position + rotation-column vector.
@@ -23,11 +24,13 @@ def se3_to_vec(t_matrix: np.ndarray) -> np.ndarray:
         and ``r1``/``r2`` are the first two rotation columns.
     """
     if not isinstance(t_matrix, np.ndarray) or t_matrix.shape != SE3_MATRIX_SHAPE:
-        raise ValueError("t_matrix must be a (4, 4) numpy array")
+        msg = "t_matrix must be a (4, 4) numpy array"
+        raise ValueError(msg)
     t = t_matrix[:3, 3]
     r1 = t_matrix[:3, 0]
     r2 = t_matrix[:3, 1]
     return np.concatenate([t, r1, r2])
+
 
 def vec_to_se3(x: torch.Tensor) -> torch.Tensor:
     """Convert ``(M, 9)`` grasp vectors to ``(M, 4, 4)`` SE(3) transforms.
@@ -43,7 +46,8 @@ def vec_to_se3(x: torch.Tensor) -> torch.Tensor:
         Batch of homogeneous transforms with shape ``(M, 4, 4)``.
     """
     if x.ndim != POINT_CLOUD_NDIM or x.shape[1] != GRASP_VECTOR_DIM:
-        raise ValueError(f"x must have shape (M, 9), got {x.shape}")
+        msg = f"x must have shape (M, 9), got {x.shape}"
+        raise ValueError(msg)
 
     m = x.shape[0]
     t = x[:, :3]

@@ -2,20 +2,6 @@
 
 from __future__ import annotations
 
-from grasping_ai.data.pointcloud_dataset import save_grasp_sample
-
-from grasping_ai.models.flow import (
-    FlowFieldNet,
-    FlowGeneratorModel,
-    load_flow_model_from_state,
-)
-
-from grasping_ai.pipelines.train_flow import (
-    build_flow_training_components,
-    load_flow_model_checkpoint,
-    run_flow_training_pipeline,
-)
-
 import os
 import subprocess
 import sys
@@ -25,9 +11,21 @@ import numpy as np
 import pytest
 import torch
 
+from grasping_ai.data.pointcloud_dataset import save_grasp_sample
+from grasping_ai.models.flow import (
+    FlowFieldNet,
+    FlowGeneratorModel,
+    load_flow_model_from_state,
+)
+from grasping_ai.pipelines.train_flow import (
+    build_flow_training_components,
+    load_flow_model_checkpoint,
+    run_flow_training_pipeline,
+)
+
+
 def _make_dataset(tmp_path: Path, *, n_grasps: int, seed: int) -> Path:
     """Create a mock grasp dataset file for testing flow matching models."""
-    
     dataset_root = tmp_path / "dataset"
     dataset_root.mkdir()
     rng = np.random.default_rng(seed)
@@ -45,27 +43,28 @@ def _make_dataset(tmp_path: Path, *, n_grasps: int, seed: int) -> Path:
     )
     return dataset_root
 
+
 def test_flow_model_forward_delegates_to_flow_field() -> None:
     """Verify ``FlowGeneratorModel.forward`` returns flow-field predictions.
 
     Returns:
         None. Asserts output shape matches the input grasp batch.
     """
-    
     model = FlowGeneratorModel(feature_dim=8, hidden_dim=8, num_layers=1)
     x = torch.zeros(2, 9)
     cond = torch.zeros(2, 8)
     out = model.forward(x, cond)
-    assert out.shape == (2, 9)
+    if not (out.shape == (2, 9)):
+        raise AssertionError
 
-def test_flow_checkpoint_persists_encoder_and_flow_field(tmp_path):
+
+def test_flow_checkpoint_persists_encoder_and_flow_field(tmp_path: Path) -> None:
     """The flow checkpoint must contain both encoder and flow_field state.
 
     Regression for the train/inference model contract: the encoder used at
     training time must be saved as part of the flow checkpoint so inference
     can reproduce the same conditioning signal.
     """
-    
     dataset_root = _make_dataset(tmp_path, n_grasps=4, seed=0)
     checkpoint = tmp_path / "flow_model.pt"
     run_flow_training_pipeline(
@@ -82,12 +81,16 @@ def test_flow_checkpoint_persists_encoder_and_flow_field(tmp_path):
     )
     state_dict = torch.load(checkpoint, map_location="cpu")
     keys = list(state_dict["model_state_dict"].keys())
-    assert any(k.startswith("encoder.") for k in keys), f"flow checkpoint missing encoder keys: {keys}"
-    assert any(k.startswith("flow_field.") for k in keys), f"flow checkpoint missing flow_field keys: {keys}"
+    if not (any(k.startswith("encoder.") for k in keys)):
+        msg = f"flow checkpoint missing encoder keys: {keys}"
+        raise AssertionError(msg)
+    if not (any(k.startswith("flow_field.") for k in keys)):
+        msg = f"flow checkpoint missing flow_field keys: {keys}"
+        raise AssertionError(msg)
 
-def test_load_flow_model_checkpoint_reproduces_trained_state(tmp_path):
+
+def test_load_flow_model_checkpoint_reproduces_trained_state(tmp_path: Path) -> None:
     """``load_flow_model_checkpoint`` restores the encoder used at training."""
-    
     dataset_root = _make_dataset(tmp_path, n_grasps=4, seed=1)
     checkpoint = tmp_path / "flow_repro.pt"
     run_flow_training_pipeline(
@@ -106,13 +109,20 @@ def test_load_flow_model_checkpoint_reproduces_trained_state(tmp_path):
     model = load_flow_model_checkpoint(checkpoint, feature_dim=16, hidden_dim=16, num_layers=2, device="cpu")
     expected = torch.load(checkpoint, map_location="cpu")["model_state_dict"]
     for key in expected:
-        assert torch.allclose(model.state_dict()[key], expected[key]), f"mismatch at {key}"
+        if not (torch.allclose(model.state_dict()[key], expected[key])):
+            msg = f"mismatch at {key}"
+            raise AssertionError(msg)
 
-def test_flow_training_optimizes_encoder_and_flow_field(tmp_path):
+
+def test_flow_training_optimizes_encoder_and_flow_field(tmp_path: Path) -> None:
     """Both the encoder and flow field parameters change after a training step."""
-    
+    _ = tmp_path
     model, optimizer = build_flow_training_components(
-        feature_dim=8, hidden_dim=8, num_layers=2, learning_rate=0.01, device="cpu",
+        feature_dim=8,
+        hidden_dim=8,
+        num_layers=2,
+        learning_rate=0.01,
+        device="cpu",
     )
 
     initial_encoder_norm = sum(p.norm().item() for p in model.encoder.parameters())
@@ -130,12 +140,14 @@ def test_flow_training_optimizes_encoder_and_flow_field(tmp_path):
     updated_encoder_norm = sum(p.norm().item() for p in model.encoder.parameters())
     updated_flow_norm = sum(p.norm().item() for p in model.flow_field.parameters())
 
-    assert updated_encoder_norm != pytest.approx(initial_encoder_norm)
-    assert updated_flow_norm != pytest.approx(initial_flow_norm)
+    if not (updated_encoder_norm != pytest.approx(initial_encoder_norm)):
+        raise AssertionError
+    if not (updated_flow_norm != pytest.approx(initial_flow_norm)):
+        raise AssertionError
 
-def test_run_flow_training_pipeline_produces_checkpoint(tmp_path):
+
+def test_run_flow_training_pipeline_produces_checkpoint(tmp_path: Path) -> None:
     """End-to-end flow training writes a checkpoint."""
-    
     dataset_root = _make_dataset(tmp_path, n_grasps=4, seed=0)
     checkpoint = tmp_path / "flow_model.pt"
     run_flow_training_pipeline(
@@ -150,11 +162,12 @@ def test_run_flow_training_pipeline_produces_checkpoint(tmp_path):
         device="cpu",
         seed=0,
     )
-    assert checkpoint.is_file()
+    if not (checkpoint.is_file()):
+        raise AssertionError
 
-def test_run_flow_training_pipeline_rejects_missing_dataset_root(tmp_path):
+
+def test_run_flow_training_pipeline_rejects_missing_dataset_root(tmp_path: Path) -> None:
     """Missing dataset root raises FileNotFoundError."""
-    
     with pytest.raises(FileNotFoundError):
         run_flow_training_pipeline(
             dataset_root=tmp_path / "missing",
@@ -168,7 +181,8 @@ def test_run_flow_training_pipeline_rejects_missing_dataset_root(tmp_path):
             device="cpu",
         )
 
-def test_flow_training_cli(tmp_path):
+
+def test_flow_training_cli(tmp_path: Path) -> None:
     """``scripts/train_flow.py`` runs end-to-end via subprocess."""
     dataset_root = _make_dataset(tmp_path, n_grasps=2, seed=1)
     checkpoint = tmp_path / "flow_cli.pt"
@@ -198,12 +212,13 @@ def test_flow_training_cli(tmp_path):
     ]
     env = {**os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")}
 
-    subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
-    assert checkpoint.is_file()
+    subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)  # noqa: S603  # fixed internal training script
+    if not (checkpoint.is_file()):
+        raise AssertionError
+
 
 def test_run_flow_training_pipeline_validations_and_resume(tmp_path: Path) -> None:
     """Verify parameter validations and resuming from checkpoint files in the flow training pipeline."""
-    
     with pytest.raises(TypeError, match="dataset_root"):
         run_flow_training_pipeline(
             dataset_root="not_a_path",  # type: ignore[arg-type]
@@ -261,13 +276,15 @@ def test_run_flow_training_pipeline_validations_and_resume(tmp_path: Path) -> No
             pretrained_encoder_path="invalid_path_type",
         )
 
-    assert checkpoint_2.is_file()
+    if not (checkpoint_2.is_file()):
+        raise AssertionError
+
 
 def test_flow_network_builder_and_sampler_additional_coverage() -> None:
     """Verify flow network setup errors when using invalid state dict mapping structures."""
-    
     net = FlowFieldNet(8, 16, 2)
-    assert isinstance(net, FlowFieldNet)
+    if not (isinstance(net, FlowFieldNet)):
+        raise AssertionError  # noqa: TRY004  # value expectation, not a signature type check
 
     with pytest.raises(TypeError, match=r"checkpoint\['model_state_dict'\] must be a dictionary"):
         load_flow_model_from_state({"model_state_dict": "not_a_dict"}, 8, 16, 2, "cpu")

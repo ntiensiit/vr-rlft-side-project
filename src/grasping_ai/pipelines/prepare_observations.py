@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+import numpy as np
+
 from grasping_ai.data.pointcloud_dataset import resolve_ycb_object_id
 from grasping_ai.perception.pointcloud import normalize_point_cloud
 from grasping_ai.robotics.gripper import gripper_point_cloud_from_grid
 from grasping_ai.sensors.pointcloud_sensor import merge_point_clouds, sample_point_cloud_from_mesh
 from grasping_ai.simulation.ycb import list_ycb_objects
 
-from pathlib import Path
+if TYPE_CHECKING:
+    from pathlib import Path
 
-import numpy as np
 
-
-def make_observations(
+def make_observations(  # noqa: PLR0913, PLR0917  # CLI helper; scripts call it positionally
     ycb_root: Path,
     output_dir: Path,
     num_samples: int,

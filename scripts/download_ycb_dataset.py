@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-from grasping_ai.config import FLATTENED_YAML_CONFIG, SCRIPTS_CONFIG_PATH
-
-import glob
 import json
 import shutil
 import tarfile
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 import hydra
 from loguru import logger
-from omegaconf import DictConfig
+
+from grasping_ai.config import FLATTENED_YAML_CONFIG, SCRIPTS_CONFIG_PATH
+
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
 
 OUTPUT_DIRECTORY = Path(str(FLATTENED_YAML_CONFIG.get("download.output_directory")))
 OBJECTS_TO_DOWNLOAD = [str(object_id) for object_id in FLATTENED_YAML_CONFIG.get("download.objects", [])]
@@ -34,9 +36,17 @@ CLEANUP_SLEEP_SECONDS = float(FLATTENED_YAML_CONFIG.get("download.cleanup_sleep_
 BERKELEY_RGB_TYPES = tuple(FLATTENED_YAML_CONFIG.get("download.berkeley_rgb_types", []))
 
 
+def _validate_https_url(url: str) -> None:
+    """Raise ``ValueError`` unless ``url`` uses the HTTPS scheme."""
+    if not url.startswith("https://"):
+        msg = f"Refusing to open non-HTTPS URL: {url}"
+        raise ValueError(msg)
+
+
 def fetch_objects(url: str) -> list[str]:
     """Fetch the object list from the YCB benchmark index URL."""
-    with urlopen(url) as response:
+    _validate_https_url(url)
+    with urlopen(url) as response:  # noqa: S310  # scheme restricted to HTTPS by _validate_https_url
         payload = json.loads(response.read())
     objects = payload["objects"]
     if not isinstance(objects, list):
@@ -47,10 +57,11 @@ def fetch_objects(url: str) -> list[str]:
 
 def download_file(url: str, filename: Path) -> None:
     """Download a file from ``url`` with retries."""
+    _validate_https_url(url)
     for attempt in range(MAX_RETRIES):
         try:
-            request = Request(url, headers={"User-Agent": USER_AGENT})
-            with urlopen(request, timeout=TIMEOUT_SECONDS) as remote_file:
+            request = Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310  # HTTPS-only config URL
+            with urlopen(request, timeout=TIMEOUT_SECONDS) as remote_file:  # noqa: S310  # HTTPS-only config URL
                 file_size_header = remote_file.getheader("Content-Length")
                 file_size = int(file_size_header) if file_size_header else 0
                 logger.info("Downloading: {} ({:.2f} MB)", filename, file_size / 1_000_000.0)
@@ -95,10 +106,7 @@ def tgz_url(ycb_object: str, file_type: str) -> str:
 def extract_tgz(filename: Path, output_dir: Path) -> None:
     """Extract a TGZ archive into ``output_dir``."""
     with tarfile.open(filename, "r:gz") as archive:
-        if hasattr(tarfile, "data_filter"):
-            archive.extractall(path=output_dir, filter="data")
-        else:
-            archive.extractall(path=output_dir)
+        archive.extractall(path=output_dir, filter="data")
 
     for _ in range(UNPACK_DELETE_RETRIES):
         try:
@@ -110,10 +118,11 @@ def extract_tgz(filename: Path, output_dir: Path) -> None:
 
 def check_url(url: str) -> bool:
     """Return whether ``url`` responds to a HEAD request."""
+    _validate_https_url(url)
     try:
-        request = Request(url)
+        request = Request(url)  # noqa: S310  # HTTPS-only config URL
         request.get_method = lambda: "HEAD"
-        with urlopen(request):
+        with urlopen(request):  # noqa: S310  # HTTPS-only config URL
             pass
     except (OSError, URLError):
         return False
@@ -134,11 +143,10 @@ def _cleanup_failed_object(object_id: str) -> None:
     if object_dir.exists():
         shutil.rmtree(object_dir, ignore_errors=True)
 
-    tgz_pattern = OUTPUT_DIRECTORY / f"{object_id}_*.tgz"
-    for file_name in glob.glob(str(tgz_pattern)):
+    for tgz_file in OUTPUT_DIRECTORY.glob(f"{object_id}_*.tgz"):
         for _ in range(CLEANUP_DELETE_RETRIES):
             try:
-                Path(file_name).unlink()
+                tgz_file.unlink()
                 break
             except OSError:
                 time.sleep(CLEANUP_SLEEP_SECONDS)
@@ -169,6 +177,7 @@ def _process_object(object_id: str) -> None:
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/download_ycb_dataset")
 def main(_cfg: DictConfig) -> None:
+    """Download and extract the configured YCB object archives."""
     OUTPUT_DIRECTORY.mkdir(parents=True, exist_ok=True)
     objects = fetch_objects(OBJECTS_URL)
 
