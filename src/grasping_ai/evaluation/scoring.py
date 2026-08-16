@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.evaluation.collision import generate_analytical_contacts
 from grasping_ai.evaluation.force_closure import compute_grasp_quality
 
@@ -11,6 +12,9 @@ if TYPE_CHECKING:
     import numpy as np
 
 MIN_GRASP_CONTACTS = 2
+FRICTION_COEFFICIENT = float(FLATTENED_YAML_CONFIG.get("metrics.friction_coefficient", 0.5))
+CONTACT_CLEARANCE = float(FLATTENED_YAML_CONFIG.get("metrics.collision_clearance", 0.005))
+MIN_QUALITY_SCORE = float(FLATTENED_YAML_CONFIG.get("evaluation.min_quality_score", 0.0))
 
 
 # Pipelines call this with six positional arguments.
@@ -18,9 +22,9 @@ def score_grasp_poses_by_contacts(  # noqa: PLR0913,PLR0917
     grasp_poses: np.ndarray,
     object_point_cloud: np.ndarray,
     gripper_point_cloud: np.ndarray,
-    friction_coefficient: float,
-    contact_clearance: float,
-    min_quality_score: float = 0.0,
+    friction_coefficient: float = FRICTION_COEFFICIENT,
+    contact_clearance: float = CONTACT_CLEARANCE,
+    min_quality_score: float = MIN_QUALITY_SCORE,
 ) -> list[tuple[np.ndarray, float]]:
     """Score grasp poses using analytical contacts and force-closure quality.
 
@@ -49,8 +53,8 @@ def recompute_contact_scores(
     grasp_poses: np.ndarray,
     object_point_cloud: np.ndarray,
     gripper_point_cloud: np.ndarray,
-    friction_coefficient: float,
-    contact_clearance: float,
+    friction_coefficient: float = FRICTION_COEFFICIENT,
+    contact_clearance: float = CONTACT_CLEARANCE,
 ) -> tuple[list[float], int]:
     """Recompute per-pose contact scores for auditing stored labels.
 

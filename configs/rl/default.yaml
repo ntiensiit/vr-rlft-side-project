@@ -1,5 +1,6 @@
 # @package _global_
 rl:
+  verbose: 1
   observation_dim: 31
   action_dim: 8
   hidden_dim: 32
@@ -12,9 +13,14 @@ rl:
   batch_size: 64
   n_epochs: 1
   policy_num_layers: 2
+  stochastic: false
+  exploration_noise: 0.1
+  noise_scale: 0.1
   exports:
     rollout_report: ${artifacts.reports}/rl_grasp_rollout_report.jsonl
   reward:
+    clip_min: -10.0
+    clip_max: 10.0
     action_cost_weight: 0.01
     survival_bonus: 1.0
     contact_reward: 0.5

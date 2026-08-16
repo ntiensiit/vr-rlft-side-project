@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import torch
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.models.rl_policy import (
     build_policy_network,
     read_rl_policy_metadata,
@@ -16,13 +17,19 @@ from grasping_ai.models.rl_policy import (
 from grasping_ai.training.checkpoint_io import read_checkpoint_model_state_dict
 
 PolicyActionSampler = Callable[[np.ndarray], np.ndarray]
+HIDDEN_DIM = int(FLATTENED_YAML_CONFIG.get("rl.hidden_dim", 64))
+POLICY_NUM_LAYERS = int(FLATTENED_YAML_CONFIG.get("rl.policy_num_layers", 2))
+EXPLORATION_NOISE = float(FLATTENED_YAML_CONFIG.get("rl.exploration_noise", 0.1))
+SEED = int(FLATTENED_YAML_CONFIG.get("seed", 42))
 
 
-def _resolve_policy_architecture(
+def _resolve_policy_architecture(  # noqa: PLR0913, PLR0917
     checkpoint: dict[str, Any],
     model_state: dict[str, torch.Tensor] | None,
     observation_dim: int,
     action_dim: int,
+    hidden_dim_default: int = HIDDEN_DIM,
+    num_layers_default: int = POLICY_NUM_LAYERS,
 ) -> tuple[int, int]:
     """Resolve ``(hidden_dim, num_layers)`` from checkpoint metadata or weights.
 
@@ -48,8 +55,8 @@ def _resolve_policy_architecture(
         return hidden_dim, num_layers
 
     # Legacy checkpoints carry no metadata; infer from parameter names.
-    hidden_dim = 64
-    num_layers = 2
+    hidden_dim = hidden_dim_default
+    num_layers = num_layers_default
     if model_state is not None:
         if "0.weight" in model_state:
             hidden_dim = model_state["0.weight"].shape[0]
@@ -84,7 +91,7 @@ def _build_action_rng(*, stochastic: bool, device_obj: torch.device, seed: int |
     if not stochastic:
         return None
     action_rng = torch.Generator(device=device_obj)
-    action_rng.manual_seed(seed if seed is not None else 0)
+    action_rng.manual_seed(SEED if seed is None else seed)
     return action_rng
 
 
@@ -99,7 +106,7 @@ def build_rl_policy_runner(  # noqa: PLR0913
     action_low: np.ndarray | None = None,
     action_high: np.ndarray | None = None,
     stochastic: bool = False,
-    exploration_noise: float = 0.1,
+    exploration_noise: float = EXPLORATION_NOISE,
     seed: int | None = None,
 ) -> PolicyActionSampler:
     """Build a callable that maps observations to robot actions via an RL policy.

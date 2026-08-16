@@ -2,4 +2,5 @@
 dt: 0.002
 fallback_timestep: ${dt}
 num_steps: 50
+pre_grasp_steps: 10
 table_xml: deploy/table.xml

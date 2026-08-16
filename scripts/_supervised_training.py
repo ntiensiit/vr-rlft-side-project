@@ -1,4 +1,4 @@
-"""Shared Hydra CLI helpers for supervised training scripts."""
+"""Private helpers shared by supervised-training CLI scripts."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def build_supervised_training_kwargs(
     yaml_config: FlattenedYAMLConfig,
     experiment_log_dir: Path | None,
 ) -> dict[str, object]:
-    """Build keyword arguments shared by diffusion and flow training pipelines."""
+    """Build keyword arguments shared by diffusion and flow training scripts."""
     return {
         "dataset_root": yaml_config.value("paths", "dataset_root", value_type=Path, required=True),
         "checkpoint_path": yaml_config.value("model", "checkpoint", value_type=Path, required=True),

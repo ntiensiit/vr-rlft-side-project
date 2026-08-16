@@ -11,6 +11,7 @@ import mujoco.viewer  # type: ignore[import-untyped]
 import numpy as np
 from loguru import logger
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.simulation.scene import MuJoCoScene
 from grasping_ai.simulation.ycb import (
     find_ycb_mjcf,
@@ -23,6 +24,8 @@ from grasping_ai.utils.path_validation import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+FALLBACK_TIMESTEP = float(FLATTENED_YAML_CONFIG.get("fallback_timestep", 0.002))
 
 
 def load_visualization_scene(
@@ -177,7 +180,7 @@ def run_robot_viewer(  # noqa: PLR0913  # viewer hooks are injected by tests as 
 
     dt = float(mj_model.opt.timestep)
     if dt <= 0 or not np.isfinite(dt):
-        dt = 0.002
+        dt = FALLBACK_TIMESTEP
 
     logger.info("Launching MuJoCo viewer...")
     viewer = launch_passive(mj_model, mj_data)

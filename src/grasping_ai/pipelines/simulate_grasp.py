@@ -48,6 +48,21 @@ from grasping_ai.simulation.ycb import (
 if TYPE_CHECKING:
     from grasping_ai.robotics.kinematics import ForwardKinematics
 
+FALLBACK_TIMESTEP = float(FLATTENED_YAML_CONFIG.get("fallback_timestep"))
+SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
+IK_MAX_ITERATIONS = int(FLATTENED_YAML_CONFIG.get("robot.ik.max_iterations"))
+IK_TOLERANCE = float(FLATTENED_YAML_CONFIG.get("robot.ik.tolerance"))
+GRIPPER_JOINT_RANGES = tuple(
+    (name, tuple(FLATTENED_YAML_CONFIG.get_path("robot", "gripper", "joint_ranges", name)))
+    for name in ("finger_joint1", "finger_joint2")
+)
+GRIPPER_DUAL_COUNT = int(FLATTENED_YAML_CONFIG.get("robot.gripper.dual_count", 2))
+LIFT_HEIGHT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("metrics.lift_height_threshold"))
+MAX_LINEAR_VELOCITY = float(FLATTENED_YAML_CONFIG.get("limits.max_linear_velocity"))
+MAX_ANGULAR_VELOCITY = float(FLATTENED_YAML_CONFIG.get("limits.max_angular_velocity"))
+PRE_GRASP_STEPS = int(FLATTENED_YAML_CONFIG.get("pre_grasp_steps"))
+POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
 
 @dataclass(frozen=True)
 class _GraspSimParams:
@@ -60,8 +75,8 @@ class _GraspSimParams:
     grasp_width: float | None
 
 
-def _fallback_timestep() -> float:
-    return float(FLATTENED_YAML_CONFIG.get("env.fallback_timestep", 0.002))
+def _fallback_timestep(default: float = FALLBACK_TIMESTEP) -> float:
+    return default
 
 
 def _validate_simulate_grasp_args(
@@ -71,7 +86,7 @@ def _validate_simulate_grasp_args(
     params: _GraspSimParams,
 ) -> None:
     """Validate grasp pose shape, asset paths, and simulation thresholds."""
-    se3_matrix_shape = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
+    se3_matrix_shape = SE3_MATRIX_SHAPE
     if grasp_pose.shape != se3_matrix_shape:
         msg = f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}"
         raise ValueError(msg)
@@ -103,14 +118,16 @@ def _solve_grasp_ik(
     hand_pose: np.ndarray,
     *,
     quiet: bool,
+    max_iterations: int = IK_MAX_ITERATIONS,
+    tolerance: float = IK_TOLERANCE,
 ) -> tuple[np.ndarray, bool, ForwardKinematics]:
     """Solve IK for the hand pose, falling back to the home keyframe joints."""
     robot_model = load_robot_model(str(robot_xml_path))
     nq_robot = robot_model_nq(robot_model)
     ik_solver = build_inverse_kinematics(
         robot_model,
-        max_iterations=400,
-        tolerance=float(FLATTENED_YAML_CONFIG.get("robot.ik.tolerance", 0.001)),
+        max_iterations=max_iterations,
+        tolerance=tolerance,
     )
     fk_solver = build_forward_kinematics(robot_model)
     robot_mj = robot_model_mj_model(robot_model)
@@ -176,16 +193,19 @@ def _place_object_at_gripper(
     return True
 
 
-def _apply_finger_width_overrides(
+def _apply_finger_width_overrides(  # noqa: PLR0913, PLR0917
     mj_model: mujoco.MjModel,
     gripper_ids: list[int],
     open_cmd: np.ndarray,
     close_cmd: np.ndarray,
     grasp_width: float,
+    joint_ranges: tuple[tuple[str, tuple[float, ...]], ...] = GRIPPER_JOINT_RANGES,
 ) -> None:
     """Override finger open/close targets from a desired gripper width."""
     open_q1, open_q2 = panda_width_to_finger_joints(grasp_width)
-    close_q1, close_q2 = 0.0, -0.04
+    ranges = dict(joint_ranges)
+    close_q1 = float(ranges["finger_joint1"][0])
+    close_q2 = float(ranges["finger_joint2"][0])
     finger_open = {"finger_joint1": open_q1, "finger_joint2": open_q2}
     finger_close = {"finger_joint1": close_q1, "finger_joint2": close_q2}
     for idx in gripper_ids:
@@ -213,12 +233,13 @@ def _gripper_control_ranges(mj_model: mujoco.MjModel, gripper_ids: list[int]) ->
     return open_vals, close_vals
 
 
-def _actuator_gripper_commands(
+def _actuator_gripper_commands(  # noqa: PLR0913, PLR0917
     mj_model: mujoco.MjModel,
     gripper_ids: list[int],
     q_target: np.ndarray,
     gripper_close_command: np.ndarray,
     grasp_width: float | None,
+    dual_count: int = GRIPPER_DUAL_COUNT,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Build open/close commands from gripper actuator control ranges."""
     open_vals, close_vals = _gripper_control_ranges(mj_model, gripper_ids)
@@ -239,9 +260,7 @@ def _actuator_gripper_commands(
     for i, idx in enumerate(gripper_ids):
         open_cmd[idx] = open_vals[i]
         close_cmd[idx] = close_vals[i]
-    if grasp_width is not None and len(gripper_ids) == int(
-        FLATTENED_YAML_CONFIG.get("robot.gripper.dual_count", 2),
-    ):
+    if grasp_width is not None and len(gripper_ids) == dual_count:
         _apply_finger_width_overrides(mj_model, gripper_ids, open_cmd, close_cmd, grasp_width)
     close_len = gripper_close_command.shape[0]
     for i, idx in enumerate(gripper_ids):
@@ -315,9 +334,9 @@ def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests ca
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
     *,
-    lift_height_threshold: float = 0.05,
-    max_linear_velocity: float = 0.05,
-    max_angular_velocity: float = 0.1,
+    lift_height_threshold: float = LIFT_HEIGHT_THRESHOLD,
+    max_linear_velocity: float = MAX_LINEAR_VELOCITY,
+    max_angular_velocity: float = MAX_ANGULAR_VELOCITY,
     grasp_width: float | None = None,
     quiet: bool = False,
 ) -> dict[str, np.ndarray | bool | float]:
@@ -352,9 +371,15 @@ def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests ca
     """
     params = _GraspSimParams(
         num_simulation_steps=num_simulation_steps,
-        lift_height_threshold=lift_height_threshold,
-        max_linear_velocity=max_linear_velocity,
-        max_angular_velocity=max_angular_velocity,
+        lift_height_threshold=(
+            lift_height_threshold
+        ),
+        max_linear_velocity=(
+            max_linear_velocity
+        ),
+        max_angular_velocity=(
+            max_angular_velocity
+        ),
         grasp_width=grasp_width,
     )
     _validate_simulate_grasp_args(grasp_pose, robot_xml_path, ycb_root, params)
@@ -421,7 +446,10 @@ def simulate_grasp(  # noqa: PLR0913, PLR0917  # public simulation API; tests ca
     else:
         open_cmd, close_cmd = _model_gripper_commands(mj_model, gripper_model, gripper_close_command)
 
-    pre_grasp_steps = min(10, max(1, params.num_simulation_steps // 4))
+    pre_grasp_steps = min(
+        PRE_GRASP_STEPS,
+        max(1, params.num_simulation_steps // 4),
+    )
     close_steps = max(1, params.num_simulation_steps - pre_grasp_steps)
 
     step_scene(lambda step_dt: scene.step(open_cmd, step_dt), dt, pre_grasp_steps)
@@ -460,9 +488,9 @@ def run_simulation_sweep(  # noqa: PLR0913  # public sweep API; callers pass per
     table_xml_path: Path | None,
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
-    lift_height_threshold: float = 0.05,
-    max_linear_velocity: float = 0.05,
-    max_angular_velocity: float = 0.1,
+    lift_height_threshold: float = LIFT_HEIGHT_THRESHOLD,
+    max_linear_velocity: float = MAX_LINEAR_VELOCITY,
+    max_angular_velocity: float = MAX_ANGULAR_VELOCITY,
 ) -> list[dict[str, np.ndarray | bool | float]]:
     """Execute a batch of grasps and aggregate the simulation outcomes.
 
@@ -485,17 +513,14 @@ def run_simulation_sweep(  # noqa: PLR0913  # public sweep API; callers pass per
     Raises:
         ValueError: If ``grasp_poses`` shape is invalid.
     """
-    point_cloud_ndim = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
-    grasp_poses_ndim = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
-    se3_matrix_shape = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
-    if grasp_poses.ndim == point_cloud_ndim:
-        if grasp_poses.shape == se3_matrix_shape:
-            grasp_poses = grasp_poses.reshape(1, *se3_matrix_shape)
+    if grasp_poses.ndim == POINT_CLOUD_NDIM:
+        if grasp_poses.shape == SE3_MATRIX_SHAPE:
+            grasp_poses = grasp_poses.reshape(1, *SE3_MATRIX_SHAPE)
         else:
             msg = "grasp_poses must have shape (K, 4, 4) or (4, 4)"
             raise ValueError(msg)
 
-    if grasp_poses.ndim != grasp_poses_ndim or grasp_poses.shape[1:] != se3_matrix_shape:
+    if grasp_poses.ndim != GRASP_POSES_NDIM or grasp_poses.shape[1:] != SE3_MATRIX_SHAPE:
         msg = "grasp_poses must have shape (K, 4, 4)"
         raise ValueError(msg)
 

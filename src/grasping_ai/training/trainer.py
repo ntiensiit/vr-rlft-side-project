@@ -13,6 +13,7 @@ from grasping_ai.config.diffusion import (
     DEFAULT_DIFFUSION_SCHEDULE,
     linear_beta_schedule,
 )
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 from grasping_ai.training.experiment_logging import (
     try_log_mlflow_artifact,
@@ -27,6 +28,10 @@ if TYPE_CHECKING:
 BatchSource = Iterable[tuple[torch.Tensor, torch.Tensor]] | Callable[[], Iterator[tuple[torch.Tensor, torch.Tensor]]]
 OptimizerFactory = Callable[[Iterator[torch.nn.Parameter]], torch.optim.Optimizer]
 LossForward = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+
+FEATURE_DIM = int(FLATTENED_YAML_CONFIG.get("architecture.feature_dim", 128))
+HIDDEN_DIM = int(FLATTENED_YAML_CONFIG.get("architecture.hidden_dim", 256))
+NUM_LAYERS = int(FLATTENED_YAML_CONFIG.get("architecture.num_layers", 4))
 
 
 class SupervisedTrainingStep:
@@ -220,9 +225,9 @@ def save_training_checkpoint(
 
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
-    feature_dim = getattr(model, "feature_dim", 128)
-    hidden_dim = getattr(model, "hidden_dim", 256)
-    num_layers = getattr(model, "num_layers", 4)
+    feature_dim = getattr(model, "feature_dim", FEATURE_DIM)
+    hidden_dim = getattr(model, "hidden_dim", HIDDEN_DIM)
+    num_layers = getattr(model, "num_layers", NUM_LAYERS)
 
     checkpoint = {
         "epoch": epoch,

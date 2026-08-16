@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import torch
 from stable_baselines3 import PPO
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.models.rl_policy import (
     build_policy_network,
     build_sb3_net_arch,
@@ -22,8 +23,25 @@ from grasping_ai.simulation.ycb import (
 )
 from grasping_ai.utils.path_validation import require_path
 
-if TYPE_CHECKING:
-    from pathlib import Path
+ROBOT_XML_PATH = Path(FLATTENED_YAML_CONFIG.get("robot.description", "assets/franka_emika_panda.xml"))
+YCB_ROOT = Path(FLATTENED_YAML_CONFIG.get("paths.ycb_root", "data/raw/ycb"))
+OBJECT_IDS = tuple(FLATTENED_YAML_CONFIG.get("objects.ids", []))
+POLICY_CHECKPOINT_PATH = Path(
+    FLATTENED_YAML_CONFIG.get("rl.checkpoint", "artifacts/checkpoints/rl_grasp_policy.pt"),
+)
+OBSERVATION_DIM = int(FLATTENED_YAML_CONFIG.get("rl.observation_dim", 31))
+ACTION_DIM = int(FLATTENED_YAML_CONFIG.get("rl.action_dim", 8))
+HIDDEN_DIM = int(FLATTENED_YAML_CONFIG.get("rl.hidden_dim", 32))
+LEARNING_RATE = float(FLATTENED_YAML_CONFIG.get("rl.learning_rate", 0.0003))
+NUM_UPDATES = int(FLATTENED_YAML_CONFIG.get("rl.num_updates", 10))
+GAMMA = float(FLATTENED_YAML_CONFIG.get("rl.gamma", 0.99))
+DEVICE = str(FLATTENED_YAML_CONFIG.get("device", "cpu"))
+SEED = int(FLATTENED_YAML_CONFIG.get("seed", 42))
+N_STEPS = int(FLATTENED_YAML_CONFIG.get("rl.n_steps", 64))
+BATCH_SIZE = int(FLATTENED_YAML_CONFIG.get("rl.batch_size", 64))
+N_EPOCHS = int(FLATTENED_YAML_CONFIG.get("rl.n_epochs", 1))
+POLICY_NUM_LAYERS = int(FLATTENED_YAML_CONFIG.get("rl.policy_num_layers", 2))
+VERBOSE = int(FLATTENED_YAML_CONFIG.get("rl.verbose", 1))
 
 
 @dataclass(frozen=True)
@@ -84,23 +102,23 @@ def _validate_rl_hyperparameters(hp: _RLHyperparameters) -> None:
 
 
 def run_rl_training_pipeline(  # noqa: PLR0913, PLR0917  # public pipeline API; tests call it positionally
-    robot_xml_path: Path,
-    ycb_root: Path,
-    object_ids: list[str],
-    policy_checkpoint_path: Path,
-    observation_dim: int,
-    action_dim: int,
-    hidden_dim: int,
-    learning_rate: float,
-    num_updates: int,
-    gamma: float,
-    device: str,
-    seed: int | None = None,
+    robot_xml_path: Path = ROBOT_XML_PATH,
+    ycb_root: Path = YCB_ROOT,
+    object_ids: tuple[str, ...] = OBJECT_IDS,
+    policy_checkpoint_path: Path = POLICY_CHECKPOINT_PATH,
+    observation_dim: int = OBSERVATION_DIM,
+    action_dim: int = ACTION_DIM,
+    hidden_dim: int = HIDDEN_DIM,
+    learning_rate: float = LEARNING_RATE,
+    num_updates: int = NUM_UPDATES,
+    gamma: float = GAMMA,
+    device: str = DEVICE,
+    seed: int | None = SEED,
     experiment_log_dir: Path | None = None,
-    n_steps: int = 64,
-    batch_size: int = 64,
-    n_epochs: int = 1,
-    policy_num_layers: int = 2,
+    n_steps: int = N_STEPS,
+    batch_size: int = BATCH_SIZE,
+    n_epochs: int = N_EPOCHS,
+    policy_num_layers: int = POLICY_NUM_LAYERS,
 ) -> None:
     """Run an end-to-end RL training pipeline using MuJoCo as the environment.
 
@@ -125,6 +143,7 @@ def run_rl_training_pipeline(  # noqa: PLR0913, PLR0917  # public pipeline API; 
         n_epochs: Number of PPO optimization epochs per update.
         policy_num_layers: Hidden-layer count for the exported legacy policy MLP.
     """
+    object_ids = list(object_ids)
     hp = _RLHyperparameters(
         observation_dim=observation_dim,
         action_dim=action_dim,
@@ -195,7 +214,7 @@ def run_rl_training_pipeline(  # noqa: PLR0913, PLR0917  # public pipeline API; 
         seed=seed,
         policy_kwargs=policy_kwargs,
         tensorboard_log=str(experiment_log_dir) if experiment_log_dir else None,
-        verbose=1,
+        verbose=VERBOSE,
     )
 
     total_timesteps = hp.num_updates * hp.n_steps

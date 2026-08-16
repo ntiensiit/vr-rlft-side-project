@@ -29,6 +29,11 @@ from grasping_ai.utils.path_validation import require_path
 GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
+FRICTION_COEFFICIENT = float(FLATTENED_YAML_CONFIG.get("metrics.friction_coefficient", 0.5))
+LIFT_HEIGHT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("metrics.lift_height_threshold", 0.05))
+CLEARANCE = float(FLATTENED_YAML_CONFIG.get("metrics.collision_clearance", 0.005))
+WRENCH_REGULARIZATION = float(FLATTENED_YAML_CONFIG.get("metrics.wrench_regularization", 1.0))
+FILTER_COLLISIONS = bool(FLATTENED_YAML_CONFIG.get("evaluation.filter_collisions", False))
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -74,12 +79,12 @@ def evaluate_generated_grasps(  # noqa: PLR0913  # public evaluation API; tests/
     gripper_point_cloud: np.ndarray,
     contact_set_provider: Callable[[np.ndarray], list[dict[str, np.ndarray]]] | None = None,
     *,
-    friction_coefficient: float = 0.5,
-    lift_height_threshold: float = 0.05,
-    clearance: float = 0.005,
-    wrench_regularization: float = 1.0,
+    friction_coefficient: float = FRICTION_COEFFICIENT,
+    lift_height_threshold: float = LIFT_HEIGHT_THRESHOLD,
+    clearance: float = CLEARANCE,
+    wrench_regularization: float = WRENCH_REGULARIZATION,
     contact_path: Path | None = None,
-    filter_collisions: bool = False,
+    filter_collisions: bool = FILTER_COLLISIONS,
 ) -> list[dict[str, float | bool]]:
     """Evaluate a set of generated grasps using a common evaluation pipeline.
 

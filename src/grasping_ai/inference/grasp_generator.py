@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import torch
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.inference.grasp_sampling import (
     encode_grasp_conditioning,
     prepare_point_cloud_tensor,
@@ -26,11 +27,17 @@ from grasping_ai.training.checkpoint_io import checkpoint_scalar_int
 if TYPE_CHECKING:
     import numpy as np
 
+FEATURE_DIM = int(FLATTENED_YAML_CONFIG.get("architecture.feature_dim", 64))
+NUM_GRASPS = int(FLATTENED_YAML_CONFIG.get("architecture.num_grasps", 8))
+FLOW_INFERENCE_STEPS = int(FLATTENED_YAML_CONFIG.get("flow.inference_steps", 10))
+DEVICE = str(FLATTENED_YAML_CONFIG.get("device", "cpu"))
+SEED = int(FLATTENED_YAML_CONFIG.get("seed", 42))
+
 
 class GraspPoseGenerator(Protocol):
     """Callable protocol for point-cloud grasp generation."""
 
-    def __call__(self, point_cloud: np.ndarray, num_grasps: int = 10) -> np.ndarray:
+    def __call__(self, point_cloud: np.ndarray, num_grasps: int | None = None) -> np.ndarray:
         """Generate grasp poses from an object point cloud.
 
         Args:
@@ -45,10 +52,10 @@ class GraspPoseGenerator(Protocol):
 
 def build_diffusion_grasp_generator(
     checkpoint: dict[str, Any],
-    feature_dim: int,
+    feature_dim: int = FEATURE_DIM,
     num_steps: int | str | None = None,
-    device: str | None = None,
-    seed: int = 42,
+    device: str = DEVICE,
+    seed: int | None = SEED,
 ) -> GraspPoseGenerator:
     """Create a callable that generates grasps using a diffusion model.
 
@@ -65,10 +72,7 @@ def build_diffusion_grasp_generator(
         A function that takes a point cloud ``(N, 3)`` and returns a set of
         candidate grasp poses as a numpy array.
     """
-    if device is None:
-        if not isinstance(num_steps, str):
-            msg = "device must be provided"
-            raise TypeError(msg)
+    if isinstance(num_steps, str) and device == DEVICE:
         device = num_steps
     hidden_dim = checkpoint_scalar_int(checkpoint["hidden_dim"])
     num_layers = checkpoint_scalar_int(checkpoint["num_layers"])
@@ -80,7 +84,7 @@ def build_diffusion_grasp_generator(
 
     sampler = build_diffusion_sampler()
 
-    def generator(point_cloud: np.ndarray, num_grasps: int = 10) -> np.ndarray:
+    def generator(point_cloud: np.ndarray, num_grasps: int = NUM_GRASPS) -> np.ndarray:
         pc_tensor = prepare_point_cloud_tensor(point_cloud, device)
 
         with torch.no_grad():
@@ -105,10 +109,10 @@ def build_diffusion_grasp_generator(
 
 def build_flow_grasp_generator(
     checkpoint: dict[str, Any],
-    feature_dim: int,
-    num_flow_steps: int,
-    device: str,
-    seed: int = 42,
+    feature_dim: int = FEATURE_DIM,
+    num_flow_steps: int = FLOW_INFERENCE_STEPS,
+    device: str = DEVICE,
+    seed: int | None = SEED,
 ) -> GraspPoseGenerator:
     """Create a callable that generates grasps using a flow model.
 
@@ -131,7 +135,7 @@ def build_flow_grasp_generator(
 
     integrator = build_flow_integrator(num_flow_steps)
 
-    def generator(point_cloud: np.ndarray, num_grasps: int = 10) -> np.ndarray:
+    def generator(point_cloud: np.ndarray, num_grasps: int = NUM_GRASPS) -> np.ndarray:
         pc_tensor = prepare_point_cloud_tensor(point_cloud, device)
 
         with torch.no_grad():
@@ -154,7 +158,11 @@ def build_flow_grasp_generator(
     return generator
 
 
-def generate_candidate_grasps(generator: GraspPoseGenerator, point_cloud: np.ndarray, num_grasps: int) -> np.ndarray:
+def generate_candidate_grasps(
+    generator: GraspPoseGenerator,
+    point_cloud: np.ndarray,
+    num_grasps: int = NUM_GRASPS,
+) -> np.ndarray:
     """Produce a fixed number of grasp candidates for a point cloud.
 
     Args:

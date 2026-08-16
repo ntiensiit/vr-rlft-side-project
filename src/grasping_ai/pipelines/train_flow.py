@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from functools import partial
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import torch
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.data.training_pairs import (
     SupervisedGraspDataset,
     validate_grasp_dataset,
@@ -15,14 +16,13 @@ from grasping_ai.models.flow import (
     FlowGeneratorModel,
     load_flow_model_checkpoint,
 )
-from grasping_ai.pipelines.supervised_training import iter_supervised_training_batches
+from grasping_ai.pipelines.supervised_training import build_supervised_dataloader
 from grasping_ai.training import (
     trainer as training_trainer,
 )
 from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 from grasping_ai.training.losses import build_flow_matching_loss
 from grasping_ai.training.trainer import (
-    BatchSource,
     SupervisedTrainingStep,
     build_adam_optimizer,
 )
@@ -30,7 +30,24 @@ from grasping_ai.utils.path_validation import require_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
+
+DATASET_ROOT = Path(FLATTENED_YAML_CONFIG.get("paths.dataset_root", "data/processed"))
+CHECKPOINT_PATH = Path(
+    FLATTENED_YAML_CONFIG.get("model.checkpoint", "artifacts/checkpoints/flow_grasp_generator.pt"),
+)
+FEATURE_DIM = int(FLATTENED_YAML_CONFIG.get("architecture.feature_dim", 64))
+HIDDEN_DIM = int(FLATTENED_YAML_CONFIG.get("architecture.hidden_dim", 64))
+NUM_LAYERS = int(FLATTENED_YAML_CONFIG.get("architecture.num_layers", 3))
+LEARNING_RATE = float(FLATTENED_YAML_CONFIG.get("supervised.learning_rate", 0.001))
+NUM_EPOCHS = int(FLATTENED_YAML_CONFIG.get("supervised.num_epochs", 3))
+BATCH_SIZE = int(FLATTENED_YAML_CONFIG.get("supervised.batch_size", 2))
+DEVICE = str(FLATTENED_YAML_CONFIG.get("device", "cpu"))
+SEED = int(FLATTENED_YAML_CONFIG.get("seed", 42))
+AUGMENT = bool(FLATTENED_YAML_CONFIG.get("training.augment", False))
+MIN_GRASP_SCORE = float(FLATTENED_YAML_CONFIG.get("supervised.min_grasp_score", 0.0))
+SCORE_REPEAT_FACTOR = int(FLATTENED_YAML_CONFIG.get("supervised.score_repeat_factor", 0))
+SCORE_REPEAT_POWER = float(FLATTENED_YAML_CONFIG.get("supervised.score_repeat_power", 1.0))
+LOG_EVERY = int(FLATTENED_YAML_CONFIG.get("training.log_every", 10))
 
 
 def build_flow_training_components(
@@ -98,24 +115,24 @@ def build_flow_training_step(
 
 
 def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tests pass options as keywords
-    dataset_root: Path,
-    checkpoint_path: Path,
-    feature_dim: int,
-    hidden_dim: int,
-    num_layers: int,
+    dataset_root: Path = DATASET_ROOT,
+    checkpoint_path: Path = CHECKPOINT_PATH,
+    feature_dim: int = FEATURE_DIM,
+    hidden_dim: int = HIDDEN_DIM,
+    num_layers: int = NUM_LAYERS,
     *,
-    learning_rate: float,
-    num_epochs: int,
-    batch_size: int,
-    device: str,
-    seed: int | None = None,
+    learning_rate: float = LEARNING_RATE,
+    num_epochs: int = NUM_EPOCHS,
+    batch_size: int = BATCH_SIZE,
+    device: str = DEVICE,
+    seed: int | None = SEED,
     experiment_log_dir: Path | None = None,
     pretrained_encoder_path: Path | None = None,
     resume_checkpoint_path: Path | None = None,
-    augment: bool = False,
-    min_grasp_score: float = 0.0,
-    score_repeat_factor: int = 0,
-    score_repeat_power: float = 1.0,
+    augment: bool = AUGMENT,
+    min_grasp_score: float = MIN_GRASP_SCORE,
+    score_repeat_factor: int = SCORE_REPEAT_FACTOR,
+    score_repeat_power: float = SCORE_REPEAT_POWER,
 ) -> None:
     """Run the end-to-end flow-matching training pipeline for grasp generation.
 
@@ -200,13 +217,7 @@ def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tes
         seed=seed,
     )
 
-    dataloader: BatchSource = partial(
-        iter_supervised_training_batches,
-        training_dataset,
-        batch_size,
-        device,
-        seed,
-    )
+    dataloader = build_supervised_dataloader(training_dataset, batch_size, seed)
 
     metadata = {
         "pipeline": "flow",
@@ -231,7 +242,7 @@ def run_flow_training_pipeline(  # noqa: PLR0913  # public pipeline API; CLI/tes
         dataloader,
         num_epochs,
         checkpoint_path,
-        log_every=10,
+        log_every=LOG_EVERY,
         experiment_log_dir=experiment_log_dir,
         metadata=metadata,
         seed=seed,

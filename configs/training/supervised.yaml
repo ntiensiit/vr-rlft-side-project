@@ -8,6 +8,8 @@ supervised:
   score_repeat_power: 1.0
 
 training:
+  log_every: 10
+  translation_jitter_scale: 0.01
   pretrained_encoder: null
   resume: null
   augment: false

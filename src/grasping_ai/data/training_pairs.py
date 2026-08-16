@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.data.grasp_vector import se3_to_vec
 from grasping_ai.data.pointcloud_dataset import (
     discover_dataset_files,
@@ -28,6 +29,13 @@ from grasping_ai.utils.path_validation import require_path
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+AUGMENT = bool(FLATTENED_YAML_CONFIG.get("training.augment", False))
+SEED = int(FLATTENED_YAML_CONFIG.get("seed", 42))
+MIN_GRASP_SCORE = float(FLATTENED_YAML_CONFIG.get("supervised.min_grasp_score", 0.0))
+SCORE_REPEAT_FACTOR = int(FLATTENED_YAML_CONFIG.get("supervised.score_repeat_factor", 0))
+SCORE_REPEAT_POWER = float(FLATTENED_YAML_CONFIG.get("supervised.score_repeat_power", 1.0))
+TRANSLATION_JITTER_SCALE = float(FLATTENED_YAML_CONFIG.get("training.translation_jitter_scale", 0.01))
 
 
 def _resample_point_cloud(point_cloud: np.ndarray, num_points: int, seed: int) -> np.ndarray:
@@ -51,18 +59,18 @@ class SupervisedGraspDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         self,
         dataset_root: Path,
         *,
-        augment: bool = False,
-        seed: int | None = None,
-        min_grasp_score: float = 0.0,
-        score_repeat_factor: int = 0,
-        score_repeat_power: float = 1.0,
+        augment: bool = AUGMENT,
+        seed: int | None = SEED,
+        min_grasp_score: float = MIN_GRASP_SCORE,
+        score_repeat_factor: int = SCORE_REPEAT_FACTOR,
+        score_repeat_power: float = SCORE_REPEAT_POWER,
         num_points: int | None = None,
     ) -> None:
         """Index validated records and configure deterministic preprocessing."""
         require_path(dataset_root, "dataset_root")
         self.records = discover_dataset_files(dataset_root)
         self.augment = augment
-        self.seed = 42 if seed is None else seed
+        self.seed = 0 if seed is None else seed
         self.min_grasp_score = min_grasp_score
         self.score_repeat_factor = score_repeat_factor
         self.score_repeat_power = score_repeat_power
@@ -85,21 +93,21 @@ class SupervisedGraspDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
             grasp_indices = _grasp_indices_above_score(
                 grasp_poses,
                 scores,
-                min_grasp_score,
+                self.min_grasp_score,
                 record,
-                f"={min_grasp_score}",
+                f"={self.min_grasp_score}",
             )
             max_score = 0.0
             score_values = scores if isinstance(scores, np.ndarray) and scores.shape[0] == len(grasp_poses) else None
-            if score_values is not None and score_repeat_factor > 0:
+            if score_values is not None and self.score_repeat_factor > 0:
                 max_score = float(np.max(score_values[grasp_indices]))
             for grasp_index in grasp_indices:
                 repeats = _grasp_repeat_count(
                     score_values,
                     grasp_index,
                     max_score,
-                    score_repeat_factor,
-                    score_repeat_power,
+                    self.score_repeat_factor,
+                    self.score_repeat_power,
                 )
                 self._items.extend((record_index, grasp_index) for _ in range(repeats))
 
@@ -188,7 +196,7 @@ def _augment_sample(
     """
     sample_transform = compose_transforms(
         make_random_rotation_jitter(augment_rng),
-        make_translation_jitter(augment_rng, scale=0.01),
+        make_translation_jitter(augment_rng, scale=TRANSLATION_JITTER_SCALE),
     )
     pc, grasp_poses, transformed_scores = sample_transform(
         pc,

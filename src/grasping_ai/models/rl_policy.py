@@ -11,6 +11,7 @@ from grasping_ai.models.mlp import build_tanh_mlp
 from grasping_ai.utils.path_validation import require_path
 
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
+NOISE_SCALE = float(FLATTENED_YAML_CONFIG.get("rl.noise_scale", 0.1))
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -257,13 +258,11 @@ def build_policy_network(observation_dim: int, action_dim: int, hidden_dim: int,
     return build_tanh_mlp(observation_dim, hidden_dim, action_dim, num_layers)
 
 
-
-
 def select_action(
     policy: PolicyNetwork,
     observation: torch.Tensor,
     rng: torch.Generator,
-    noise_scale: float = 0.1,
+    noise_scale: float = NOISE_SCALE,
 ) -> torch.Tensor:
     """Sample an action from a stochastic policy given an observation.
 

@@ -22,6 +22,11 @@ GRASP_DISTANCE_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.grasp_distance_
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 ROTATION_DET_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.rotation_det_eps", 1e-4))
 SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
+ALLOW_RELAXED = bool(FLATTENED_YAML_CONFIG.get("synthetic.allow_relaxed", False))
+RELAXED_ANTIPODAL_DOT = float(FLATTENED_YAML_CONFIG.get("synthetic.relaxed_antipodal_dot", 0.3))
+STRICT_ANTIPODAL_DOT = float(FLATTENED_YAML_CONFIG.get("synthetic.strict_antipodal_dot", 0.5))
+STRICT_ALIGNMENT_DOT = float(FLATTENED_YAML_CONFIG.get("synthetic.strict_alignment_dot", 0.5))
+SEARCH_MULTIPLIER = int(FLATTENED_YAML_CONFIG.get("synthetic.search_multiplier", 50))
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -414,11 +419,11 @@ def generate_analytical_grasps(  # noqa: PLR0913
     gripper_width: float,
     rng: np.random.Generator,
     *,
-    allow_relaxed: bool = False,
-    relaxed_antipodal_dot: float = 0.0,
-    strict_antipodal_dot: float = 0.5,
-    strict_alignment_dot: float = 0.5,
-    search_multiplier: int = 20,
+    allow_relaxed: bool = ALLOW_RELAXED,
+    relaxed_antipodal_dot: float = RELAXED_ANTIPODAL_DOT,
+    strict_antipodal_dot: float = STRICT_ANTIPODAL_DOT,
+    strict_alignment_dot: float = STRICT_ALIGNMENT_DOT,
+    search_multiplier: int = SEARCH_MULTIPLIER,
 ) -> np.ndarray:
     """Generate analytical antipodal grasps from a point cloud with normals.
 

@@ -22,6 +22,9 @@ if TYPE_CHECKING:
 
     from omegaconf import DictConfig
 
+REWARD_CLIP_MIN = float(FLATTENED_YAML_CONFIG.get("rl.reward.clip_min", -10.0))
+REWARD_CLIP_MAX = float(FLATTENED_YAML_CONFIG.get("rl.reward.clip_max", 10.0))
+
 SimulationStep = Callable[[float], None]
 ContactReporter = Callable[[], list[dict[str, np.ndarray]]]
 
@@ -52,6 +55,8 @@ class RewardConfig:
     lift_height_threshold: float = 0.05
     drop_height_threshold: float = 0.1
     terminate_on_non_finite: bool = True
+    clip_min: float = REWARD_CLIP_MIN
+    clip_max: float = REWARD_CLIP_MAX
 
     @classmethod
     def load_from_config(cls, cfg: DictConfig | None = None) -> RewardConfig:
@@ -122,6 +127,20 @@ class RewardConfig:
                 "terminate_on_non_finite",
                 value_type=bool,
                 default=True,
+            ),
+            clip_min=yaml_config.value(
+                "rl",
+                "reward",
+                "clip_min",
+                value_type=float,
+                default=REWARD_CLIP_MIN,
+            ),
+            clip_max=yaml_config.value(
+                "rl",
+                "reward",
+                "clip_max",
+                value_type=float,
+                default=REWARD_CLIP_MAX,
             ),
         )
 
@@ -539,7 +558,7 @@ class MuJoCoGraspingEnv(gym.Env):
                 if height_gain < -config.drop_height_threshold:
                     terminated = True
 
-        reward = float(np.clip(reward, -10.0, 10.0))
+        reward = float(np.clip(reward, config.clip_min, config.clip_max))
         truncated = False
 
         return obs, reward, terminated, truncated, {}

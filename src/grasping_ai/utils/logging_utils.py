@@ -9,6 +9,11 @@ from pathlib import Path
 import mlflow
 from loguru import logger
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+
+LOG_ROTATION = str(FLATTENED_YAML_CONFIG.get("logging.rotation", "10 MB"))
+LOG_RETENTION = str(FLATTENED_YAML_CONFIG.get("logging.retention", "10 days"))
+
 
 def setup_logging(module_name: str | None = None, level: str = "INFO") -> None:
     """Configure loguru logging to stderr and optionally to a log file.
@@ -34,8 +39,8 @@ def setup_logging(module_name: str | None = None, level: str = "INFO") -> None:
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
         logger.add(
             str(log_file_path),
-            rotation="10 MB",
-            retention="10 days",
+            rotation=LOG_ROTATION,
+            retention=LOG_RETENTION,
             format=log_format,
             level=level,
         )

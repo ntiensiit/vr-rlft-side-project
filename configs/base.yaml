@@ -15,3 +15,6 @@ tracking:
   mlflow:
     tracking_uri: ${oc.env:MLFLOW_TRACKING_URI,"./mlruns"}
     experiment_name: ${experiment_name}
+logging:
+  rotation: 10 MB
+  retention: 10 days

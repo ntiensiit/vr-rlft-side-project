@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 from loguru import logger
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.data.pointcloud_dataset import (
     discover_dataset_files,
     generate_analytical_grasps,
@@ -29,6 +30,41 @@ from grasping_ai.robotics.gripper import default_gripper_point_cloud
 from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
 from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
 from grasping_ai.simulation.ycb import list_ycb_objects
+
+SYNTHETIC_DEFAULTS = {
+    key: FLATTENED_YAML_CONFIG.get(f"synthetic.{key}")
+    for key in (
+        "num_samples",
+        "num_grasps",
+        "gripper_width",
+        "seed",
+        "oversample_factor",
+        "oversample_extra",
+        "neighborhood_size",
+        "voxel_size",
+        "strict_antipodal_dot",
+        "strict_alignment_dot",
+        "relaxed_antipodal_dot",
+        "allow_relaxed",
+        "search_multiplier",
+        "candidate_multiplier",
+        "min_grasp_translation",
+        "min_grasp_rotation",
+        "min_quality_score",
+        "friction_coefficient",
+        "collision_clearance",
+        "sim_validate",
+        "num_simulation_steps",
+        "lift_height_threshold",
+        "max_linear_velocity",
+        "max_angular_velocity",
+        "sim_validate_require_lift",
+        "sim_validate_require_ik",
+        "sim_validate_min_contacts",
+        "sim_validate_fallback_analytical",
+    )
+}
+SIM_OBJECT_POSITION = tuple(FLATTENED_YAML_CONFIG.get_path("synthetic", "sim_object_position"))
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -464,47 +500,116 @@ def _process_one_object(
             failures.append(f"{name}: no grasps passed quality filters")
 
 
-def generate_synthetic_dataset(  # noqa: PLR0913  # public pipeline API; tests/scripts pass options as keywords
+def generate_synthetic_dataset(  # noqa: PLR0913, PLR0915  # public pipeline API; defaults resolve from config
     ycb_root: Path,
     output_dir: Path,
-    num_samples: int,
-    num_grasps: int,
-    gripper_width: float,
+    num_samples: int | None = None,
+    num_grasps: int | None = None,
+    gripper_width: float | None = None,
     *,
-    seed: int,
+    seed: int | None = None,
     required_objects: list[str] | None = None,
-    oversample_factor: int = 2,
-    oversample_extra: int = 256,
-    neighborhood_size: int = 30,
-    voxel_size: float = 1e-5,
-    strict_antipodal_dot: float = 0.5,
-    strict_alignment_dot: float = 0.5,
-    relaxed_antipodal_dot: float = 0.3,
-    allow_relaxed: bool = True,
-    search_multiplier: int = 50,
-    candidate_multiplier: int = 3,
-    min_grasp_translation: float = 0.01,
-    min_grasp_rotation: float = 0.2,
-    min_quality_score: float = 0.0,
-    friction_coefficient: float = 0.5,
-    collision_clearance: float = 0.005,
-    sim_validate: bool = False,
+    oversample_factor: int | None = None,
+    oversample_extra: int | None = None,
+    neighborhood_size: int | None = None,
+    voxel_size: float | None = None,
+    strict_antipodal_dot: float | None = None,
+    strict_alignment_dot: float | None = None,
+    relaxed_antipodal_dot: float | None = None,
+    allow_relaxed: bool | None = None,
+    search_multiplier: int | None = None,
+    candidate_multiplier: int | None = None,
+    min_grasp_translation: float | None = None,
+    min_grasp_rotation: float | None = None,
+    min_quality_score: float | None = None,
+    friction_coefficient: float | None = None,
+    collision_clearance: float | None = None,
+    sim_validate: bool | None = None,
     mjcf_root: Path | None = None,
     robot_xml: Path | None = None,
-    num_simulation_steps: int = 500,
+    num_simulation_steps: int | None = None,
     gripper_close_command: np.ndarray | None = None,
-    lift_height_threshold: float = 0.05,
-    max_linear_velocity: float = 0.05,
-    max_angular_velocity: float = 0.1,
+    lift_height_threshold: float | None = None,
+    max_linear_velocity: float | None = None,
+    max_angular_velocity: float | None = None,
     quality_report_path: Path | None = None,
     sim_object_position: np.ndarray | None = None,
-    sim_validate_require_lift: bool = False,
-    sim_validate_require_ik: bool = True,
-    sim_validate_min_contacts: float = 1.0,
-    sim_validate_fallback_analytical: bool = True,
+    sim_validate_require_lift: bool | None = None,
+    sim_validate_require_ik: bool | None = None,
+    sim_validate_min_contacts: float | None = None,
+    sim_validate_fallback_analytical: bool | None = None,
     table_xml: Path | None = None,
 ) -> None:
     """Generate synthetic grasp dataset from YCB meshes."""
+    num_samples = SYNTHETIC_DEFAULTS["num_samples"] if num_samples is None else num_samples
+    num_grasps = SYNTHETIC_DEFAULTS["num_grasps"] if num_grasps is None else num_grasps
+    gripper_width = SYNTHETIC_DEFAULTS["gripper_width"] if gripper_width is None else gripper_width
+    seed = SYNTHETIC_DEFAULTS["seed"] if seed is None else seed
+    oversample_factor = SYNTHETIC_DEFAULTS["oversample_factor"] if oversample_factor is None else oversample_factor
+    oversample_extra = SYNTHETIC_DEFAULTS["oversample_extra"] if oversample_extra is None else oversample_extra
+    neighborhood_size = SYNTHETIC_DEFAULTS["neighborhood_size"] if neighborhood_size is None else neighborhood_size
+    voxel_size = SYNTHETIC_DEFAULTS["voxel_size"] if voxel_size is None else voxel_size
+    strict_antipodal_dot = (
+        SYNTHETIC_DEFAULTS["strict_antipodal_dot"] if strict_antipodal_dot is None else strict_antipodal_dot
+    )
+    strict_alignment_dot = (
+        SYNTHETIC_DEFAULTS["strict_alignment_dot"] if strict_alignment_dot is None else strict_alignment_dot
+    )
+    relaxed_antipodal_dot = (
+        SYNTHETIC_DEFAULTS["relaxed_antipodal_dot"] if relaxed_antipodal_dot is None else relaxed_antipodal_dot
+    )
+    allow_relaxed = SYNTHETIC_DEFAULTS["allow_relaxed"] if allow_relaxed is None else allow_relaxed
+    search_multiplier = SYNTHETIC_DEFAULTS["search_multiplier"] if search_multiplier is None else search_multiplier
+    candidate_multiplier = (
+        SYNTHETIC_DEFAULTS["candidate_multiplier"] if candidate_multiplier is None else candidate_multiplier
+    )
+    min_grasp_translation = (
+        SYNTHETIC_DEFAULTS["min_grasp_translation"] if min_grasp_translation is None else min_grasp_translation
+    )
+    min_grasp_rotation = SYNTHETIC_DEFAULTS["min_grasp_rotation"] if min_grasp_rotation is None else min_grasp_rotation
+    min_quality_score = SYNTHETIC_DEFAULTS["min_quality_score"] if min_quality_score is None else min_quality_score
+    friction_coefficient = (
+        SYNTHETIC_DEFAULTS["friction_coefficient"] if friction_coefficient is None else friction_coefficient
+    )
+    collision_clearance = (
+        SYNTHETIC_DEFAULTS["collision_clearance"] if collision_clearance is None else collision_clearance
+    )
+    sim_validate = SYNTHETIC_DEFAULTS["sim_validate"] if sim_validate is None else sim_validate
+    num_simulation_steps = (
+        SYNTHETIC_DEFAULTS["num_simulation_steps"] if num_simulation_steps is None else num_simulation_steps
+    )
+    lift_height_threshold = (
+        SYNTHETIC_DEFAULTS["lift_height_threshold"] if lift_height_threshold is None else lift_height_threshold
+    )
+    max_linear_velocity = (
+        SYNTHETIC_DEFAULTS["max_linear_velocity"] if max_linear_velocity is None else max_linear_velocity
+    )
+    max_angular_velocity = (
+        SYNTHETIC_DEFAULTS["max_angular_velocity"] if max_angular_velocity is None else max_angular_velocity
+    )
+    sim_validate_require_lift = (
+        SYNTHETIC_DEFAULTS["sim_validate_require_lift"]
+        if sim_validate_require_lift is None
+        else sim_validate_require_lift
+    )
+    sim_validate_require_ik = (
+        SYNTHETIC_DEFAULTS["sim_validate_require_ik"] if sim_validate_require_ik is None else sim_validate_require_ik
+    )
+    sim_validate_min_contacts = (
+        SYNTHETIC_DEFAULTS["sim_validate_min_contacts"]
+        if sim_validate_min_contacts is None
+        else sim_validate_min_contacts
+    )
+    sim_validate_fallback_analytical = (
+        SYNTHETIC_DEFAULTS["sim_validate_fallback_analytical"]
+        if sim_validate_fallback_analytical is None
+        else sim_validate_fallback_analytical
+    )
+    if sim_object_position is None:
+        sim_object_position = np.asarray(
+            SIM_OBJECT_POSITION,
+            dtype=np.float64,
+        )
     sampling_cfg = _PointSamplingConfig(
         num_samples=num_samples,
         oversample_factor=oversample_factor,
@@ -553,7 +658,7 @@ def generate_synthetic_dataset(  # noqa: PLR0913  # public pipeline API; tests/s
     gripper_point_cloud = default_gripper_point_cloud()
 
     object_position = (
-        sim_object_position if sim_object_position is not None else np.array([0.5, 0.0, 0.3], dtype=np.float64)
+        sim_object_position if sim_object_position is not None else np.asarray(SIM_OBJECT_POSITION, dtype=np.float64)
     )
     if object_position.shape != (3,):
         msg = "sim_object_position must have shape (3,)"

@@ -10,13 +10,25 @@ import numpy as np
 import pytransform3d.rotations as pr
 from loguru import logger
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.perception.geometry import make_transform
 
-DEFAULT_GRIPPER_GRID: dict[str, dict[str, float | int]] = {
-    "x": {"start": -0.03, "stop": 0.03, "count": 4},
-    "y": {"start": -0.02, "stop": 0.02, "count": 3},
-    "z": {"start": -0.04, "stop": 0.04, "count": 5},
-}
+GRIPPER_GRID = tuple(
+    (axis, tuple(FLATTENED_YAML_CONFIG.get_path("observations", "gripper_grid", axis).items()))
+    for axis in ("x", "y", "z")
+)
+BASE_TO_CONTACT_POSITION = tuple(
+    FLATTENED_YAML_CONFIG.get_path("robot", "gripper", "base_to_contact", "position"),
+)
+BASE_TO_CONTACT_QUATERNION = tuple(
+    FLATTENED_YAML_CONFIG.get_path("robot", "gripper", "base_to_contact", "quaternion_wxyz"),
+)
+MIN_WIDTH_CLAMP = float(FLATTENED_YAML_CONFIG.get("robot.gripper.min_width_clamp"))
+MAX_WIDTH = float(FLATTENED_YAML_CONFIG.get("robot.gripper.max_width"))
+JOINT_RANGES = tuple(
+    (name, tuple(FLATTENED_YAML_CONFIG.get_path("robot", "gripper", "joint_ranges", name)))
+    for name in ("finger_joint1", "finger_joint2")
+)
 
 
 def linspace_axis(axis_cfg: object) -> np.ndarray:
@@ -36,12 +48,18 @@ def gripper_point_cloud_from_grid(grid: dict[str, object]) -> np.ndarray:
     return point_cloud.astype(np.float32)
 
 
-def default_gripper_point_cloud() -> np.ndarray:
+def default_gripper_point_cloud(
+    grid_default: tuple[tuple[str, tuple[tuple[str, object], ...]], ...] = GRIPPER_GRID,
+) -> np.ndarray:
     """Return the default analytical gripper collision point cloud."""
-    return gripper_point_cloud_from_grid(DEFAULT_GRIPPER_GRID)
+    grid = {axis: dict(values) for axis, values in grid_default}
+    return gripper_point_cloud_from_grid(grid)
 
 
-def panda_hand_to_contact_transform() -> np.ndarray:
+def panda_hand_to_contact_transform(
+    position: tuple[float, ...] = BASE_TO_CONTACT_POSITION,
+    quaternion_wxyz: tuple[float, ...] = BASE_TO_CONTACT_QUATERNION,
+) -> np.ndarray:
     """Return the Panda hand-base to contact-center rigid transform.
 
     Values match ``configs/gripper/franka_emika_panda.yaml`` and the MuJoCo Grasping
@@ -50,26 +68,41 @@ def panda_hand_to_contact_transform() -> np.ndarray:
     Returns:
         A ``(4, 4)`` homogeneous transform ``T_hand_contact``.
     """
-    position = np.array([0.0, 0.0, -0.102], dtype=np.float64)
-    quaternion_wxyz = np.array([0.707106781, 0.0, 0.0, 0.707106781], dtype=np.float64)
-    rotation = pr.matrix_from_quaternion(quaternion_wxyz)
-    return make_transform(rotation, position)
+    rotation = pr.matrix_from_quaternion(np.asarray(quaternion_wxyz, dtype=np.float64))
+    return make_transform(rotation, np.asarray(position, dtype=np.float64))
 
 
-def panda_width_to_finger_joints(width: float) -> tuple[float, float]:
+def panda_width_to_finger_joints(
+    width: float,
+    min_width_clamp: float = MIN_WIDTH_CLAMP,
+    max_width: float = MAX_WIDTH,
+    joint_ranges: tuple[tuple[str, tuple[float, ...]], ...] = JOINT_RANGES,
+) -> tuple[float, float]:
     """Map a Panda finger opening width in meters to slide-joint targets.
 
     Args:
         width: Desired opening width in meters.
+        min_width_clamp: Minimum allowed opening width.
+        max_width: Maximum allowed opening width.
+        joint_ranges: Immutable finger-joint range defaults.
 
     Returns:
         A tuple ``(finger_joint1, finger_joint2)`` clipped to Panda slide ranges.
     """
-    clamped_width = float(np.clip(width, 0.003, 0.08))
+    clamped_width = float(
+        np.clip(
+            width,
+            min_width_clamp,
+            max_width,
+        ),
+    )
     target_q1 = clamped_width / 2.0
-    target_q2 = -0.04 + (clamped_width / 2.0)
-    target_q1 = float(np.clip(target_q1, 0.0, 0.04))
-    target_q2 = float(np.clip(target_q2, -0.04, 0.0))
+    ranges = dict(joint_ranges)
+    finger1_range = ranges["finger_joint1"]
+    finger2_range = ranges["finger_joint2"]
+    target_q2 = float(finger2_range[0]) + (clamped_width / 2.0)
+    target_q1 = float(np.clip(target_q1, *[float(value) for value in finger1_range]))
+    target_q2 = float(np.clip(target_q2, *[float(value) for value in finger2_range]))
     return target_q1, target_q2
 
 

@@ -16,3 +16,4 @@ limits:
 evaluation:
   filter_collisions: false
   single_object_key: object_0
+  min_quality_score: 0.0

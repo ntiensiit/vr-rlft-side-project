@@ -16,6 +16,7 @@ from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.perception.geometry import make_transform
 
 SE3_MATRIX_SHAPE = tuple(int(v) for v in FLATTENED_YAML_CONFIG.get("grasp.se3_matrix_shape", [4, 4]))
+IK_DAMPING = float(FLATTENED_YAML_CONFIG.get("robot.ik.damping", 0.01))
 
 JointConfiguration = np.ndarray
 RigidTransform = np.ndarray
@@ -254,7 +255,7 @@ def build_inverse_kinematics(
         _validate_ik_inputs(target_pose, initial_joints, model)
 
         q = np.copy(initial_joints)
-        damping = 0.01
+        damping = IK_DAMPING
 
         for _ in range(max_iterations):
             local_data.qpos[:] = q

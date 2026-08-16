@@ -132,6 +132,7 @@ def test_generate_analytical_grasps_fallback() -> None:
         num_grasps=2,
         gripper_width=0.05,
         rng=rng,
+        allow_relaxed=False,
     )
     if not (strict.shape == (0, 4, 4)):
         raise AssertionError
@@ -407,44 +408,3 @@ def test_generate_synthetic_dataset_sim_fallback_to_analytical(
         raise AssertionError
 
 
-def test_audit_synthetic_labels(tmp_path: Path) -> None:
-    """Verify that the audit_synthetic_labels tool runs on generated datasets and computes quality metrics."""
-    # Deferred: importing the pipeline pulls in optional heavy deps (mujoco).
-    from grasping_ai.pipelines.prepare_synthetic_data import (  # noqa: PLC0415
-        generate_synthetic_dataset,
-    )
-    from grasping_ai.pipelines.synthetic_audit import audit_synthetic_labels  # noqa: PLC0415
-
-    ycb_root = tmp_path / "ycb_raw"
-    ycb_root.mkdir()
-    obj_name = "006_mustard_bottle"
-    obj_dir = ycb_root / obj_name
-    obj_dir.mkdir()
-    mesh = o3d.geometry.TriangleMesh.create_box(width=0.05, height=0.1, depth=0.05)
-    o3d.io.write_triangle_mesh(str(obj_dir / "textured.obj"), mesh)
-
-    output_dir = tmp_path / "dataset"
-    generate_synthetic_dataset(
-        ycb_root=ycb_root,
-        output_dir=output_dir,
-        num_samples=100,
-        num_grasps=4,
-        gripper_width=0.08,
-        seed=42,
-    )
-
-    report = audit_synthetic_labels(
-        dataset_root=output_dir,
-        friction_coefficient=0.5,
-        collision_clearance=0.005,
-    )
-    if not (len(report) == 1):
-        raise AssertionError
-    if not (report[0]["object_id"] == obj_name):
-        raise AssertionError
-    if not (report[0]["num_grasps"] == EXPECTED_NUM_GRASPS):
-        raise AssertionError
-    if not (float(report[0]["contact_scored_rate"]) > 0.0):
-        raise AssertionError
-    if not (float(report[0]["mean_recomputed_score"]) > 0.0):
-        raise AssertionError

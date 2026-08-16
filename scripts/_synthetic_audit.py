@@ -1,4 +1,4 @@
-"""Audit synthetic grasp labels for consistency and coverage."""
+"""Private implementation for the synthetic-label audit script."""
 
 from __future__ import annotations
 

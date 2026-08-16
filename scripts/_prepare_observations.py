@@ -1,4 +1,4 @@
-"""Build observation tensors for training pipelines."""
+"""Private implementation for the observation-preparation script."""
 
 from __future__ import annotations
 

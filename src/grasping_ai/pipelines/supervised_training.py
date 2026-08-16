@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.inference.grasp_sampling import encode_grasp_conditioning
 
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
 TrainingDataset = Dataset[tuple[torch.Tensor, torch.Tensor]] | list[tuple[torch.Tensor, torch.Tensor]]
+BatchCollator = Callable[[list[tuple[torch.Tensor, torch.Tensor]]], tuple[torch.Tensor, torch.Tensor]]
+SEED = int(FLATTENED_YAML_CONFIG.get("seed", 42))
 
 
 def build_supervised_dataloader(
@@ -21,62 +21,37 @@ def build_supervised_dataloader(
     seed: int | None,
     *,
     num_workers: int = 0,
+    collate_fn: BatchCollator | None = None,
 ) -> DataLoader[tuple[torch.Tensor, torch.Tensor]]:
     """Build a reproducibly shuffled DataLoader for supervised pairs."""
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
     if num_workers < 0:
         raise ValueError("num_workers must be non-negative")
-    generator = torch.Generator().manual_seed(42 if seed is None else seed)
+    generator = torch.Generator().manual_seed(SEED if seed is None else seed)
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=True,
         generator=generator,
         num_workers=num_workers,
+        collate_fn=collate_fn,
     )
 
 
-def iter_supervised_training_batches(
-    pairs: TrainingDataset,
-    batch_size: int,
-    device: str,
-    seed: int | None,
-) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-    """Yield shuffled ``(point_clouds, targets)`` batches for supervised training.
-
-    Args:
-        pairs: Training samples as ``(point_cloud, grasp_vector)`` tuples.
-        batch_size: Maximum number of samples per yielded batch.
-        device: Torch device string passed to ``Tensor.to``.
-        seed: Optional shuffle seed; defaults to ``42`` when omitted.
-
-    Yields:
-        Batched ``(point_clouds, targets)`` tensors on ``device``.
-    """
-    for point_clouds, targets in build_supervised_dataloader(pairs, batch_size, seed):
-        yield point_clouds.to(device), targets.to(device)
-
-
-def iter_conditioned_training_batches(
-    pairs: TrainingDataset,
+def build_conditioned_dataloader(
+    dataset: TrainingDataset,
     batch_size: int,
     device: str,
     seed: int | None,
     encoder: torch.nn.Module,
-) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-    """Yield shuffled ``(conditioning, targets)`` batches for diffusion training.
+) -> DataLoader[tuple[torch.Tensor, torch.Tensor]]:
+    """Build a shuffled DataLoader that batches encoded point-cloud samples."""
+    device_obj = torch.device(device)
 
-    Args:
-        pairs: Training samples as ``(point_cloud, grasp_vector)`` tuples.
-        batch_size: Maximum number of samples per yielded batch.
-        device: Torch device string passed to ``Tensor.to``.
-        seed: Optional shuffle seed forwarded to ``iter_supervised_training_batches``.
-        encoder: Equivariant encoder used to precompute conditioning features.
+    def collate(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor]:
+        point_clouds, targets = torch.utils.data.default_collate(batch)
+        conditioning, _, _ = encode_grasp_conditioning(encoder, point_clouds.to(device_obj))
+        return conditioning, targets.to(device_obj)
 
-    Yields:
-        Batched ``(conditioning, targets)`` tensors on ``device``.
-    """
-    for point_clouds, targets in iter_supervised_training_batches(pairs, batch_size, device, seed):
-        conditioning, _, _ = encode_grasp_conditioning(encoder, point_clouds)
-        yield conditioning, targets
+    return build_supervised_dataloader(dataset, batch_size, seed, collate_fn=collate)
