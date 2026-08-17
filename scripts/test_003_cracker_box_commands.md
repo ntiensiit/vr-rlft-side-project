@@ -32,32 +32,51 @@ Visualize a saved simulation-validated label before training:
 uv run python scripts/visualize_robot.py script.grasp_file=data/processed/003_cracker_box.npz script.object_id=003_cracker_box script.auto_select_reachable=true script.allow_ik_failure=false script.close_gripper=true script.lift_object=true script.table_xml=deploy/table.xml
 ```
 
-Audit the generated labels:
+Audit only the generated `003_cracker_box` labels:
 
 ```powershell
-uv run python scripts/audit_synthetic_labels.py script.output=artifacts/reports/003_synthetic_label_audit.json paths.dataset_root=data/processed
+uv run python scripts/audit_synthetic_labels.py `
+  script.output=artifacts/reports/synthetic_label_audit.json `
+  paths.dataset_root=data/processed/003_cracker_box.npz
 ```
 
-Train only on positive-quality `003_cracker_box` labels:
+Generate the single-object `003_cracker_box` observation:
 
 ```powershell
-uv run python scripts/train_flow.py paths.dataset_root=data/processed supervised.num_epochs=5000 supervised.batch_size=2 supervised.learning_rate=0.0005 supervised.min_grasp_score=0.001 training.augment=true training.flow_noise_samples=4
+uv run python scripts/prepare_observations.py `
+  objects.ids=[003_cracker_box]
 ```
 
-Generate the 003_cracker_box observation:
+Train the Flow model on the single-object processed dataset before inference:
 
 ```powershell
-uv run python scripts/prepare_observations.py objects.ids=[003_cracker_box]
+uv run python scripts/train_flow.py `
+  paths.dataset_root=data/processed `
+  supervised.num_epochs=5000 `
+  supervised.batch_size=2 `
+  supervised.learning_rate=0.0005 `
+  supervised.min_grasp_score=0.001 `
+  training.augment=true `
+  training.flow_noise_samples=4
 ```
 
-Generate inference candidates for `003_cracker_box`:
+Generate inference candidates for only `003_cracker_box`:
 
 ```powershell
-uv run python scripts/run_grasp_inference.py model=flow script.observation=data/observations/003_cracker_box.npy script.output=artifacts/exports/003_grasp_candidates.npy
+uv run python scripts/run_grasp_inference.py `
+  model=flow `
+  script.observation=data/observations/003_cracker_box.npy `
+  script.output=artifacts/exports/003_cracker_box_grasp_candidates.npy
 ```
 
-Visualize and validate IK reachability:
+Visualize the single-object `003_cracker_box` candidates and validate IK reachability:
 
 ```powershell
-uv run python scripts/visualize_robot.py script.grasp_file=artifacts/exports/003_grasp_candidates.npy script.object_id=003_cracker_box script.grasp_pose_format=object script.auto_select_reachable=true script.allow_ik_failure=false
+uv run python scripts/visualize_robot.py `
+  script.grasp_file=artifacts/exports/003_cracker_box_grasp_candidates.npy `
+  script.object_id=003_cracker_box `
+  script.grasp_pose_format=object `
+  script.auto_select_reachable=true `
+  script.allow_ik_failure=false `
+  script.table_xml=deploy/table.xml
 ```
