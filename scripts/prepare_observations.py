@@ -35,6 +35,14 @@ def main(cfg: DictConfig) -> None:
         str(output_cfg["merged_objects_normalized"]),
         str(output_cfg["gripper"]),
         gripper_grid,
+        object_ids=yaml_config.value(
+            "object_ids",
+            "objects",
+            "ids",
+            value_type=list[str],
+            script_or=True,
+            default=None,
+        ),
     )
 
 

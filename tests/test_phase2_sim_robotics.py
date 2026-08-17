@@ -223,7 +223,7 @@ def test_panda_hand_to_contact_transform_round_trip() -> None:
         raise AssertionError
     if not (np.isclose(np.linalg.det(hand_to_contact[:3, :3]), 1.0, atol=1e-6)):
         raise AssertionError
-    if not (np.allclose(hand_to_contact[:3, 3], [0.0, 0.0, -0.102])):
+    if not (np.allclose(hand_to_contact[:3, 3], [0.0, 0.0, 0.1029])):
         raise AssertionError
 
     contact_to_hand = invert_transform(hand_to_contact)
@@ -237,13 +237,13 @@ def test_panda_width_to_finger_joints() -> None:
     q1, q2 = panda_width_to_finger_joints(0.08)
     if not (np.isclose(q1, 0.04)):
         raise AssertionError
-    if not (np.isclose(q2, 0.0)):
+    if not (np.isclose(q2, 0.04)):
         raise AssertionError
 
     q1_min, q2_min = panda_width_to_finger_joints(0.0)
     if not (np.isclose(q1_min, 0.0015)):
         raise AssertionError
-    if not (np.isclose(q2_min, -0.0385)):
+    if not (np.isclose(q2_min, 0.0015)):
         raise AssertionError
 
 
@@ -252,12 +252,18 @@ def test_deploy_robot_fingertip_friction() -> None:
     text = Path("deploy/robot.xml").read_text(encoding="utf-8")
     if not (text.count('friction="2.4 0.3 0.1"') >= MIN_FRICTION_TAG_COUNT):
         raise AssertionError
+    for side in ("left", "right"):
+        for pad_index in range(1, 6):
+            if f'name="{side}_fingertip_pad_{pad_index}"' not in text:
+                raise AssertionError
+    if 'forcerange="-70 70"' not in text or 'biasprm="0 -3500 -70"' not in text:
+        raise AssertionError
 
 
 def test_gripper_config_documents_panda_contact_offset() -> None:
     """Gripper config group records Panda base-to-contact constants."""
     position = FLATTENED_YAML_CONFIG.get_path("robot", "gripper", "base_to_contact", "position")
-    if not (position == [0, 0, -0.102]):
+    if not (position == [0, 0, 0.1029]):
         raise AssertionError
 
 
@@ -281,6 +287,13 @@ def test_convert_grasps_to_world_frame() -> None:
     if not (np.allclose(grasps_w[0, :3, 3], [0.1, 0.2, 1.3])):
         raise AssertionError
     if not (np.allclose(grasps_w[1, :3, 3], [0.1, 0.2, 1.3])):
+        raise AssertionError
+
+    # Batch conversion must retain the promoted precision of the single branch.
+    float32_grasps = np.asarray([grasp], dtype=np.float32)
+    float64_batch = convert_grasps_to_world_frame(float32_grasps, o2w)
+    float64_single = convert_grasps_to_world_frame(float32_grasps[0], o2w)
+    if float64_batch.dtype != np.float64 or not np.array_equal(float64_batch[0], float64_single):
         raise AssertionError
 
 

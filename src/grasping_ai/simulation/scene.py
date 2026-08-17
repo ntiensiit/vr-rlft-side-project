@@ -30,6 +30,101 @@ from grasping_ai.utils.path_validation import (
 SceneCommand = Callable[[], None]
 
 
+def set_freejoint_body_pose(
+    mj_model: mujoco.MjModel,
+    mj_data: mujoco.MjData,
+    body_name: str,
+    position: np.ndarray,
+    quaternion_wxyz: np.ndarray | None = None,
+) -> None:
+    """Place a freejoint body at a world-frame pose and update kinematics."""
+    if position.shape != (3,) or not np.isfinite(position).all():
+        msg = "position must be a finite array with shape (3,)"
+        raise ValueError(msg)
+    if quaternion_wxyz is not None and (
+        quaternion_wxyz.shape != (4,) or not np.isfinite(quaternion_wxyz).all()
+    ):
+        msg = "quaternion_wxyz must be a finite array with shape (4,)"
+        raise ValueError(msg)
+
+    body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+    if body_id == -1:
+        raise ValueError(f"Body '{body_name}' not found in MuJoCo model")
+    for joint_id in range(int(mj_model.njnt)):
+        if (
+            mj_model.jnt_type[joint_id] == mujoco.mjtJoint.mjJNT_FREE
+            and int(mj_model.jnt_bodyid[joint_id]) == body_id
+        ):
+            qpos_address = int(mj_model.jnt_qposadr[joint_id])
+            mj_data.qpos[qpos_address : qpos_address + 3] = position
+            if quaternion_wxyz is not None:
+                mj_data.qpos[qpos_address + 3 : qpos_address + 7] = quaternion_wxyz
+            mujoco.mj_forward(mj_model, mj_data)
+            return
+    raise ValueError(f"Body '{body_name}' has no freejoint")
+
+
+def place_freejoint_body_on_surface(
+    mj_model: mujoco.MjModel,
+    mj_data: mujoco.MjData,
+    body_name: str,
+    support_geom_name: str = "table_top",
+) -> float:
+    """Place a freejoint body's lowest compiled geom point on a support geom."""
+    body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+    support_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_GEOM, support_geom_name)
+    if body_id == -1:
+        raise ValueError(f"Body '{body_name}' not found in MuJoCo model")
+    if support_id == -1:
+        raise ValueError(f"Support geom '{support_geom_name}' not found in MuJoCo model")
+
+    mujoco.mj_forward(mj_model, mj_data)
+    support_rotation = mj_data.geom_xmat[support_id].reshape(3, 3)
+    support_half_extents = mj_model.geom_aabb[support_id, 3:6]
+    support_top = float(
+        mj_data.geom_xpos[support_id, 2]
+        + np.abs(support_rotation[2]) @ support_half_extents,
+    )
+    object_geom_ids = [
+        geom_id
+        for geom_id in range(int(mj_model.ngeom))
+        if int(mj_model.geom_bodyid[geom_id]) == body_id
+    ]
+    if not object_geom_ids:
+        raise ValueError(f"Body '{body_name}' has no geometry")
+
+    def bottom_height() -> float:
+        heights = []
+        for geom_id in object_geom_ids:
+            if mj_model.geom_type[geom_id] == mujoco.mjtGeom.mjGEOM_MESH:
+                mesh_id = int(mj_model.geom_dataid[geom_id])
+                vertex_start = int(mj_model.mesh_vertadr[mesh_id])
+                vertex_count = int(mj_model.mesh_vertnum[mesh_id])
+                vertices = mj_model.mesh_vert[vertex_start : vertex_start + vertex_count]
+                rotation = mj_data.geom_xmat[geom_id].reshape(3, 3)
+                world_vertices = vertices @ rotation.T + mj_data.geom_xpos[geom_id]
+                heights.append(float(np.min(world_vertices[:, 2])))
+                continue
+            rotation = mj_data.geom_xmat[geom_id].reshape(3, 3)
+            half_extents = mj_model.geom_aabb[geom_id, 3:6]
+            world_half_z = np.abs(rotation[2]) @ half_extents
+            heights.append(float(mj_data.geom_xpos[geom_id, 2] - world_half_z))
+        return min(heights)
+
+    position = np.array(mj_data.xpos[body_id], dtype=np.float64)
+    position[2] += support_top - bottom_height()
+    set_freejoint_body_pose(mj_model, mj_data, body_name, position)
+    final_bottom = bottom_height()
+    logger.info(
+        "Placed '{}' on '{}' surface: bottom={:.6f}, support={:.6f}",
+        body_name,
+        support_geom_name,
+        final_bottom,
+        support_top,
+    )
+    return final_bottom
+
+
 def _resolve_scene_output_dir(output_dir: Path | None) -> Path:
     """Return a writable directory for assembled scene XML artifacts.
 

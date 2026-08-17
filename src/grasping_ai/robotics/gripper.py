@@ -32,6 +32,8 @@ JOINT_RANGES = tuple(
     (name, tuple(FLATTENED_YAML_CONFIG.get_path("robot", "gripper", "joint_ranges", name)))
     for name in ("finger_joint1", "finger_joint2")
 )
+PANDA_FINGER_BODY_NAMES = ("left_finger", "right_finger")
+PANDA_FINGERTIP_PAD_PREFIXES = ("left_fingertip_pad_", "right_fingertip_pad_")
 
 
 def linspace_axis(axis_cfg: object) -> np.ndarray:
@@ -129,6 +131,117 @@ def gripper_actuator_indices(mj_model: mujoco.MjModel) -> list[int]:
                 indices.append(i)
     logger.info("Found gripper actuator indices: {}", indices)
     return indices
+
+
+def panda_fingertip_object_contacts(  # noqa: C901  # explicit contact routing is easier to audit inline
+    mj_model: mujoco.MjModel,
+    mj_data: mujoco.MjData,
+    object_id: str,
+) -> tuple[float, bool]:
+    """Count object contacts on the opposed inner fingertip pads.
+
+    Named pad geoms are used when the Panda model exposes them.  Older or
+    minimal test models fall back to finger-body contacts, preserving support
+    for custom MJCF while preventing side-of-finger collisions from being
+    accepted as a Panda grasp in the deployed model.
+    """
+    object_body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, object_id)
+    if object_body_id == -1:
+        return 0.0, False
+
+    object_body_ids = {
+        body_id
+        for body_id in range(int(mj_model.nbody))
+        if body_id == object_body_id
+        or any(
+            int(parent_id) == object_body_id
+            for parent_id in _body_ancestors(mj_model, body_id)
+        )
+    }
+    pad_geom_sides: dict[int, int] = {}
+    for geom_id in range(int(mj_model.ngeom)):
+        geom_name = mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_GEOM, geom_id) or ""
+        for side, prefix in enumerate(PANDA_FINGERTIP_PAD_PREFIXES):
+            if geom_name.startswith(prefix):
+                pad_geom_sides[geom_id] = side
+                break
+
+    finger_body_sides = {
+        body_id: side
+        for side, body_name in enumerate(PANDA_FINGER_BODY_NAMES)
+        if (body_id := mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, body_name)) != -1
+    }
+    use_named_pads = set(pad_geom_sides.values()) == set(range(len(PANDA_FINGERTIP_PAD_PREFIXES)))
+    touching_sides: set[int] = set()
+    count = 0
+    for contact_id in range(int(mj_data.ncon)):
+        geom_a, geom_b = (int(value) for value in mj_data.contact[contact_id].geom)
+        body_a = int(mj_model.geom_bodyid[geom_a])
+        body_b = int(mj_model.geom_bodyid[geom_b])
+        gripper_geom = -1
+        if body_a in object_body_ids:
+            gripper_geom = geom_b
+        elif body_b in object_body_ids:
+            gripper_geom = geom_a
+        if gripper_geom == -1:
+            continue
+        if use_named_pads:
+            side = pad_geom_sides.get(gripper_geom)
+        else:
+            side = finger_body_sides.get(int(mj_model.geom_bodyid[gripper_geom]))
+        if side is not None:
+            touching_sides.add(side)
+            count += 1
+    return float(count), touching_sides == set(range(len(PANDA_FINGER_BODY_NAMES)))
+
+
+def panda_has_nonpad_object_collision(
+    mj_model: mujoco.MjModel,
+    mj_data: mujoco.MjData,
+    object_id: str,
+) -> bool:
+    """Return whether a Panda geom other than an inner pad hits the object."""
+    object_body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, object_id)
+    robot_root_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "link0")
+    if object_body_id == -1 or robot_root_id == -1:
+        return False
+
+    object_body_ids = {
+        body_id
+        for body_id in range(int(mj_model.nbody))
+        if body_id == object_body_id or object_body_id in _body_ancestors(mj_model, body_id)
+    }
+    pad_geom_ids = {
+        geom_id
+        for geom_id in range(int(mj_model.ngeom))
+        if (mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_GEOM, geom_id) or "").startswith(
+            PANDA_FINGERTIP_PAD_PREFIXES,
+        )
+    }
+    for contact_id in range(int(mj_data.ncon)):
+        geom_a, geom_b = (int(value) for value in mj_data.contact[contact_id].geom)
+        body_a = int(mj_model.geom_bodyid[geom_a])
+        body_b = int(mj_model.geom_bodyid[geom_b])
+        robot_geom = -1
+        body_b_is_robot = body_b == robot_root_id or robot_root_id in _body_ancestors(mj_model, body_b)
+        body_a_is_robot = body_a == robot_root_id or robot_root_id in _body_ancestors(mj_model, body_a)
+        if body_a in object_body_ids and body_b_is_robot:
+            robot_geom = geom_b
+        elif body_b in object_body_ids and body_a_is_robot:
+            robot_geom = geom_a
+        if robot_geom != -1 and robot_geom not in pad_geom_ids:
+            return True
+    return False
+
+
+def _body_ancestors(mj_model: mujoco.MjModel, body_id: int) -> list[int]:
+    """Return the parent chain for one MuJoCo body."""
+    ancestors: list[int] = []
+    parent_id = int(mj_model.body_parentid[body_id])
+    while parent_id > 0:
+        ancestors.append(parent_id)
+        parent_id = int(mj_model.body_parentid[parent_id])
+    return ancestors
 
 
 def load_gripper_model(gripper_description_path: str) -> dict[str, object]:

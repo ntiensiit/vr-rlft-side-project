@@ -22,6 +22,7 @@ COLLISION_CLEARANCE = float(FLATTENED_YAML_CONFIG.get("script.collision_clearanc
 FRICTION_COEFFICIENT = float(FLATTENED_YAML_CONFIG.get("script.friction_coefficient", 0.5))
 GRIPPER_WIDTH = float(FLATTENED_YAML_CONFIG.get("script.gripper_width", 0.08))
 LIFT_HEIGHT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("script.lift_height_threshold", 0.05))
+LIFT_DISTANCE = float(FLATTENED_YAML_CONFIG.get("script.lift_distance", 0.1))
 MAX_ANGULAR_VELOCITY = float(FLATTENED_YAML_CONFIG.get("script.max_angular_velocity", 0.1))
 MAX_LINEAR_VELOCITY = float(FLATTENED_YAML_CONFIG.get("script.max_linear_velocity", 0.05))
 MIN_GRASP_ROTATION = float(FLATTENED_YAML_CONFIG.get("script.min_grasp_rotation", 0.2))
@@ -105,7 +106,7 @@ def main(cfg: DictConfig) -> None:
             ),
             seed=yaml_config.value("seed", "synthetic", "seed", value_type=int, script_or=True, default=SEED),
             required_objects=yaml_config.value(
-                "required_objects", "objects", "ids", value_type=list[str], script_or=True, default=list(OBJECT_IDS),
+                "object_ids", "objects", "ids", value_type=list[str], script_or=True, default=list(OBJECT_IDS),
             ),
             oversample_factor=yaml_config.value(
                 "oversample_factor",
@@ -240,6 +241,14 @@ def main(cfg: DictConfig) -> None:
                 value_type=float,
                 script_or=True,
                 default=LIFT_HEIGHT_THRESHOLD,
+            ),
+            lift_distance=yaml_config.value(
+                "lift_distance",
+                "synthetic",
+                "lift_distance",
+                value_type=float,
+                script_or=True,
+                default=LIFT_DISTANCE,
             ),
             max_linear_velocity=yaml_config.value(
                 "max_linear_velocity",

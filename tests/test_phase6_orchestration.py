@@ -411,16 +411,20 @@ def test_simulate_grasp_renames_object_body_to_object_identifier(
         np.zeros(1),
     )
     if not (
-        set(outcome.keys())
-        == {
+        {
             "success",
+            "ik_converged",
+            "lift_ik_converged",
             "initial_height",
             "final_height",
             "contact_count",
+            "bilateral_contact",
+            "table_collision_free",
             "object_velocity",
             "grasp_pose",
             "fk_position_error",
         }
+        <= set(outcome)
     ):
         raise AssertionError
     if not (outcome["initial_height"] == pytest.approx(0.5)):
@@ -449,9 +453,9 @@ def test_simulate_grasp_ik_failure_returns_unsuccessful_outcome(
     )
     if outcome["success"] is not False:
         raise AssertionError
-    if not (outcome["initial_height"] == 0.0):
+    if not np.isfinite(outcome["initial_height"]):
         raise AssertionError
-    if not (outcome["final_height"] == 0.0):
+    if not (outcome["final_height"] == pytest.approx(outcome["initial_height"])):
         raise AssertionError
     if not (outcome["contact_count"] == 0.0):
         raise AssertionError

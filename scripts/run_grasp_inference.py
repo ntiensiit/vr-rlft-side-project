@@ -67,8 +67,12 @@ def main(cfg: DictConfig) -> None:
         ycb_root=yaml_config.value("ycb_root", "paths", "ycb_root", value_type=Path, script_or=True)
         if observation_path is None
         else None,
-        object_id=yaml_config.value(
-            "object_id", "script", "object_id", value_type=object, default=OBJECT_ID, script_or=True,
+        object_id=(
+            yaml_config.value(
+                "object_id", "script", "object_id", value_type=object, default=OBJECT_ID, script_or=True,
+            )
+            if observation_path is None
+            else None
         ),
     )
 

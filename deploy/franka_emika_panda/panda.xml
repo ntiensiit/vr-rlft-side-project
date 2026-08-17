@@ -221,11 +221,11 @@
                         <geom mesh="finger_0" material="off_white" class="visual"/>
                         <geom mesh="finger_1" material="black" class="visual"/>
                         <geom mesh="finger_0" class="collision"/>
-                        <geom class="fingertip_pad_collision_1"/>
-                        <geom class="fingertip_pad_collision_2"/>
-                        <geom class="fingertip_pad_collision_3"/>
-                        <geom class="fingertip_pad_collision_4"/>
-                        <geom class="fingertip_pad_collision_5"/>
+                        <geom name="left_fingertip_pad_1" class="fingertip_pad_collision_1"/>
+                        <geom name="left_fingertip_pad_2" class="fingertip_pad_collision_2"/>
+                        <geom name="left_fingertip_pad_3" class="fingertip_pad_collision_3"/>
+                        <geom name="left_fingertip_pad_4" class="fingertip_pad_collision_4"/>
+                        <geom name="left_fingertip_pad_5" class="fingertip_pad_collision_5"/>
                       </body>
                       <body name="right_finger" pos="0 0 0.0584" quat="0 0 0 1">
                         <inertial mass="0.015" pos="0 0 0" diaginertia="2.375e-6 2.375e-6 7.5e-7"/>
@@ -233,11 +233,11 @@
                         <geom mesh="finger_0" material="off_white" class="visual"/>
                         <geom mesh="finger_1" material="black" class="visual"/>
                         <geom mesh="finger_0" class="collision"/>
-                        <geom class="fingertip_pad_collision_1"/>
-                        <geom class="fingertip_pad_collision_2"/>
-                        <geom class="fingertip_pad_collision_3"/>
-                        <geom class="fingertip_pad_collision_4"/>
-                        <geom class="fingertip_pad_collision_5"/>
+                        <geom name="right_fingertip_pad_1" class="fingertip_pad_collision_1"/>
+                        <geom name="right_fingertip_pad_2" class="fingertip_pad_collision_2"/>
+                        <geom name="right_fingertip_pad_3" class="fingertip_pad_collision_3"/>
+                        <geom name="right_fingertip_pad_4" class="fingertip_pad_collision_4"/>
+                        <geom name="right_fingertip_pad_5" class="fingertip_pad_collision_5"/>
                       </body>
                     </body>
                   </body>
@@ -272,9 +272,10 @@
     <general class="panda" name="actuator6" joint="joint6" gainprm="2000" biasprm="0 -2000 -200" forcerange="-12 12"
       ctrlrange="-0.0175 3.7525"/>
     <general class="panda" name="actuator7" joint="joint7" gainprm="2000" biasprm="0 -2000 -200" forcerange="-12 12"/>
-    <!-- Remap original ctrlrange (0, 0.04) to (0, 255): 0.04 * 100 / 255 = 0.01568627451 -->
-    <general class="panda" name="actuator8" tendon="split" forcerange="-100 100" ctrlrange="0 255"
-      gainprm="0.01568627451 0 0" biasprm="0 -100 -10"/>
+    <!-- Remap tendon target (0, 0.04 m) to ctrlrange (0, 255), with the
+         physical Panda grasp force capped at 70 N. -->
+    <general class="panda" name="actuator8" tendon="split" forcerange="-70 70" ctrlrange="0 255"
+      gainprm="0.5490196078 0 0" biasprm="0 -3500 -70"/>
   </actuator>
 
   <keyframe>

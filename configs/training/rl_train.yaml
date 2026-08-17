@@ -1,6 +1,7 @@
 # @package _global_
 defaults:
   - entrypoint
+  - override /evaluation: rl
   - _self_
 
 notebook:

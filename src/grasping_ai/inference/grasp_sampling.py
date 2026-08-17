@@ -74,5 +74,22 @@ def sample_to_world_frame(
     """
     samples_flat = samples.reshape(-1, 9)
     canonical = vec_to_se3(samples_flat)
-    transforms = compose_with_se3_frame(canonical, frame, centroid)
+    transforms = compose_with_se3_frame(canonical, frame, centroid).to(torch.float64)
+    # Neural inference runs in float32, so even Gram-Schmidt rotations can be
+    # a few ulps outside SO(3). Project once at the inference boundary before
+    # these poses reach strict transform, collision, or IK code.
+    rotations = transforms[:, :3, :3]
+    u, _, vh = torch.linalg.svd(rotations)
+    projected = u @ vh
+    reflected = torch.linalg.det(projected) < 0
+    if torch.any(reflected):
+        u = u.clone()
+        u[reflected, :, -1] *= -1
+        projected = u @ vh
+    transforms[:, :3, :3] = projected
+    transforms[:, 3, :] = torch.tensor(
+        [0.0, 0.0, 0.0, 1.0],
+        dtype=transforms.dtype,
+        device=transforms.device,
+    )
     return transforms.cpu().numpy()

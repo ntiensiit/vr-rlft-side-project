@@ -71,6 +71,7 @@ class SupervisedGraspDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         self.records = discover_dataset_files(dataset_root)
         self.augment = augment
         self.seed = 0 if seed is None else seed
+        self._augment_rng = np.random.default_rng(self.seed)
         self.min_grasp_score = min_grasp_score
         self.score_repeat_factor = score_repeat_factor
         self.score_repeat_power = score_repeat_power
@@ -129,8 +130,7 @@ class SupervisedGraspDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
             msg = f"Record {record} grasp poses must be a numpy array"
             raise TypeError(msg)
         if self.augment:
-            augment_rng = np.random.default_rng(self.seed + record_index)
-            pc, grasp_poses, scores = _augment_sample(pc, grasp_poses, scores, augment_rng, record)
+            pc, grasp_poses, scores = _augment_sample(pc, grasp_poses, scores, self._augment_rng, record)
         pc = _resample_point_cloud(pc, self.num_points, self.seed + index)
         pc_t = torch.from_numpy(np.asarray(pc, dtype=np.float32)).float()
         frame, centroid = compute_se3_frame(pc_t.unsqueeze(0))

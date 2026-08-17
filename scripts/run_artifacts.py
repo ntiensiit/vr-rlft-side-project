@@ -34,9 +34,16 @@ def _build_env_vars(yaml_config: FlattenedYAMLConfig, root: Path) -> dict[str, s
     return {
         **os.environ,
         "PYTHONPATH": str(root / "src"),
-        "PYTHONPYCACHEPREFIX": str(root / yaml_config.value(
-            "pycache_dir", "artifacts", "pycache_dir", value_type=object, script_or=True,
-        )),
+        "PYTHONPYCACHEPREFIX": str(
+            root
+            / yaml_config.value(
+                "pycache_dir",
+                "artifacts",
+                "pycache_dir",
+                value_type=object,
+                script_or=True,
+            ),
+        ),
     }
 
 
@@ -44,7 +51,11 @@ def _build_command_chain(yaml_config: FlattenedYAMLConfig) -> list[list[str]]:
     """Build the ordered artifact-chain command list from the configuration."""
     prepare_data_mode = str(
         yaml_config.value(
-            "prepare_data_mode", "artifact_chain", "prepare_data_mode", value_type=object, script_or=True,
+            "prepare_data_mode",
+            "artifact_chain",
+            "prepare_data_mode",
+            value_type=object,
+            script_or=True,
         ),
     )
     evaluate_multi_object = yaml_config.value(
@@ -83,42 +94,81 @@ def _run_command_chain(
     for cmd in commands:
         logger.info(">>> {}", " ".join(cmd))
         subprocess.run(  # noqa: S603  # fixed internal command list, no shell
-            cmd, cwd=root, env=env_vars, check=True, capture_output=False,
+            cmd,
+            cwd=root,
+            env=env_vars,
+            check=True,
+            capture_output=False,
         )
         log.append({"command": "python " + " ".join(cmd[1:]), "cwd": "."})
+
+
+def _extend_globs(
+    retained_paths: list[Path],
+    search_root: Path,
+    patterns: object,
+    *,
+    recursive: bool,
+) -> None:
+    """Extend ``retained_paths`` with files under ``search_root`` matching glob patterns."""
+    if isinstance(patterns, list):
+        glob_fn = search_root.rglob if recursive else search_root.glob
+        for pattern in patterns:
+            retained_paths.extend(glob_fn(str(pattern)))
 
 
 def _collect_retained_artifacts(yaml_config: FlattenedYAMLConfig, root: Path, artifacts: Path) -> list[str]:
     """Collect repo-relative paths of retained dataset, MJCF, and artifact files."""
     data_processed = yaml_config.value(
-        "dataset_root", "paths", "dataset_root", value_type=Path, script_or=True, required=True,
+        "dataset_root",
+        "paths",
+        "dataset_root",
+        value_type=Path,
+        script_or=True,
+        required=True,
     )
     mjcf_root = yaml_config.value("ycb_mjcf", "paths", "ycb_mjcf", value_type=Path, script_or=True, required=True)
+    observations_dir = yaml_config.value(
+        "observations_dir",
+        "paths",
+        "observations",
+        value_type=Path,
+        script_or=True,
+        required=True,
+    )
     if not data_processed.is_absolute():
         data_processed = root / data_processed
     if not mjcf_root.is_absolute():
         mjcf_root = root / mjcf_root
+    if not observations_dir.is_absolute():
+        observations_dir = root / observations_dir
 
     root_resolved = root.resolve()
     retained_cfg = yaml_config.get_path("artifacts", "retained")
     if not isinstance(retained_cfg, dict):
         msg = "artifacts.retained must be a mapping"
         raise TypeError(msg)
-    dataset_globs = retained_cfg.get("dataset_globs", [])
-    mjcf_glob = str(retained_cfg.get("mjcf_glob", "**/*.xml"))
-    artifact_globs = retained_cfg.get("artifact_globs", [])
     retained_paths: list[Path] = []
-    if isinstance(dataset_globs, list):
-        for pattern in dataset_globs:
-            retained_paths.extend(data_processed.glob(str(pattern)))
-    retained_paths.extend(mjcf_root.rglob(mjcf_glob))
-    if isinstance(artifact_globs, list):
-        for pattern in artifact_globs:
-            retained_paths.extend(artifacts.rglob(str(pattern)))
-    return sorted(
-        p.resolve().relative_to(root_resolved).as_posix()
-        for p in retained_paths
+    _extend_globs(
+        retained_paths,
+        data_processed,
+        retained_cfg.get("dataset_globs", []),
+        recursive=False,
     )
+    retained_paths.extend(mjcf_root.rglob(str(retained_cfg.get("mjcf_glob", "**/*.xml"))))
+    _extend_globs(
+        retained_paths,
+        observations_dir,
+        retained_cfg.get("observations_globs", []),
+        recursive=False,
+    )
+    _extend_globs(
+        retained_paths,
+        artifacts,
+        retained_cfg.get("artifact_globs", []),
+        recursive=True,
+    )
+    return sorted(p.resolve().relative_to(root_resolved).as_posix() for p in retained_paths)
 
 
 def _write_manifest(
@@ -129,7 +179,12 @@ def _write_manifest(
 ) -> tuple[Path, list[dict[str, object]]]:
     """Write the artifact-chain manifest and return its path and records."""
     manifest_cfg = yaml_config.value(
-        "manifest", "artifacts", "manifest", value_type=Path, script_or=True, required=True,
+        "manifest",
+        "artifacts",
+        "manifest",
+        value_type=Path,
+        script_or=True,
+        required=True,
     )
     manifest_path = manifest_cfg if manifest_cfg.is_absolute() else artifacts / manifest_cfg.name
     config_dir_arg = str(
@@ -236,18 +291,32 @@ def _run_rl_inference_smoke(
 ) -> None:
     """Write and execute the RL policy inference smoke-check script."""
     observation_dim = yaml_config.value(
-        "observation_dim", "rl", "observation_dim", value_type=int, script_or=True,
+        "observation_dim",
+        "rl",
+        "observation_dim",
+        value_type=int,
+        script_or=True,
     )
     action_dim = yaml_config.value("action_dim", "rl", "action_dim", value_type=int, script_or=True)
     rl_checkpoint = yaml_config.value(
-        "policy_checkpoint", "rl", "checkpoint", value_type=Path, script_or=True, required=True,
+        "policy_checkpoint",
+        "rl",
+        "checkpoint",
+        value_type=Path,
+        script_or=True,
+        required=True,
     )
     if not rl_checkpoint.is_absolute():
         rl_checkpoint = root / rl_checkpoint
     root_resolved = root.resolve()
     rl_checkpoint_arg = rl_checkpoint.resolve().relative_to(root_resolved).as_posix()
     infer_cfg = yaml_config.value(
-        "rl_inference_smoke", "artifacts", "rl_inference_smoke", value_type=Path, script_or=True, required=True,
+        "rl_inference_smoke",
+        "artifacts",
+        "rl_inference_smoke",
+        value_type=Path,
+        script_or=True,
+        required=True,
     )
     infer_path = infer_cfg if infer_cfg.is_absolute() else artifacts / infer_cfg.name
     infer_path_arg = infer_path.resolve().relative_to(root_resolved).as_posix()
@@ -268,7 +337,10 @@ def _run_rl_inference_smoke(
     infer_path.write_text(infer_script, encoding="utf-8")
     logger.info(">>> {} {}", sys.executable, infer_path)
     subprocess.run(  # noqa: S603  # generated internal smoke script, no shell
-        [sys.executable, str(infer_path)], cwd=root, env=env_vars, check=True,
+        [sys.executable, str(infer_path)],
+        cwd=root,
+        env=env_vars,
+        check=True,
     )
     log.append({"command": f"python {infer_path_arg}", "cwd": "."})
 

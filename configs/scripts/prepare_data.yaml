@@ -17,6 +17,7 @@ script:
   friction_coefficient: ${synthetic.friction_coefficient}
   gripper_width: ${synthetic.gripper_width}
   lift_height_threshold: ${synthetic.lift_height_threshold}
+  lift_distance: ${synthetic.lift_distance}
   max_angular_velocity: ${synthetic.max_angular_velocity}
   max_linear_velocity: ${synthetic.max_linear_velocity}
   min_grasp_rotation: ${synthetic.min_grasp_rotation}

@@ -9,7 +9,7 @@ import hydra
 import numpy as np
 
 from grasping_ai.config import FLATTENED_YAML_CONFIG, SCRIPTS_CONFIG_PATH, FlattenedYAMLConfig
-from grasping_ai.perception.geometry import identity_transform
+from grasping_ai.perception.geometry import make_transform
 from grasping_ai.pipelines.evaluate import write_jsonl_records
 from grasping_ai.pipelines.simulate_grasp import run_simulation_sweep
 from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
@@ -34,8 +34,19 @@ def main(cfg: DictConfig) -> None:
     grasp_poses = np.load(
         yaml_config.value("grasps", "model", "exports", "grasp_poses", value_type=Path, script_or=True, required=True),
     )
+    object_position = np.asarray(
+        yaml_config.value(
+            "object_position",
+            "synthetic",
+            "sim_object_position",
+            value_type=list[float],
+            script_or=True,
+        ),
+        dtype=np.float64,
+    )
     if grasp_pose_format == "object":
-        grasp_poses = convert_grasps_to_world_frame(grasp_poses, identity_transform())
+        object_to_world = make_transform(np.eye(3, dtype=np.float64), object_position)
+        grasp_poses = convert_grasps_to_world_frame(grasp_poses, object_to_world)
     elif grasp_pose_format != "world":
         msg = f"Unsupported grasp pose format '{grasp_pose_format}'; supported values are 'world' and 'object'"
         raise ValueError(msg)
@@ -64,6 +75,7 @@ def main(cfg: DictConfig) -> None:
         table_xml_path=yaml_config.value("table_xml", "env", "table_xml", value_type=Path, script_or=True),
         num_simulation_steps=yaml_config.value("num_steps", "num_steps", value_type=int, script_or=True),
         gripper_close_command=np.asarray(close_default, dtype=np.float64),
+        object_position=object_position,
     )
 
     output_path = yaml_config.value(

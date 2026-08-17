@@ -6,6 +6,18 @@ defaults:
 
 script:
   object_id: null
+  grasp_file: null
+  grasp_index: 0
+  allow_ik_failure: true
+  auto_select_reachable: true
+  close_gripper: true
+  lift_object: true
+  lift_height: 0.1
+  animation_duration: 1.0
+  top_down_pick: true
+  gripper_width: 0.072
+  grasp_pose_format: object
+  poses_ndim: ${grasp.poses_ndim}
   robot_xml: ${robot.description}
   ycb_root: ${paths.ycb_mjcf}
   table_xml: ${table_xml}

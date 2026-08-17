@@ -85,7 +85,10 @@ def convert_grasps_to_world_frame(grasps: np.ndarray, object_to_world: RigidTran
     if grasps.shape == (4, 4):
         return object_to_world @ grasps
     if len(grasps.shape) == GRASP_POSES_NDIM and grasps.shape[1:] == SE3_MATRIX_SHAPE:
-        out = np.zeros_like(grasps)
+        out = np.empty(
+            grasps.shape,
+            dtype=np.result_type(grasps.dtype, object_to_world.dtype),
+        )
         for i in range(len(grasps)):
             out[i] = object_to_world @ grasps[i]
         return out

@@ -173,6 +173,7 @@ def estimate_point_cloud_normals(points: np.ndarray, neighborhood_size: int) -> 
     _, neighbor_indices = kdtree.query(points, k=k)
 
     normals = np.zeros_like(points)
+    cloud_center = np.median(points, axis=0)
     for i in range(n):
         idx = neighbor_indices[i]
         neighbors = points[idx]
@@ -186,6 +187,13 @@ def estimate_point_cloud_normals(points: np.ndarray, neighborhood_size: int) -> 
             normal = eigenvectors[:, 0]
             norm = np.linalg.norm(normal)
             normal = normal / norm if norm > 0 else np.array([0.0, 0.0, 1.0])
+        # PCA determines an unoriented axis: ``normal`` and ``-normal`` are
+        # equally valid eigenvectors.  Antipodal grasp generation, however,
+        # requires consistently outward-facing normals.  Orient each local
+        # normal away from the robust cloud center so its sign is stable
+        # across LAPACK implementations and random samples.
+        if np.dot(normal, points[i] - cloud_center) < 0.0:
+            normal = -normal
         normals[i] = normal
 
     return normals

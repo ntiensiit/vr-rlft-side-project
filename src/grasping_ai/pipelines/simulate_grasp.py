@@ -22,7 +22,9 @@ from grasping_ai.robotics.gripper import (
     load_gripper_model,
     make_close_command,
     make_open_command,
+    panda_fingertip_object_contacts,
     panda_hand_to_contact_transform,
+    panda_has_nonpad_object_collision,
     panda_width_to_finger_joints,
 )
 from grasping_ai.robotics.kinematics import (
@@ -36,7 +38,8 @@ from grasping_ai.robotics.kinematics import (
 from grasping_ai.robotics.transforms import transform_grasp_pose
 from grasping_ai.simulation.scene import (
     MuJoCoScene,
-    collect_contacts,
+    place_freejoint_body_on_surface,
+    set_freejoint_body_pose,
     step_scene,
 )
 from grasping_ai.simulation.ycb import (
@@ -56,12 +59,44 @@ GRIPPER_JOINT_RANGES = tuple(
     for name in ("finger_joint1", "finger_joint2")
 )
 GRIPPER_DUAL_COUNT = int(FLATTENED_YAML_CONFIG.get("robot.gripper.dual_count", 2))
+GRIPPER_MAX_WIDTH = float(FLATTENED_YAML_CONFIG.get("robot.gripper.max_width", 0.08))
 LIFT_HEIGHT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("metrics.lift_height_threshold"))
 MAX_LINEAR_VELOCITY = float(FLATTENED_YAML_CONFIG.get("limits.max_linear_velocity"))
 MAX_ANGULAR_VELOCITY = float(FLATTENED_YAML_CONFIG.get("limits.max_angular_velocity"))
 PRE_GRASP_STEPS = int(FLATTENED_YAML_CONFIG.get("pre_grasp_steps"))
 POINT_CLOUD_NDIM = int(FLATTENED_YAML_CONFIG.get("geometry.point_cloud_ndim", 2))
 GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
+VALIDATION_CLOSE_STEPS = 250
+VALIDATION_CONTACT_ACQUIRE_STEPS = 500
+VALIDATION_CONTACT_SETTLE_STEPS = 100
+VALIDATION_LIFT_STEPS = 500
+# The Panda tendon length is half the total jaw opening. A 40 mm reduction in
+# commanded width reaches the deployed actuator's rated 70 N force cap.
+GRIPPER_CONTACT_PRELOAD_WIDTH = 0.040
+
+
+def _robot_contacts_table(mj_model: mujoco.MjModel, mj_data: mujoco.MjData) -> bool:
+    """Return whether a robot link intersects the table in the current state."""
+    table_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "table")
+    robot_root_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "link0")
+    if table_id == -1 or robot_root_id == -1:
+        return False
+
+    def is_robot_body(body_id: int) -> bool:
+        current = body_id
+        while current > 0:
+            if current == robot_root_id:
+                return True
+            current = int(mj_model.body_parentid[current])
+        return False
+
+    for contact_id in range(int(mj_data.ncon)):
+        contact = mj_data.contact[contact_id]
+        body_a = int(mj_model.geom_bodyid[contact.geom[0]])
+        body_b = int(mj_model.geom_bodyid[contact.geom[1]])
+        if (body_a == table_id and is_robot_body(body_b)) or (body_b == table_id and is_robot_body(body_a)):
+            return True
+    return False
 
 def _validate_simulate_grasp_args(  # noqa: PLR0913, PLR0917  # validation keeps related simulation inputs together
     grasp_pose: np.ndarray,
@@ -72,6 +107,7 @@ def _validate_simulate_grasp_args(  # noqa: PLR0913, PLR0917  # validation keeps
     max_linear_velocity: float,
     max_angular_velocity: float,
     grasp_width: float | None,
+    lift_distance: float,
 ) -> None:
     """Validate grasp pose shape, asset paths, and simulation thresholds."""
     if grasp_pose.shape != SE3_MATRIX_SHAPE:
@@ -98,6 +134,8 @@ def _validate_simulate_grasp_args(  # noqa: PLR0913, PLR0917  # validation keeps
     if grasp_width is not None and grasp_width < 0:
         msg = "grasp_width must be non-negative when provided"
         raise ValueError(msg)
+    if lift_distance <= 0 or not np.isfinite(lift_distance):
+        raise ValueError("lift_distance must be positive and finite")
 
 
 def _solve_grasp_ik(
@@ -132,52 +170,6 @@ def _solve_grasp_ik(
         q_target = initial_joints
         ik_failed = True
     return q_target, ik_failed, fk_solver
-
-
-def _place_object_at_gripper(
-    scene: MuJoCoScene,
-    object_id: str,
-    ee_pose: np.ndarray,
-    hand_pose: np.ndarray,
-    *,
-    quiet: bool,
-) -> bool:
-    """Place the object at the gripper after IK failure; return ``False`` when impossible."""
-    mj_model = scene.model
-    mj_data = scene.data
-    body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, object_id)
-    qposadr: int | None = None
-    if body_id != -1:
-        joint_adr = int(mj_model.body_jntadr[body_id])
-        joint_count = int(mj_model.body_jntnum[body_id])
-        if joint_adr >= 0 and joint_count > 0:
-            for offset in range(joint_count):
-                joint_id = joint_adr + offset
-                if mj_model.jnt_type[joint_id] == mujoco.mjtJoint.mjJNT_FREE:
-                    qposadr = int(mj_model.jnt_qposadr[joint_id])
-                    break
-    if qposadr is None:
-        if not quiet:
-            logger.warning("IK failed and object has no freejoint; skipping physics for this grasp.")
-        return False
-    object_pose = scene.body_pose(object_id)
-    new_object_pose = ee_pose @ invert_transform(hand_pose) @ object_pose
-    mj_data.qpos[qposadr : qposadr + 3] = new_object_pose[:3, 3]
-    quat = np.zeros(4)
-    mujoco.mju_mat2Quat(
-        quat,
-        np.ascontiguousarray(new_object_pose[:3, :3], dtype=np.float64).reshape(9),
-    )
-    mj_data.qpos[qposadr + 3 : qposadr + 7] = quat
-    for joint_id in range(mj_model.njnt):
-        if int(mj_model.jnt_qposadr[joint_id]) == qposadr:
-            dofadr = int(mj_model.jnt_dofadr[joint_id])
-            mj_data.qvel[dofadr : dofadr + 6] = 0.0
-            break
-    mujoco.mj_forward(mj_model, mj_data)
-    if not quiet:
-        logger.warning("Placing object at the gripper because the arm cannot reach this pose.")
-    return True
 
 
 def _apply_finger_width_overrides(  # noqa: PLR0913, PLR0917
@@ -284,6 +276,15 @@ def _model_gripper_commands(
     return open_cmd, close_cmd
 
 
+def _finger_object_contacts(
+    mj_model: mujoco.MjModel,
+    mj_data: mujoco.MjData,
+    object_id: str,
+) -> tuple[float, bool]:
+    """Count object contacts on both opposed Panda fingertip pads."""
+    return panda_fingertip_object_contacts(mj_model, mj_data, object_id)
+
+
 def _evaluate_sim_state(  # noqa: PLR0913, PLR0917  # evaluation consumes the configured outcome thresholds
     scene: MuJoCoScene,
     object_id: str,
@@ -291,7 +292,7 @@ def _evaluate_sim_state(  # noqa: PLR0913, PLR0917  # evaluation consumes the co
     lift_height_threshold: float,
     max_linear_velocity: float,
     max_angular_velocity: float,
-) -> tuple[float, np.ndarray, float, bool]:
+) -> tuple[float, np.ndarray, float, bool, bool, bool]:
     """Compute final height, velocity, contact count, and success from the sim state."""
     mj_model = scene.model
     mj_data = scene.data
@@ -304,17 +305,17 @@ def _evaluate_sim_state(  # noqa: PLR0913, PLR0917  # evaluation consumes the co
         raise ValueError(msg)
     object_velocity = np.array(mj_data.cvel[body_id], copy=True)
 
-    contact_count = float(len(collect_contacts(scene.contacts, {object_id})))
+    contact_count, bilateral_contact = _finger_object_contacts(mj_model, mj_data, object_id)
 
     lift_judge = build_lift_outcome_judge(lift_height_threshold)
     stability_judge = build_stability_judge(max_linear_velocity, max_angular_velocity)
     lifted = evaluate_lift_success(lift_judge, initial_height, final_height)
     stable = evaluate_stability(stability_judge, object_velocity)
-    success = bool(contact_count >= 1 and lifted and stable)
-    return final_height, object_velocity, contact_count, success
+    success = bool(bilateral_contact and lifted and stable)
+    return final_height, object_velocity, contact_count, bilateral_contact, stable, success
 
 
-def simulate_grasp(  # noqa: PLR0913, PLR0915, PLR0917  # public simulation API
+def simulate_grasp(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917  # public simulation API
     grasp_pose: np.ndarray,
     object_id: str,
     ycb_root: Path,
@@ -358,6 +359,8 @@ def simulate_grasp(  # noqa: PLR0913, PLR0915, PLR0917  # public simulation API
     max_linear_velocity = float(options.pop("max_linear_velocity", MAX_LINEAR_VELOCITY))
     max_angular_velocity = float(options.pop("max_angular_velocity", MAX_ANGULAR_VELOCITY))
     grasp_width = options.pop("grasp_width", None)
+    lift_distance = float(options.pop("lift_distance", max(0.1, 2.0 * lift_height_threshold)))
+    object_position = options.pop("object_position", None)
     quiet = bool(options.pop("quiet", False))
     if options:
         unexpected = ", ".join(sorted(options))
@@ -372,7 +375,13 @@ def simulate_grasp(  # noqa: PLR0913, PLR0915, PLR0917  # public simulation API
         max_linear_velocity,
         max_angular_velocity,
         grasp_width,
+        lift_distance,
     )
+    if object_position is not None:
+        object_position = np.asarray(object_position, dtype=np.float64)
+        if object_position.shape != (3,) or not np.isfinite(object_position).all():
+            msg = "object_position must be a finite array with shape (3,)"
+            raise ValueError(msg)
 
     hand_to_contact = panda_hand_to_contact_transform()
     hand_pose = transform_grasp_pose(grasp_pose, invert_transform(hand_to_contact))
@@ -394,24 +403,98 @@ def simulate_grasp(  # noqa: PLR0913, PLR0915, PLR0917  # public simulation API
         raise ValueError(msg)
 
     q_target, ik_failed, fk_solver = _solve_grasp_ik(robot_xml_path, hand_pose, quiet=quiet)
+    lifted_grasp_pose = np.asarray(grasp_pose, dtype=np.float64).copy()
+    lifted_grasp_pose[2, 3] += lift_distance
+    lifted_hand_pose = transform_grasp_pose(lifted_grasp_pose, invert_transform(hand_to_contact))
+    lift_ik_failed = False
+    q_lift = q_target.copy()
+    if not ik_failed:
+        robot_model = load_robot_model(str(robot_xml_path))
+        lift_solver = build_inverse_kinematics(
+            robot_model,
+            max_iterations=IK_MAX_ITERATIONS,
+            tolerance=max(IK_TOLERANCE, 3e-3),
+        )
+        try:
+            q_lift = solve_inverse_kinematics(lift_solver, lifted_hand_pose, q_target)
+        except ValueError as exc:
+            if not quiet:
+                logger.warning("Lift IK failed: {}", exc)
+            lift_ik_failed = True
 
     scene.reset()
+    if object_position is not None:
+        set_freejoint_body_pose(mj_model, mj_data, object_id, object_position)
+    if table_xml_path is not None:
+        place_freejoint_body_on_surface(mj_model, mj_data, object_id)
     if mj_data.qpos.shape[0] >= q_target.shape[0]:
         mj_data.qpos[: q_target.shape[0]] = q_target
     mujoco.mj_forward(mj_model, mj_data)
-    if ik_failed:
-        ee_pose = fk_solver(q_target)
-        placed = _place_object_at_gripper(scene, object_id, ee_pose, hand_pose, quiet=quiet)
-        if not placed:
-            return {
-                "success": False,
-                "initial_height": 0.0,
-                "final_height": 0.0,
-                "contact_count": 0.0,
-                "object_velocity": np.zeros(6),
-                "grasp_pose": grasp_pose,
-                "fk_position_error": float("inf"),
-            }
+    if ik_failed or lift_ik_failed:
+        # Never move the object to manufacture a contact after IK failure.
+        # That made invalid grasps look physically successful and produced
+        # floating objects in validation and visualization.
+        initial_pose = scene.body_pose(object_id)
+        return {
+            "success": False,
+            "ik_converged": not ik_failed,
+            "lift_ik_converged": not lift_ik_failed,
+            "initial_height": float(initial_pose[2, 3]),
+            "final_height": float(initial_pose[2, 3]),
+            "contact_count": 0.0,
+            "bilateral_contact": False,
+            "stable": False,
+            "table_collision_free": False,
+            "object_velocity": np.zeros(6),
+            "grasp_pose": grasp_pose,
+            "fk_position_error": float("inf"),
+        }
+
+    if _robot_contacts_table(mj_model, mj_data):
+        # A pose that intersects the work surface is not a valid candidate.
+        # Reject it here, while generating the dataset, so it cannot later be
+        # selected by the visualizer simply because its numerical IK converged.
+        initial_pose = scene.body_pose(object_id)
+        logger.debug("Rejecting grasp for {}: robot/table collision at the IK pose", object_id)
+        return {
+            "success": False,
+            "ik_converged": False,
+            "lift_ik_converged": True,
+            "initial_height": float(initial_pose[2, 3]),
+            "final_height": float(initial_pose[2, 3]),
+            "contact_count": 0.0,
+            "bilateral_contact": False,
+            "stable": False,
+            "table_collision_free": False,
+            "object_velocity": np.zeros(6),
+            "grasp_pose": grasp_pose,
+            "fk_position_error": float("inf"),
+        }
+
+    if panda_has_nonpad_object_collision(mj_model, mj_data, object_id):
+        # The candidate describes fingertip contacts, so the open grasp pose
+        # must not begin with the palm or an arm link embedded in the object.
+        # Such penetration was the source of the apparent floating/ejection:
+        # MuJoCo resolved the overlap before the fingers ever established a
+        # physical grasp.
+        initial_pose = scene.body_pose(object_id)
+        logger.debug("Rejecting grasp for {}: non-pad Panda/object collision", object_id)
+        return {
+            "success": False,
+            "ik_converged": True,
+            "lift_ik_converged": True,
+            "initial_height": float(initial_pose[2, 3]),
+            "final_height": float(initial_pose[2, 3]),
+            "contact_count": 0.0,
+            "bilateral_contact": False,
+            "stable": False,
+            "contact_sustained": False,
+            "initial_robot_object_collision_free": False,
+            "table_collision_free": True,
+            "object_velocity": np.zeros(6),
+            "grasp_pose": grasp_pose,
+            "fk_position_error": float(np.linalg.norm(fk_solver(q_target)[:3, 3] - hand_pose[:3, 3])),
+        }
 
     initial_pose = scene.body_pose(object_id)
     initial_height = float(initial_pose[2, 3])
@@ -436,14 +519,148 @@ def simulate_grasp(  # noqa: PLR0913, PLR0915, PLR0917  # public simulation API
     else:
         open_cmd, close_cmd = _model_gripper_commands(mj_model, gripper_model, gripper_close_command)
 
-    pre_grasp_steps = min(
-        PRE_GRASP_STEPS,
-        max(1, num_simulation_steps // 4),
+    pre_grasp_steps = min(PRE_GRASP_STEPS, max(1, num_simulation_steps // 20))
+    fixed_motion_steps = (
+        pre_grasp_steps
+        + VALIDATION_CLOSE_STEPS
+        + VALIDATION_CONTACT_ACQUIRE_STEPS
+        + VALIDATION_CONTACT_SETTLE_STEPS
+        + VALIDATION_LIFT_STEPS
     )
-    close_steps = max(1, num_simulation_steps - pre_grasp_steps)
+    if num_simulation_steps >= fixed_motion_steps:
+        close_steps = VALIDATION_CLOSE_STEPS
+        contact_acquisition_steps = VALIDATION_CONTACT_ACQUIRE_STEPS
+        contact_settle_steps = VALIDATION_CONTACT_SETTLE_STEPS
+        lift_steps = VALIDATION_LIFT_STEPS
+    else:
+        available_steps = num_simulation_steps - pre_grasp_steps
+        close_steps = max(1, round(available_steps * 0.20))
+        contact_acquisition_steps = max(1, round(available_steps * 0.25))
+        contact_settle_steps = max(1, round(available_steps * 0.05))
+        lift_steps = max(1, round(available_steps * 0.30))
+    final_settle_steps = max(
+        0,
+        num_simulation_steps
+        - pre_grasp_steps
+        - close_steps
+        - contact_acquisition_steps
+        - contact_settle_steps
+        - lift_steps,
+    )
 
-    step_scene(lambda step_dt: scene.step(open_cmd, step_dt), dt, pre_grasp_steps)
-    step_scene(lambda step_dt: scene.step(close_cmd, step_dt), dt, close_steps)
+    lift_cmd = close_cmd.copy()
+    for actuator_id in range(int(mj_model.nu)):
+        if mj_model.actuator_trntype[actuator_id] != mujoco.mjtTrn.mjTRN_JOINT:
+            continue
+        joint_id = int(mj_model.actuator_trnid[actuator_id, 0])
+        qpos_address = int(mj_model.jnt_qposadr[joint_id])
+        if qpos_address < q_lift.shape[0]:
+            lift_cmd[actuator_id] = q_lift[qpos_address]
+
+    table_collision_free = True
+    max_object_height = initial_height
+
+    def step_and_check(command: np.ndarray, step_dt: float) -> None:
+        nonlocal max_object_height, table_collision_free
+        scene.step(command, step_dt)
+        table_collision_free = table_collision_free and not _robot_contacts_table(mj_model, mj_data)
+        max_object_height = max(max_object_height, float(scene.body_pose(object_id)[2, 3]))
+
+    step_scene(lambda step_dt: step_and_check(open_cmd, step_dt), dt, pre_grasp_steps)
+    # Closing in one control step creates a high-energy impact (especially
+    # with the Panda's position-controlled tendon) that can eject the object
+    # and masquerade as a successful lift.  Ramp the target just like a real
+    # gripper controller.  Once both fingers touch, retain only a small
+    # position preload instead of continuing toward zero width and crushing
+    # or launching the object.
+    contact_hold_cmd: np.ndarray | None = None
+    contact_width = float("nan")
+
+    def capture_contact_hold_command(base_command: np.ndarray) -> np.ndarray:
+        nonlocal contact_width
+        held = np.asarray(base_command, dtype=np.float64).copy()
+        actual_width = float(np.sum(mj_data.qpos[q_target.shape[0] - 2 : q_target.shape[0]]))
+        contact_width = actual_width
+        target_width = max(0.0, actual_width - GRIPPER_CONTACT_PRELOAD_WIDTH)
+        for actuator_id in gripper_ids:
+            lo, hi = mj_model.actuator_ctrlrange[actuator_id]
+            held[actuator_id] = float(
+                np.clip(lo + (target_width / GRIPPER_MAX_WIDTH) * (hi - lo), lo, hi),
+            )
+        return held
+
+    for command in np.linspace(open_cmd, close_cmd, close_steps):
+        active_command = contact_hold_cmd if contact_hold_cmd is not None else command
+        step_and_check(active_command, dt)
+        if contact_hold_cmd is None and _finger_object_contacts(mj_model, mj_data, object_id)[1]:
+            contact_hold_cmd = capture_contact_hold_command(command)
+
+    # Position-controlled fingers lag their command. Give them a bounded
+    # acquisition window at the grasp pose and capture the *measured* opening
+    # when bilateral pad contact occurs. Unused acquisition time is retained
+    # as a final stability hold so every candidate receives the same number
+    # of simulation steps.
+    acquisition_steps_used = 0
+    for _acquisition_steps_used in range(1, contact_acquisition_steps + 1):
+        acquisition_steps_used = _acquisition_steps_used
+        active_command = contact_hold_cmd if contact_hold_cmd is not None else close_cmd
+        step_and_check(active_command, dt)
+        if contact_hold_cmd is None and _finger_object_contacts(mj_model, mj_data, object_id)[1]:
+            contact_hold_cmd = capture_contact_hold_command(active_command)
+        if contact_hold_cmd is not None:
+            break
+    unused_acquisition_steps = contact_acquisition_steps - acquisition_steps_used
+
+    contact_sustained = contact_hold_cmd is not None
+    contact_settle_fraction = 0.0
+    if contact_hold_cmd is not None:
+        contact_settle_count = 0
+        for _ in range(contact_settle_steps):
+            step_and_check(contact_hold_cmd, dt)
+            if _finger_object_contacts(mj_model, mj_data, object_id)[1]:
+                contact_settle_count += 1
+            else:
+                contact_sustained = False
+                break
+        contact_settle_fraction = contact_settle_count / contact_settle_steps
+
+    lift_contact_fraction = 0.0
+    final_hold_contact_fraction = 0.0
+    if not contact_sustained:
+        # A lift without a bilateral grasp only knocks the object around and
+        # can create a false height gain.  Keep the arm at the grasp pose and
+        # let the object settle; the outcome will be rejected below.
+        step_scene(
+            lambda step_dt: step_and_check(close_cmd, step_dt),
+            dt,
+            lift_steps + final_settle_steps + unused_acquisition_steps,
+        )
+    else:
+        if contact_hold_cmd is None:  # pragma: no cover - guarded by contact_sustained
+            raise RuntimeError("contact hold command missing after sustained contact")
+        close_cmd = contact_hold_cmd
+        lift_cmd[gripper_ids] = contact_hold_cmd[gripper_ids]
+        lift_contact_sustained = True
+        lift_contact_count = 0
+        for command in np.linspace(close_cmd, lift_cmd, lift_steps):
+            step_and_check(command, dt)
+            if _finger_object_contacts(mj_model, mj_data, object_id)[1]:
+                lift_contact_count += 1
+            else:
+                lift_contact_sustained = False
+        lift_contact_fraction = lift_contact_count / lift_steps
+        contact_sustained = contact_sustained and lift_contact_sustained
+        final_hold_steps = final_settle_steps + unused_acquisition_steps
+        final_hold_contact_count = 0
+        for _ in range(final_hold_steps):
+            step_and_check(lift_cmd, dt)
+            if _finger_object_contacts(mj_model, mj_data, object_id)[1]:
+                final_hold_contact_count += 1
+            else:
+                contact_sustained = False
+        final_hold_contact_fraction = (
+            final_hold_contact_count / final_hold_steps if final_hold_steps else 1.0
+        )
 
     if ik_failed:
         fk_position_error = float("inf")
@@ -451,7 +668,7 @@ def simulate_grasp(  # noqa: PLR0913, PLR0915, PLR0917  # public simulation API
         achieved_pose = fk_solver(q_target)
         fk_position_error = float(np.linalg.norm(achieved_pose[:3, 3] - hand_pose[:3, 3]))
 
-    final_height, object_velocity, contact_count, success = _evaluate_sim_state(
+    final_height, object_velocity, contact_count, bilateral_contact, stable, success = _evaluate_sim_state(
         scene,
         object_id,
         initial_height,
@@ -459,15 +676,36 @@ def simulate_grasp(  # noqa: PLR0913, PLR0915, PLR0917  # public simulation API
         max_linear_velocity,
         max_angular_velocity,
     )
+    hand_body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, "hand")
+    final_hand_height = float(mj_data.xpos[hand_body_id, 2]) if hand_body_id != -1 else float("nan")
+    lift_joint_error = float(np.linalg.norm(mj_data.qpos[: q_lift.shape[0]] - q_lift))
 
     return {
-        "success": success,
+        "success": bool(success and contact_sustained and table_collision_free),
+        "ik_converged": not ik_failed,
+        "lift_ik_converged": not lift_ik_failed,
         "initial_height": initial_height,
         "final_height": final_height,
         "contact_count": contact_count,
+        "bilateral_contact": bilateral_contact,
+        "stable": stable,
+        "contact_sustained": contact_sustained,
+        "initial_robot_object_collision_free": True,
+        "contact_width": contact_width,
+        "contact_settle_fraction": contact_settle_fraction,
+        "lift_contact_fraction": lift_contact_fraction,
+        "final_hold_contact_fraction": final_hold_contact_fraction,
+        "max_object_height": max_object_height,
+        "table_collision_free": table_collision_free,
         "object_velocity": object_velocity,
         "grasp_pose": grasp_pose,
         "fk_position_error": fk_position_error,
+        "final_hand_height": final_hand_height,
+        "target_hand_height": float(lifted_hand_pose[2, 3]),
+        "lift_joint_error": lift_joint_error,
+        "final_robot_qpos": np.array(mj_data.qpos[: q_lift.shape[0]], copy=True),
+        "target_lift_qpos": np.array(q_lift, copy=True),
+        "final_ctrl": np.array(mj_data.ctrl, copy=True),
     }
 
 
@@ -480,6 +718,7 @@ def run_simulation_sweep(  # noqa: PLR0913  # public sweep API
     table_xml_path: Path | None,
     num_simulation_steps: int,
     gripper_close_command: np.ndarray,
+    object_position: np.ndarray | None = None,
     **options: Any,  # noqa: ANN401
 ) -> list[dict[str, np.ndarray | bool | float]]:
     """Execute a batch of grasps and aggregate the simulation outcomes.
@@ -492,6 +731,8 @@ def run_simulation_sweep(  # noqa: PLR0913  # public sweep API
         table_xml_path: Optional path to a workbench/table MJCF description.
         num_simulation_steps: Number of physics steps to execute per grasp.
         gripper_close_command: Gripper command used to close the gripper.
+        object_position: Optional initial body-origin position before table
+            surface placement.
         lift_height_threshold: Minimum world-frame height gain required to
             count the grasp as a successful lift.
         max_linear_velocity: Maximum acceptable linear velocity of the object.
@@ -536,6 +777,7 @@ def run_simulation_sweep(  # noqa: PLR0913  # public sweep API
             lift_height_threshold=lift_height_threshold,
             max_linear_velocity=max_linear_velocity,
             max_angular_velocity=max_angular_velocity,
+            object_position=object_position,
         )
         outcomes.append(outcome)
 

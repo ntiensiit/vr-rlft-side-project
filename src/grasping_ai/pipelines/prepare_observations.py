@@ -25,12 +25,15 @@ def make_observations(  # noqa: PLR0913, PLR0917  # CLI helper; scripts call it 
     merged_objects_normalized_name: str,
     gripper_name: str,
     gripper_grid: dict[str, object],
+    *,
+    object_ids: list[str] | None = None,
 ) -> None:
-    """Sample per-object point clouds and a simple gripper finger cloud."""
+    """Sample selected or all per-object point clouds and a gripper cloud."""
     output_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
     object_clouds: list[np.ndarray] = []
-    for object_id in list_ycb_objects(ycb_root):
+    selected_object_ids = object_ids if object_ids else list_ycb_objects(ycb_root)
+    for object_id in selected_object_ids:
         pts = sample_point_cloud_from_mesh(resolve_ycb_object_id(ycb_root, object_id), num_samples, rng)
         np.save(output_dir / f"{object_id}.npy", pts)
         object_clouds.append(pts)

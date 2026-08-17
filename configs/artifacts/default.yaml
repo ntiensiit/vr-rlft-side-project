@@ -12,8 +12,11 @@ artifacts:
   retained:
     dataset_globs:
       - "*.npz"
+      - "*.npy"
       - index.json
     mjcf_glob: "**/*.xml"
+    observations_globs:
+      - "*.npy"
     artifact_globs:
       - "**/*.pt"
       - "**/*.npy"

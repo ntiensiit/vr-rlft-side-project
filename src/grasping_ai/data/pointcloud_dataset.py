@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, TypedDict, cast
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict, cast
 
 import numpy as np
 from loguru import logger
@@ -27,6 +27,11 @@ RELAXED_ANTIPODAL_DOT = float(FLATTENED_YAML_CONFIG.get("synthetic.relaxed_antip
 STRICT_ANTIPODAL_DOT = float(FLATTENED_YAML_CONFIG.get("synthetic.strict_antipodal_dot", 0.5))
 STRICT_ALIGNMENT_DOT = float(FLATTENED_YAML_CONFIG.get("synthetic.strict_alignment_dot", 0.5))
 SEARCH_MULTIPLIER = int(FLATTENED_YAML_CONFIG.get("synthetic.search_multiplier", 50))
+MAX_VERTICAL_CLOSING_AXIS_COMPONENT = 0.35
+MAX_OBJECT_EXTENT_TOWARD_HAND = float(
+    FLATTENED_YAML_CONFIG.get("robot.gripper.max_object_extent_toward_hand", 0.04),
+)
+PHYSICAL_VALIDATION_VERSION = "physical-lift-v4"
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -40,6 +45,20 @@ class GraspSample(TypedDict):
     grasp_poses: np.ndarray | None
     scores: np.ndarray | None
     object_id: str | None
+    grasp_pose_format: NotRequired[str]
+    validation_version: NotRequired[str]
+    validation_lift_distance: NotRequired[float]
+    sim_validated: NotRequired[np.ndarray]
+    ik_converged: NotRequired[np.ndarray]
+    contact_counts: NotRequired[np.ndarray]
+    bilateral_contacts: NotRequired[np.ndarray]
+    fk_position_errors: NotRequired[np.ndarray]
+    table_collision_free: NotRequired[np.ndarray]
+    lift_ik_converged: NotRequired[np.ndarray]
+    lift_height_gains: NotRequired[np.ndarray]
+    stable: NotRequired[np.ndarray]
+    contact_sustained: NotRequired[np.ndarray]
+    initial_robot_object_collision_free: NotRequired[np.ndarray]
 
 
 def _validate_point_cloud(point_cloud: object) -> np.ndarray:
@@ -122,6 +141,33 @@ def save_grasp_sample(record_path: Path, sample: GraspSample) -> None:
     if object_id is not None:
         archive_fields["object_id"] = np.asarray(object_id, dtype=np.str_)
 
+    for key in ("grasp_pose_format", "validation_version"):
+        value = sample.get(key)  # type: ignore[literal-required]
+        if value is not None:
+            archive_fields[key] = np.asarray(value, dtype=np.str_)
+    validation_lift_distance = sample.get("validation_lift_distance")
+    if validation_lift_distance is not None:
+        archive_fields["validation_lift_distance"] = np.asarray(
+            validation_lift_distance,
+            dtype=np.float32,
+        )
+    for key in (
+        "sim_validated",
+        "ik_converged",
+        "contact_counts",
+        "bilateral_contacts",
+        "fk_position_errors",
+        "table_collision_free",
+        "lift_ik_converged",
+        "lift_height_gains",
+        "stable",
+        "contact_sustained",
+        "initial_robot_object_collision_free",
+    ):
+        value = sample.get(key)  # type: ignore[literal-required]
+        if value is not None:
+            archive_fields[key] = np.asarray(value)
+
     record_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez(record_path, **cast("Any", archive_fields))
 
@@ -171,13 +217,33 @@ def _read_grasp_sample_archive(archive: np.lib.npyio.NpzFile) -> GraspSample:
     grasp_poses = archive["grasp_poses"] if "grasp_poses" in archive.files else None
     scores = archive["scores"] if "scores" in archive.files else None
     object_id = _decode_object_id(archive["object_id"]) if "object_id" in archive.files else None
-
-    return {
+    sample: GraspSample = {
         "point_cloud": point_cloud,
         "grasp_poses": grasp_poses,
         "scores": scores,
         "object_id": object_id,
     }
+    for key in ("grasp_pose_format", "validation_version"):
+        if key in archive.files:
+            sample[key] = str(archive[key].item())  # type: ignore[literal-required]
+    if "validation_lift_distance" in archive.files:
+        sample["validation_lift_distance"] = float(archive["validation_lift_distance"].item())
+    for key in (
+        "sim_validated",
+        "ik_converged",
+        "contact_counts",
+        "bilateral_contacts",
+        "fk_position_errors",
+        "table_collision_free",
+        "lift_ik_converged",
+        "lift_height_gains",
+        "stable",
+        "contact_sustained",
+        "initial_robot_object_collision_free",
+    ):
+        if key in archive.files:
+            sample[key] = archive[key]  # type: ignore[literal-required]
+    return sample
 
 
 def load_grasp_sample(record_path: Path) -> GraspSample:
@@ -300,23 +366,33 @@ def _antipodal_grasp_from_contacts(
     if np.dot(pair.n_i, -pair.n_j) <= antipodal_dot:
         return None
     if alignment_dot is not None and (
-        np.dot(pair.n_i, d_unit) <= alignment_dot or np.dot(pair.n_j, -d_unit) <= alignment_dot
+        np.dot(pair.n_i, -d_unit) <= alignment_dot or np.dot(pair.n_j, d_unit) <= alignment_dot
     ):
         return None
 
-    z_axis = d_unit
-    avg_normal = 0.5 * (pair.n_i + pair.n_j)
-    x_axis = np.cross(z_axis, avg_normal)
-    x_norm = np.linalg.norm(x_axis)
-    if x_norm < GRASP_DISTANCE_EPS:
-        ref = np.array([1.0, 0.0, 0.0])
-        if np.abs(np.dot(ref, z_axis)) > ALIGNMENT_DOT_THRESHOLD:
-            ref = np.array([0.0, 1.0, 0.0])
-        x_axis = np.cross(z_axis, ref)
-        x_norm = np.linalg.norm(x_axis)
-    x_axis = x_axis / x_norm
+    # The Panda contact frame's x axis is its finger closing direction.
+    # Align it with the contact pair so the gripper closes across the object,
+    # rather than approaching along the line between the contacts.
+    x_axis = d_unit
+    # The contact frame's +z axis points from the Panda hand toward the
+    # contact midpoint.  For objects supported by a horizontal work surface,
+    # choose the downward hemisphere so the hand is above the object.  The
+    # previous +Z reference inverted this convention and generated grasps
+    # whose hand frame sat below the contacts, forcing links through the
+    # table even though the antipodal contact pair itself was valid.
+    reference = np.array([0.0, 0.0, -1.0])
+    if np.abs(np.dot(reference, x_axis)) > ALIGNMENT_DOT_THRESHOLD:
+        reference = np.array([0.0, 1.0, 0.0])
+    z_axis = reference - np.dot(reference, x_axis) * x_axis
+    z_axis = z_axis / np.linalg.norm(z_axis)
     y_axis = np.cross(z_axis, x_axis)
     y_axis = y_axis / np.linalg.norm(y_axis)
+    if z_axis[2] > 0.0:
+        # The alternate reference used for nearly vertical closing axes can
+        # project into either horizontal hemisphere.  Keep the convention
+        # deterministic and never generate an upward-facing approach.
+        y_axis = -y_axis
+        z_axis = -z_axis
 
     pose = make_transform(
         np.column_stack([x_axis, y_axis, z_axis]),
@@ -374,6 +450,11 @@ def _search_antipodal_grasps(
             if dist < GRASP_DISTANCE_EPS:
                 continue
             d_unit = d / dist
+            if abs(float(d_unit[2])) > MAX_VERTICAL_CLOSING_AXIS_COMPONENT:
+                # A top-down parallel-jaw pick needs side contacts around the
+                # object's body.  Vertically stacked contact pairs instead
+                # describe a pinch from underneath/above, not a top-down pick.
+                continue
 
             pose = _antipodal_grasp_from_contacts(
                 _ContactPair(p_i=p_i, n_i=n_i, p_j=p_j, n_j=n_j),
@@ -382,6 +463,14 @@ def _search_antipodal_grasps(
                 config.alignment_dot,
             )
             if pose is not None:
+                # For a top-down Panda grasp, points extending too far from
+                # the contact midpoint toward the hand collide with the palm
+                # before the fingers can close. Filter by the actual gripper
+                # clearance while continuing the search for upper contacts.
+                toward_hand = -pose[:3, 2]
+                extent_toward_hand = float(np.max((points - pose[:3, 3]) @ toward_hand))
+                if extent_toward_hand > MAX_OBJECT_EXTENT_TOWARD_HAND:
+                    continue
                 valid_grasps.append(pose)
                 break
 

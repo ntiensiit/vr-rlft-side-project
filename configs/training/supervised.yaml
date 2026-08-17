@@ -1,15 +1,16 @@
 # @package _global_
 supervised:
   batch_size: 2
-  learning_rate: 0.001
+  learning_rate: 0.0005
   num_epochs: 3
-  min_grasp_score: 0.0
+  min_grasp_score: 0.001
   score_repeat_factor: 2
   score_repeat_power: 1.0
 
 training:
   log_every: 10
   translation_jitter_scale: 0.01
+  flow_noise_samples: 4
   pretrained_encoder: null
   resume: null
-  augment: false
+  augment: true

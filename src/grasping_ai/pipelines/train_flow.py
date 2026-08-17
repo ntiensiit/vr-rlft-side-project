@@ -46,6 +46,7 @@ MIN_GRASP_SCORE = float(FLATTENED_YAML_CONFIG.get("supervised.min_grasp_score", 
 SCORE_REPEAT_FACTOR = int(FLATTENED_YAML_CONFIG.get("supervised.score_repeat_factor", 0))
 SCORE_REPEAT_POWER = float(FLATTENED_YAML_CONFIG.get("supervised.score_repeat_power", 1.0))
 LOG_EVERY = int(FLATTENED_YAML_CONFIG.get("training.log_every", 10))
+FLOW_NOISE_SAMPLES = int(FLATTENED_YAML_CONFIG.get("training.flow_noise_samples", 1))
 
 
 def build_flow_training_step(
@@ -54,9 +55,12 @@ def build_flow_training_step(
     optimizer: torch.optim.Optimizer,
     device: str,
     seed: int | None = None,
+    noise_samples: int = FLOW_NOISE_SAMPLES,
 ) -> SupervisedTrainingStep:
     """Build a callable training step closure for a flow-matching model."""
     device_obj = torch.device(device)
+    if noise_samples <= 0:
+        raise ValueError("noise_samples must be positive")
     generator = None
     if seed is not None:
         generator = torch.Generator(device=device_obj).manual_seed(seed)
@@ -65,24 +69,27 @@ def build_flow_training_step(
         pcs = point_clouds
         x_1 = targets
         batch_size_val = x_1.shape[0]
-        t = torch.rand(
-            batch_size_val,
-            dtype=x_1.dtype,
-            device=device_obj,
-            generator=generator,
-        )
-        x_0 = torch.randn(
-            x_1.shape,
-            dtype=x_1.dtype,
-            device=device_obj,
-            generator=generator,
-        )
-        t_view = t.view(batch_size_val, 1)
-        x_t = (1.0 - t_view) * x_0 + t_view * x_1
-        target_velocity = x_1 - x_0
         cond = model.condition(pcs)
-        predicted_velocity = model.flow_field(x_t, cond)
-        return loss_fn(predicted_velocity, target_velocity)
+        losses = []
+        for _ in range(noise_samples):
+            t = torch.rand(
+                batch_size_val,
+                dtype=x_1.dtype,
+                device=device_obj,
+                generator=generator,
+            )
+            x_0 = torch.randn(
+                x_1.shape,
+                dtype=x_1.dtype,
+                device=device_obj,
+                generator=generator,
+            )
+            t_view = t.view(batch_size_val, 1)
+            x_t = (1.0 - t_view) * x_0 + t_view * x_1
+            target_velocity = x_1 - x_0
+            predicted_velocity = model.flow_field(x_t, cond)
+            losses.append(loss_fn(predicted_velocity, target_velocity))
+        return torch.stack(losses).mean()
 
     return SupervisedTrainingStep(model, optimizer, device, flow_forward)
 
@@ -140,6 +147,7 @@ def run_flow_training_pipeline(
     min_grasp_score = float(options.pop("min_grasp_score", MIN_GRASP_SCORE))
     score_repeat_factor = int(options.pop("score_repeat_factor", SCORE_REPEAT_FACTOR))
     score_repeat_power = float(options.pop("score_repeat_power", SCORE_REPEAT_POWER))
+    noise_samples = int(options.pop("flow_noise_samples", FLOW_NOISE_SAMPLES))
     if options:
         unexpected = ", ".join(sorted(options))
         msg = f"Unexpected flow training options: {unexpected}"
@@ -195,6 +203,7 @@ def run_flow_training_pipeline(
         optimizer,
         device,
         seed=seed,
+        noise_samples=noise_samples,
     )
 
     dataloader = build_supervised_dataloader(training_dataset, batch_size, seed)

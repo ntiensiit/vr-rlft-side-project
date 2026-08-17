@@ -199,6 +199,9 @@ def test_save_grasp_sample_roundtrip(tmp_path: Path) -> None:
         "grasp_poses": np.tile(np.eye(4, dtype=np.float32), (2, 1, 1)),
         "scores": np.array([0.1, 0.9], dtype=np.float32),
         "object_id": "mustard_bottle",
+        "validation_version": "physical-lift-v4",
+        "contact_sustained": np.array([True, False]),
+        "initial_robot_object_collision_free": np.array([True, True]),
     }
     save_grasp_sample(path, sample)
     loaded = load_grasp_sample(path)
@@ -209,6 +212,15 @@ def test_save_grasp_sample_roundtrip(tmp_path: Path) -> None:
     if not (np.allclose(loaded["scores"], sample["scores"])):
         raise AssertionError
     if not (loaded["object_id"] == sample["object_id"]):
+        raise AssertionError
+    if loaded["validation_version"] != sample["validation_version"]:
+        raise AssertionError
+    if not np.array_equal(loaded["contact_sustained"], sample["contact_sustained"]):
+        raise AssertionError
+    if not np.array_equal(
+        loaded["initial_robot_object_collision_free"],
+        sample["initial_robot_object_collision_free"],
+    ):
         raise AssertionError
 
     with np.load(path) as archive:
@@ -948,8 +960,8 @@ def test_training_pairs_validations_and_augmentation(tmp_path: Path) -> None:
 
 def test_generate_analytical_grasps_validations_and_fallbacks() -> None:
     """Verify type and value checks on antipodal dot limits, multipliers, and relaxed grasp fallbacks."""
-    pts = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.04]], dtype=np.float64)
-    normals = np.array([[0.0, 0.0, 1.0], [0.0, 0.0, -1.0]], dtype=np.float64)
+    pts = np.array([[-0.02, 0.0, 0.0], [0.02, 0.0, 0.0]], dtype=np.float64)
+    normals = np.array([[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64)
     rng = np.random.default_rng(42)
 
     with pytest.raises(ValueError, match="points must be of shape"):

@@ -100,6 +100,10 @@ def test_generate_analytical_grasps() -> None:
                 raise AssertionError
             if not (np.abs(np.linalg.det(r_rot) - 1.0) < ROT_ORTHOGONAL_TOL):
                 raise AssertionError
+            # Contact-frame +Z points from the Panda hand toward the contact
+            # midpoint, so tabletop grasps must use the downward hemisphere.
+            if not (r_rot[2, 2] <= ROT_ORTHOGONAL_TOL):
+                raise AssertionError
 
 
 def test_generate_analytical_grasps_fallback() -> None:
@@ -406,5 +410,35 @@ def test_generate_synthetic_dataset_sim_fallback_to_analytical(
     )
     if not ((output_dir / f"{obj_name}.npz").is_file()):
         raise AssertionError
+
+
+def test_physical_validation_requires_collision_free_sustained_lift() -> None:
+    """A height spike is not a valid lift without clean, sustained contact."""
+    from grasping_ai.pipelines.prepare_synthetic_data import sim_validation_passes  # noqa: PLC0415
+
+    outcome = {
+        "success": True,
+        "ik_converged": True,
+        "contact_count": 2.0,
+        "bilateral_contact": True,
+        "initial_height": 0.28,
+        "final_height": 0.35,
+        "stable": True,
+        "contact_sustained": True,
+        "initial_robot_object_collision_free": True,
+    }
+    kwargs = {
+        "sim_validate_require_ik": True,
+        "sim_validate_require_lift": True,
+        "sim_validate_min_contacts": 2.0,
+        "lift_height_threshold": 0.05,
+    }
+    if not sim_validation_passes(outcome, **kwargs):
+        raise AssertionError
+    for failed_field in ("contact_sustained", "initial_robot_object_collision_free", "stable"):
+        failed = dict(outcome)
+        failed[failed_field] = False
+        if sim_validation_passes(failed, **kwargs):
+            raise AssertionError
 
 

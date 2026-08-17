@@ -10,6 +10,7 @@ from loguru import logger
 
 from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.data.pointcloud_dataset import (
+    PHYSICAL_VALIDATION_VERSION,
     GraspSample,
     discover_dataset_files,
     generate_analytical_grasps,
@@ -29,7 +30,8 @@ from grasping_ai.pipelines.simulate_grasp import simulate_grasp
 from grasping_ai.robotics.gripper import default_gripper_point_cloud
 from grasping_ai.robotics.transforms import convert_grasps_to_world_frame
 from grasping_ai.sensors.pointcloud_sensor import sample_point_cloud_from_mesh
-from grasping_ai.simulation.ycb import list_ycb_objects
+from grasping_ai.simulation.scene import MuJoCoScene, place_freejoint_body_on_surface, set_freejoint_body_pose
+from grasping_ai.simulation.ycb import find_ycb_mjcf, list_ycb_objects, resolve_ycb_object_directory
 
 NUM_SAMPLES = int(FLATTENED_YAML_CONFIG.get("synthetic.num_samples"))
 NUM_GRASPS = int(FLATTENED_YAML_CONFIG.get("synthetic.num_grasps"))
@@ -62,6 +64,7 @@ SIM_VALIDATE_FALLBACK_ANALYTICAL = bool(
     FLATTENED_YAML_CONFIG.get("synthetic.sim_validate_fallback_analytical"),
 )
 SIM_OBJECT_POSITION = tuple(FLATTENED_YAML_CONFIG.get_path("synthetic", "sim_object_position"))
+REQUIRED_FINGER_CONTACTS = 2.0
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -170,14 +173,24 @@ def sim_validation_passes(
     """Return whether a MuJoCo grasp outcome satisfies validation criteria."""
     fk_error = float(cast("float", outcome.get("fk_position_error", float("inf"))))
     contact_count = float(cast("float", outcome.get("contact_count", 0.0)))
-    ik_ok = np.isfinite(fk_error) if sim_validate_require_ik else True
-    contact_ok = contact_count >= sim_validate_min_contacts
+    bilateral_contact = bool(outcome.get("bilateral_contact", contact_count >= REQUIRED_FINGER_CONTACTS))
+    ik_converged = bool(outcome.get("ik_converged", np.isfinite(fk_error)))
+    ik_ok = ik_converged if sim_validate_require_ik else True
+    contact_ok = bilateral_contact and contact_count >= sim_validate_min_contacts
     lift_ok = True
     if sim_validate_require_lift:
         initial_height = float(cast("float", outcome.get("initial_height", 0.0)))
         final_height = float(cast("float", outcome.get("final_height", 0.0)))
         lift_ok = (final_height - initial_height) >= lift_height_threshold
-    return ik_ok and contact_ok and lift_ok
+    success_ok = bool(outcome.get("success", False)) if sim_validate_require_lift else True
+    stable_ok = bool(outcome.get("stable", False)) if sim_validate_require_lift else True
+    sustained_ok = bool(outcome.get("contact_sustained", False)) if sim_validate_require_lift else True
+    collision_ok = (
+        bool(outcome.get("initial_robot_object_collision_free", False))
+        if sim_validate_require_lift
+        else True
+    )
+    return ik_ok and contact_ok and lift_ok and stable_ok and sustained_ok and collision_ok and success_ok
 
 
 def apply_sim_validation(  # noqa: PLR0913  # grouped configuration dictionaries keep this API compact
@@ -188,16 +201,37 @@ def apply_sim_validation(  # noqa: PLR0913  # grouped configuration dictionaries
     shared: dict[str, Any],
     grasp: dict[str, Any],
     simulation: dict[str, Any],
-) -> tuple[list[tuple[np.ndarray, float]], str, int]:
+) -> tuple[list[tuple[np.ndarray, float]], str, int, dict[bytes, Mapping[str, object]]]:
     """Filter analytically scored grasps using MuJoCo simulation outcomes."""
     sim_filtered: list[tuple[np.ndarray, float]] = []
+    validation_by_pose: dict[bytes, Mapping[str, object]] = {}
     table_xml_path = (
         simulation["table_xml"]
         if simulation["table_xml"] is not None and simulation["table_xml"].is_file()
         else None
     )
+    object_to_world = shared["object_to_world"]
+    if simulation["sim_validate"]:
+        object_xml_path = find_ycb_mjcf(
+            resolve_ycb_object_directory(cast("Path", simulation["mjcf_root"]), name),
+        )
+        placement_scene = MuJoCoScene(
+            cast("Path", simulation["robot_xml"]),
+            object_xml_path,
+            table_xml_path,
+            object_name=name,
+        )
+        set_freejoint_body_pose(
+            placement_scene.model,
+            placement_scene.data,
+            name,
+            object_to_world[:3, 3],
+        )
+        if table_xml_path is not None:
+            place_freejoint_body_on_surface(placement_scene.model, placement_scene.data, name)
+        object_to_world = placement_scene.body_pose(name)
     for pose, score in analytical_scored:
-        world_pose = convert_grasps_to_world_frame(pose.reshape(1, 4, 4), shared["object_to_world"])[0]
+        world_pose = convert_grasps_to_world_frame(pose.reshape(1, 4, 4), object_to_world)[0]
         outcome = simulate_grasp(
             world_pose,
             name,
@@ -207,11 +241,14 @@ def apply_sim_validation(  # noqa: PLR0913  # grouped configuration dictionaries
             num_simulation_steps=simulation["num_simulation_steps"],
             gripper_close_command=cast("np.ndarray", simulation["gripper_close_command"]),
             lift_height_threshold=simulation["lift_height_threshold"],
+            lift_distance=simulation["lift_distance"],
             max_linear_velocity=simulation["max_linear_velocity"],
             max_angular_velocity=simulation["max_angular_velocity"],
             grasp_width=grasp["gripper_width"],
+            object_position=object_to_world[:3, 3],
             quiet=True,
         )
+        validation_by_pose[np.asarray(pose).tobytes()] = outcome
         if sim_validation_passes(
             outcome,
             sim_validate_require_ik=simulation["sim_validate_require_ik"],
@@ -223,15 +260,15 @@ def apply_sim_validation(  # noqa: PLR0913  # grouped configuration dictionaries
 
     sim_pass_count = len(sim_filtered)
     if sim_filtered:
-        return sim_filtered, f"{grasp_source}+sim", sim_pass_count
+        return sim_filtered, f"{grasp_source}+sim", sim_pass_count, validation_by_pose
     if simulation["sim_validate_fallback_analytical"] and analytical_scored:
         logger.info(
             "{}: no sim-validated grasps; keeping {} analytical labels.",
             name,
             len(analytical_scored),
         )
-        return analytical_scored, f"{grasp_source}+sim_fallback", sim_pass_count
-    return [], f"{grasp_source}+sim_none", sim_pass_count
+        return analytical_scored, f"{grasp_source}+sim_fallback", sim_pass_count, validation_by_pose
+    return [], f"{grasp_source}+sim_none", sim_pass_count, validation_by_pose
 
 
 def select_diverse_grasps(
@@ -271,7 +308,7 @@ def quality_record(
     stats: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     """Build a per-object synthetic dataset quality record."""
-    resolved = stats or {
+    defaults = {
         "candidates": 0,
         "contact_scored": 0,
         "scored": 0,
@@ -279,6 +316,7 @@ def quality_record(
         "sim_pass": 0,
         "mean_score": 0.0,
     }
+    resolved = {**defaults, **(stats or {})}
     return {
         "object_id": object_id,
         "source": source,
@@ -341,15 +379,18 @@ def process_object_synthetic(
     contact_scored_count = len(analytical_scored)
     scored_grasps = list(analytical_scored)
     sim_pass_count = 0
+    validation_by_pose: dict[bytes, Mapping[str, object]] = {}
     label_source = grasp_source
 
     sim_assets_ready = (
         simulation["mjcf_root"] is not None
+        and cast("Path", simulation["mjcf_root"]).is_dir()
         and simulation["robot_xml"] is not None
+        and cast("Path", simulation["robot_xml"]).is_file()
         and simulation["gripper_close_command"] is not None
     )
     if simulation["sim_validate"] and sim_assets_ready:
-        scored_grasps, label_source, sim_pass_count = apply_sim_validation(
+        scored_grasps, label_source, sim_pass_count, validation_by_pose = apply_sim_validation(
             analytical_scored,
             name=name,
             grasp_source=grasp_source,
@@ -373,6 +414,7 @@ def process_object_synthetic(
                 "candidates": int(grasps.shape[0]),
                 "contact_scored": contact_scored_count,
                 "scored": len(scored_grasps),
+                "kept": 0,
                 "sim_pass": len(scored_grasps) if simulation["sim_validate"] else 0,
             },
         )
@@ -387,11 +429,72 @@ def process_object_synthetic(
         mean_score,
         sim_pass_count,
     )
+    kept_outcomes = [validation_by_pose.get(np.asarray(pose).tobytes(), {}) for pose in kept_poses]
     sample: GraspSample = {
         "point_cloud": points.astype(np.float32),
         "grasp_poses": np.stack(kept_poses, axis=0).astype(np.float32),
         "scores": np.asarray(kept_scores, dtype=np.float32),
         "object_id": name,
+        "grasp_pose_format": "object",
+        "validation_version": PHYSICAL_VALIDATION_VERSION,
+        "validation_lift_distance": float(simulation["lift_distance"]),
+        "sim_validated": np.asarray(
+            [
+                sim_validation_passes(
+                    validation_by_pose.get(np.asarray(pose).tobytes(), {}),
+                    sim_validate_require_ik=simulation["sim_validate_require_ik"],
+                    sim_validate_require_lift=simulation["sim_validate_require_lift"],
+                    sim_validate_min_contacts=simulation["sim_validate_min_contacts"],
+                    lift_height_threshold=simulation["lift_height_threshold"],
+                )
+                for pose in kept_poses
+            ],
+            dtype=np.bool_,
+        ),
+        "ik_converged": np.asarray(
+            [bool(outcome.get("ik_converged", False)) for outcome in kept_outcomes],
+            dtype=np.bool_,
+        ),
+        "contact_counts": np.asarray(
+            [float(outcome.get("contact_count", 0.0)) for outcome in kept_outcomes],
+            dtype=np.float32,
+        ),
+        "bilateral_contacts": np.asarray(
+            [bool(outcome.get("bilateral_contact", False)) for outcome in kept_outcomes],
+            dtype=np.bool_,
+        ),
+        "fk_position_errors": np.asarray(
+            [float(outcome.get("fk_position_error", float("inf"))) for outcome in kept_outcomes],
+            dtype=np.float32,
+        ),
+        "table_collision_free": np.asarray(
+            [bool(outcome.get("table_collision_free", False)) for outcome in kept_outcomes],
+            dtype=np.bool_,
+        ),
+        "lift_ik_converged": np.asarray(
+            [bool(outcome.get("lift_ik_converged", False)) for outcome in kept_outcomes],
+            dtype=np.bool_,
+        ),
+        "lift_height_gains": np.asarray(
+            [
+                float(outcome.get("final_height", 0.0))
+                - float(outcome.get("initial_height", 0.0))
+                for outcome in kept_outcomes
+            ],
+            dtype=np.float32,
+        ),
+        "stable": np.asarray(
+            [bool(outcome.get("stable", False)) for outcome in kept_outcomes],
+            dtype=np.bool_,
+        ),
+        "contact_sustained": np.asarray(
+            [bool(outcome.get("contact_sustained", False)) for outcome in kept_outcomes],
+            dtype=np.bool_,
+        ),
+        "initial_robot_object_collision_free": np.asarray(
+            [bool(outcome.get("initial_robot_object_collision_free", False)) for outcome in kept_outcomes],
+            dtype=np.bool_,
+        ),
     }
     output_file = shared["output_dir"] / f"{name}.npz"
     save_grasp_sample(output_file, sample)
@@ -511,6 +614,7 @@ def generate_synthetic_dataset(  # noqa: PLR0913  # preserve legacy keyword comp
         "num_simulation_steps": options.pop("num_simulation_steps", NUM_SIMULATION_STEPS),
         "gripper_close_command": options.pop("gripper_close_command", None),
         "lift_height_threshold": options.pop("lift_height_threshold", LIFT_HEIGHT_THRESHOLD),
+        "lift_distance": options.pop("lift_distance", 0.1),
         "max_linear_velocity": options.pop("max_linear_velocity", MAX_LINEAR_VELOCITY),
         "max_angular_velocity": options.pop("max_angular_velocity", MAX_ANGULAR_VELOCITY),
         "sim_validate_require_lift": options.pop("sim_validate_require_lift", SIM_VALIDATE_REQUIRE_LIFT),
@@ -561,6 +665,8 @@ def generate_synthetic_dataset(  # noqa: PLR0913  # preserve legacy keyword comp
         "object_to_world": make_transform(np.eye(3, dtype=np.float64), object_position),
     }
     for name in list_ycb_objects(ycb_root):
+        if required_set and name not in required_set:
+            continue
         _process_one_object(name, shared, sampling, grasp, simulation, required_set, quality_records, failures)
 
     if quality_report_path is not None:

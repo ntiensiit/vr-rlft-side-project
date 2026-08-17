@@ -10,6 +10,7 @@ import mujoco  # type: ignore[import-untyped]
 import numpy as np
 import pytransform3d.rotations as pr
 import pytransform3d.transformations as pt
+from scipy.optimize import least_squares
 from loguru import logger
 
 from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
@@ -251,6 +252,16 @@ def build_inverse_kinematics(
 
     local_data = mujoco.MjData(model)
 
+    lower = np.full(model.nq, -np.inf, dtype=np.float64)
+    upper = np.full(model.nq, np.inf, dtype=np.float64)
+    for joint_id in range(model.njnt):
+        if not model.jnt_limited[joint_id]:
+            continue
+        if model.jnt_type[joint_id] not in (mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE):
+            continue
+        qadr = int(model.jnt_qposadr[joint_id])
+        lower[qadr], upper[qadr] = model.jnt_range[joint_id]
+
     def ik(target_pose: RigidTransform, initial_joints: JointConfiguration) -> JointConfiguration:
         _validate_ik_inputs(target_pose, initial_joints, model)
 
@@ -284,6 +295,35 @@ def build_inverse_kinematics(
         final_err = np.linalg.norm(_se3_pose_error(target_pose, _ee_pose(local_data, body_id)))
 
         if final_err > tolerance:
+            # The damped Jacobian method is fast for ordinary poses but can
+            # stall at Panda wrist/elbow singularities. Retry from its best
+            # state with a bounded trust-region least-squares solve so valid
+            # generated grasps are not mislabeled as IK failures.
+            def residual(candidate: np.ndarray) -> np.ndarray:
+                local_data.qpos[:] = candidate
+                mujoco.mj_forward(model, local_data)
+                return _se3_pose_error(target_pose, _ee_pose(local_data, body_id))
+
+            results = []
+            for seed in (q, initial_joints):
+                results.append(
+                    least_squares(
+                        residual,
+                        seed,
+                        bounds=(lower, upper),
+                        max_nfev=max(500, max_iterations * 10),
+                        xtol=tolerance * 0.1,
+                        ftol=tolerance * 0.1,
+                        gtol=tolerance * 0.1,
+                    ),
+                )
+            result = min(results, key=lambda candidate: float(np.linalg.norm(candidate.fun)))
+            q = np.asarray(result.x, dtype=np.float64)
+            local_data.qpos[:] = q
+            mujoco.mj_forward(model, local_data)
+            final_err = np.linalg.norm(_se3_pose_error(target_pose, _ee_pose(local_data, body_id)))
+            if final_err <= tolerance:
+                return q
             msg = f"IK solver failed to converge within tolerance {tolerance} (final error: {final_err})"
             raise ValueError(msg)
 

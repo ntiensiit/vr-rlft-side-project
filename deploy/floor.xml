@@ -1,0 +1,3 @@
+<mujoco model="floor_only">
+  <worldbody/>
+</mujoco>
