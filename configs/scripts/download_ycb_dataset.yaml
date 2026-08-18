@@ -12,6 +12,8 @@ script:
   base_url: ${download.base_url}
   user_agent: ${download.user_agent}
   block_size: ${download.block_size}
+  max_workers: ${download.max_workers}
+  max_threads: ${download.max_threads}
   max_retries: ${download.max_retries}
   timeout_seconds: ${download.timeout_seconds}
   retry_sleep_seconds: ${download.retry_sleep_seconds}

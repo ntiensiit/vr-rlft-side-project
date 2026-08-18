@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 import tarfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.error import URLError
-from urllib.request import Request, urlopen
 
+import aiohttp
 import hydra
 from loguru import logger
 
@@ -27,6 +29,8 @@ OBJECTS_URL = str(FLATTENED_YAML_CONFIG.get("script.objects_url"))
 BASE_URL = str(FLATTENED_YAML_CONFIG.get("script.base_url"))
 USER_AGENT = str(FLATTENED_YAML_CONFIG.get("script.user_agent"))
 BLOCK_SIZE = int(FLATTENED_YAML_CONFIG.get("script.block_size", 65536))
+MAX_WORKERS = int(FLATTENED_YAML_CONFIG.get("script.max_workers", 8))
+MAX_THREADS = int(FLATTENED_YAML_CONFIG.get("script.max_threads", 4))
 MAX_RETRIES = int(FLATTENED_YAML_CONFIG.get("script.max_retries", 5))
 TIMEOUT_SECONDS = int(FLATTENED_YAML_CONFIG.get("script.timeout_seconds", 30))
 RETRY_SLEEP_SECONDS = float(FLATTENED_YAML_CONFIG.get("script.retry_sleep_seconds", 2))
@@ -43,11 +47,15 @@ def _validate_https_url(url: str) -> None:
         raise ValueError(msg)
 
 
-def fetch_objects(url: str) -> list[str]:
+async def fetch_objects(url: str) -> list[str]:
     """Fetch the object list from the YCB benchmark index URL."""
     _validate_https_url(url)
-    with urlopen(url) as response:  # noqa: S310  # scheme restricted to HTTPS by _validate_https_url
-        payload = json.loads(response.read())
+    timeout = aiohttp.ClientTimeout(total=TIMEOUT_SECONDS)
+    async with aiohttp.ClientSession(timeout=timeout) as session, session.get(
+        url, headers={"User-Agent": USER_AGENT},
+    ) as response:
+        response.raise_for_status()
+        payload = json.loads(await response.text())
     objects = payload["objects"]
     if not isinstance(objects, list):
         msg = "YCB object index did not contain a list of objects"
@@ -55,21 +63,20 @@ def fetch_objects(url: str) -> list[str]:
     return [str(object_id) for object_id in objects]
 
 
-def download_file(url: str, filename: Path) -> None:
-    """Download a file from ``url`` with retries."""
+async def _download_file(url: str, filename: Path, session: aiohttp.ClientSession) -> None:
+    """Download a file from ``url`` to ``filename`` with retries."""
     _validate_https_url(url)
     for attempt in range(MAX_RETRIES):
         try:
-            request = Request(url, headers={"User-Agent": USER_AGENT})  # noqa: S310  # HTTPS-only config URL
-            with urlopen(request, timeout=TIMEOUT_SECONDS) as remote_file:  # noqa: S310  # HTTPS-only config URL
-                file_size_header = remote_file.getheader("Content-Length")
+            async with session.get(url, headers={"User-Agent": USER_AGENT}) as remote_file:
+                remote_file.raise_for_status()
+                file_size_header = remote_file.headers.get("Content-Length")
                 file_size = int(file_size_header) if file_size_header else 0
                 logger.info("Downloading: {} ({:.2f} MB)", filename, file_size / 1_000_000.0)
 
                 file_size_dl = 0
                 with filename.open("wb") as local_file:
-                    while True:
-                        buffer = remote_file.read(BLOCK_SIZE)
+                    async for buffer in remote_file.content.iter_chunked(BLOCK_SIZE):
                         if not buffer:
                             break
 
@@ -82,31 +89,38 @@ def download_file(url: str, filename: Path) -> None:
                             )
                         else:
                             status = f"{int(file_size_dl / 1_000_000.0):10d}"
-                        status = status + chr(8) * (len(status) + 1)
                         logger.info("{}", status)
-        except (OSError, URLError) as exc:
+        except (OSError, URLError, aiohttp.ClientError) as exc:
             logger.warning("Error downloading (attempt {}/{}): {}", attempt + 1, MAX_RETRIES, exc)
             if attempt < MAX_RETRIES - 1:
-                time.sleep(RETRY_SLEEP_SECONDS)
+                await asyncio.sleep(RETRY_SLEEP_SECONDS)
             else:
+                _remove_tgz(filename)
                 raise
         else:
             return
 
 
-def tgz_url(ycb_object: str, file_type: str) -> str:
+def tgz_url(ycb_object: str, file_type: str, base_url: str, berkeley_rgb_types: list[str]) -> str:
     """Return the TGZ file URL for a YCB object and dataset type."""
-    if file_type in BERKELEY_RGB_TYPES:
-        return f"{BASE_URL}berkeley/{ycb_object}/{ycb_object}_{file_type}.tgz"
+    if file_type in berkeley_rgb_types:
+        return f"{base_url}berkeley/{ycb_object}/{ycb_object}_{file_type}.tgz"
     if file_type == "berkeley_processed":
-        return f"{BASE_URL}berkeley/{ycb_object}/{ycb_object}_berkeley_meshes.tgz"
-    return f"{BASE_URL}google/{ycb_object}_{file_type}.tgz"
+        return f"{base_url}berkeley/{ycb_object}/{ycb_object}_berkeley_meshes.tgz"
+    return f"{base_url}google/{ycb_object}_{file_type}.tgz"
 
 
 def extract_tgz(filename: Path, output_dir: Path) -> None:
-    """Extract a TGZ archive into ``output_dir``."""
-    with tarfile.open(filename, "r:gz") as archive:
-        archive.extractall(path=output_dir, filter="data")
+    """Extract a TGZ archive into ``output_dir``.
+
+    On any failure the archive is removed so a corrupt download is not kept.
+    """
+    try:
+        with tarfile.open(filename, "r:gz") as archive:
+            archive.extractall(path=output_dir, filter="data")
+    except BaseException:
+        _remove_tgz(filename)
+        raise
 
     for _ in range(UNPACK_DELETE_RETRIES):
         try:
@@ -116,18 +130,27 @@ def extract_tgz(filename: Path, output_dir: Path) -> None:
             time.sleep(CLEANUP_SLEEP_SECONDS)
 
 
-def check_url(url: str) -> bool:
+def _remove_tgz(filename: Path) -> None:
+    """Best-effort removal of a (partial or corrupt) TGZ file."""
+    for _ in range(CLEANUP_DELETE_RETRIES):
+        try:
+            filename.unlink()
+        except FileNotFoundError:
+            return
+        except OSError:
+            time.sleep(CLEANUP_SLEEP_SECONDS)
+        else:
+            return
+
+
+async def _check_url(url: str, session: aiohttp.ClientSession) -> bool:
     """Return whether ``url`` responds to a HEAD request."""
     _validate_https_url(url)
     try:
-        request = Request(url)  # noqa: S310  # HTTPS-only config URL
-        request.get_method = lambda: "HEAD"
-        with urlopen(request):  # noqa: S310  # HTTPS-only config URL
-            pass
-    except (OSError, URLError):
+        async with session.head(url) as response:
+            return response.status < 400  # noqa: PLR2004  # any 4xx/5xx is treated as unavailable
+    except (OSError, URLError, aiohttp.ClientError):
         return False
-    else:
-        return True
 
 
 def _is_already_extracted(object_dir: Path, file_type: str) -> bool:
@@ -138,12 +161,12 @@ def _is_already_extracted(object_dir: Path, file_type: str) -> bool:
     return False
 
 
-def _cleanup_failed_object(object_id: str) -> None:
-    object_dir = OUTPUT_DIRECTORY / object_id
+def _cleanup_failed_object(output_directory: Path, object_id: str) -> None:
+    object_dir = output_directory / object_id
     if object_dir.exists():
         shutil.rmtree(object_dir, ignore_errors=True)
 
-    for tgz_file in OUTPUT_DIRECTORY.glob(f"{object_id}_*.tgz"):
+    for tgz_file in output_directory.glob(f"{object_id}_*.tgz"):
         for _ in range(CLEANUP_DELETE_RETRIES):
             try:
                 tgz_file.unlink()
@@ -152,27 +175,37 @@ def _cleanup_failed_object(object_id: str) -> None:
                 time.sleep(CLEANUP_SLEEP_SECONDS)
 
 
-def _process_object(object_id: str) -> None:
-    object_dir = OUTPUT_DIRECTORY / object_id
-    for file_type in FILES_TO_DOWNLOAD:
+async def _process_object(  # noqa: PLR0913, PLR0917  # plain data for one download task
+    object_id: str,
+    output_directory: Path,
+    files_to_download: list[str],
+    berkeley_rgb_types: list[str],
+    base_url: str,
+    session: aiohttp.ClientSession,
+    semaphore: asyncio.Semaphore,
+) -> None:
+    """Download and extract the configured archives for ``object_id``."""
+    object_dir = output_directory / object_id
+    for file_type in files_to_download:
         if EXTRACT:
             if _is_already_extracted(object_dir, file_type):
                 logger.info("Skipping {} {}: already extracted.", object_id, file_type)
                 continue
         else:
-            filename = OUTPUT_DIRECTORY / f"{object_id}_{file_type}.tgz"
+            filename = output_directory / f"{object_id}_{file_type}.tgz"
             if filename.is_file():
                 logger.info("Skipping {} {}: already downloaded.", object_id, file_type)
                 continue
 
-        url = tgz_url(object_id, file_type)
-        if not check_url(url):
+        url = tgz_url(object_id, file_type, base_url, berkeley_rgb_types)
+        if not await _check_url(url, session):
             continue
 
-        filename = OUTPUT_DIRECTORY / f"{object_id}_{file_type}.tgz"
-        download_file(url, filename)
+        filename = output_directory / f"{object_id}_{file_type}.tgz"
+        async with semaphore:
+            await _download_file(url, filename, session)
         if EXTRACT:
-            extract_tgz(filename, OUTPUT_DIRECTORY)
+            await asyncio.to_thread(extract_tgz, filename, output_directory)
 
 
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/download_ycb_dataset")
@@ -200,18 +233,116 @@ def main(cfg: DictConfig) -> None:
             "objects_url", "download", "objects_url", value_type=object, script_or=True, default=OBJECTS_URL,
         ),
     )
+    files_to_download = yaml_config.value(
+        "files_to_download",
+        "download",
+        "files",
+        value_type=list[str],
+        script_or=True,
+        default=FILES_TO_DOWNLOAD,
+    )
+    berkeley_rgb_types = yaml_config.value(
+        "berkeley_rgb_types",
+        "download",
+        "berkeley_rgb_types",
+        value_type=list[str],
+        script_or=True,
+        default=BERKELEY_RGB_TYPES,
+    )
+    base_url = str(
+        yaml_config.value(
+            "base_url", "download", "base_url", value_type=object, script_or=True, default=BASE_URL,
+        ),
+    )
+    max_workers = yaml_config.value(
+        "max_workers", "download", "max_workers", value_type=int, script_or=True, default=MAX_WORKERS,
+    )
+    max_threads = yaml_config.value(
+        "max_threads", "download", "max_threads", value_type=int, script_or=True, default=MAX_THREADS,
+    )
     output_directory.mkdir(parents=True, exist_ok=True)
-    objects = fetch_objects(objects_url)
+    _run_downloads(
+        output_directory,
+        objects_to_download,
+        objects_url,
+        files_to_download,
+        berkeley_rgb_types,
+        base_url,
+        max_workers,
+        max_threads,
+    )
 
-    for object_id in objects:
-        if object_id not in objects_to_download:
-            continue
 
-        try:
-            _process_object(object_id)
-        except (OSError, URLError) as exc:
-            logger.error("Failed to process {}: {}. Cleaning up...", object_id, exc)
-            _cleanup_failed_object(object_id)
+def _run_objects_in_thread(  # noqa: PLR0913, PLR0917  # plain data for one thread's download task
+    object_ids: list[str],
+    output_directory: Path,
+    files_to_download: list[str],
+    berkeley_rgb_types: list[str],
+    base_url: str,
+    max_workers: int,
+) -> list[tuple[str, BaseException | None]]:
+    """Run an asyncio event loop for ``object_ids`` inside one worker thread."""
+
+    async def _amain() -> list[BaseException | None]:
+        semaphore = asyncio.Semaphore(max_workers)
+        timeout = aiohttp.ClientTimeout(total=TIMEOUT_SECONDS)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            return await asyncio.gather(
+                *(
+                    _process_object(
+                        object_id,
+                        output_directory,
+                        files_to_download,
+                        berkeley_rgb_types,
+                        base_url,
+                        session,
+                        semaphore,
+                    )
+                    for object_id in object_ids
+                ),
+                return_exceptions=True,
+            )
+
+    results = asyncio.run(_amain())
+    return list(zip(object_ids, results, strict=True))
+
+
+def _run_downloads(  # noqa: PLR0913, PLR0917  # task carries the resolved download configuration
+    output_directory: Path,
+    objects_to_download: list[str],
+    objects_url: str,
+    files_to_download: list[str],
+    berkeley_rgb_types: list[str],
+    base_url: str,
+    max_workers: int,
+    max_threads: int,
+) -> None:
+    """Download and extract all configured objects, combining threads with asyncio."""
+    objects = asyncio.run(fetch_objects(objects_url))
+    targets = [object_id for object_id in objects if object_id in objects_to_download]
+    chunks: list[list[str]] = [targets[i::max_threads] for i in range(max_threads)]
+    chunks = [chunk for chunk in chunks if chunk]
+
+    with ThreadPoolExecutor(max_workers=len(chunks)) as executor:
+        futures = {
+            executor.submit(
+                _run_objects_in_thread,
+                chunk,
+                output_directory,
+                files_to_download,
+                berkeley_rgb_types,
+                base_url,
+                max_workers,
+            ): chunk
+            for chunk in chunks
+        }
+        for future in as_completed(futures):
+            chunk = futures[future]
+            results = future.result()
+            for object_id, result in zip(chunk, results, strict=True):
+                if isinstance(result, BaseException):
+                    logger.error("Failed to process {}: {}. Cleaning up...", object_id, result)
+                    _cleanup_failed_object(output_directory, object_id)
 
 
 if __name__ == "__main__":
