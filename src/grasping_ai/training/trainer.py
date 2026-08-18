@@ -14,6 +14,7 @@ from grasping_ai.config.diffusion import (
     linear_beta_schedule,
 )
 from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+from grasping_ai.models.equivariant_encoder import GRASP_POSE_REPRESENTATION
 from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 from grasping_ai.training.experiment_logging import (
     try_log_mlflow_artifact,
@@ -236,6 +237,7 @@ def save_training_checkpoint(
         "feature_dim": feature_dim,
         "hidden_dim": hidden_dim,
         "num_layers": num_layers,
+        "grasp_pose_representation": GRASP_POSE_REPRESENTATION,
         **({"seed": seed} if seed is not None else {}),
     }
 

@@ -458,17 +458,19 @@ def simulate_grasp(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917  # public 
         logger.debug("Rejecting grasp for {}: robot/table collision at the IK pose", object_id)
         return {
             "success": False,
-            "ik_converged": False,
+            "ik_converged": True,
             "lift_ik_converged": True,
             "initial_height": float(initial_pose[2, 3]),
             "final_height": float(initial_pose[2, 3]),
             "contact_count": 0.0,
             "bilateral_contact": False,
             "stable": False,
+            "contact_sustained": False,
+            "initial_robot_object_collision_free": True,
             "table_collision_free": False,
             "object_velocity": np.zeros(6),
             "grasp_pose": grasp_pose,
-            "fk_position_error": float("inf"),
+            "fk_position_error": float(np.linalg.norm(fk_solver(q_target)[:3, 3] - hand_pose[:3, 3])),
         }
 
     if panda_has_nonpad_object_collision(mj_model, mj_data, object_id):

@@ -59,6 +59,8 @@ class GraspSample(TypedDict):
     stable: NotRequired[np.ndarray]
     contact_sustained: NotRequired[np.ndarray]
     initial_robot_object_collision_free: NotRequired[np.ndarray]
+    candidate_indices: NotRequired[np.ndarray]
+    validation_failure_reasons: NotRequired[np.ndarray]
 
 
 def _validate_point_cloud(point_cloud: object) -> np.ndarray:
@@ -163,6 +165,8 @@ def save_grasp_sample(record_path: Path, sample: GraspSample) -> None:
         "stable",
         "contact_sustained",
         "initial_robot_object_collision_free",
+        "candidate_indices",
+        "validation_failure_reasons",
     ):
         value = sample.get(key)  # type: ignore[literal-required]
         if value is not None:
@@ -173,20 +177,27 @@ def save_grasp_sample(record_path: Path, sample: GraspSample) -> None:
 
 
 def discover_dataset_files(dataset_root: Path) -> list[Path]:
-    """List dataset record files under a dataset root directory.
+    """List dataset records from a directory or one ``.npz`` record.
 
     Args:
-        dataset_root: Root directory containing processed dataset records.
+        dataset_root: Root directory containing processed dataset records, or
+            one processed ``.npz`` record for single-object workflows.
 
     Returns:
         A sorted list of file paths representing individual dataset records.
     """
     require_path(dataset_root, "dataset_root")
     if not dataset_root.exists():
-        msg = f"Dataset root directory '{dataset_root}' does not exist"
+        msg = f"Dataset root '{dataset_root}' does not exist"
         raise FileNotFoundError(msg)
+    if dataset_root.is_file():
+        if dataset_root.suffix.lower() != ".npz":
+            msg = f"Dataset record '{dataset_root}' must use the .npz extension"
+            raise ValueError(msg)
+        logger.info("Using single dataset record {}", dataset_root)
+        return [dataset_root]
     if not dataset_root.is_dir():
-        msg = f"Dataset root '{dataset_root}' is not a directory"
+        msg = f"Dataset root '{dataset_root}' is neither a directory nor a .npz record"
         raise ValueError(msg)
 
     records = sorted([p for p in dataset_root.rglob("*.npz") if p.is_file()])
@@ -240,6 +251,8 @@ def _read_grasp_sample_archive(archive: np.lib.npyio.NpzFile) -> GraspSample:
         "stable",
         "contact_sustained",
         "initial_robot_object_collision_free",
+        "candidate_indices",
+        "validation_failure_reasons",
     ):
         if key in archive.files:
             sample[key] = archive[key]  # type: ignore[literal-required]
@@ -282,10 +295,11 @@ def load_grasp_sample(record_path: Path) -> GraspSample:
 
 
 def iterate_grasp_dataset(dataset_root: Path) -> Iterator[GraspSample]:
-    """Iterate over all grasp-pose samples in a dataset directory.
+    """Iterate over grasp-pose samples from a directory or one record.
 
     Args:
-        dataset_root: Root directory containing processed dataset records.
+        dataset_root: Root directory containing processed dataset records, or
+            one processed ``.npz`` record.
 
     Yields:
         ``GraspSample`` records loaded one at a time.

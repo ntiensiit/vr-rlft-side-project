@@ -136,7 +136,7 @@ class SupervisedGraspDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         frame, centroid = compute_se3_frame(pc_t.unsqueeze(0))
         world = world_transform_from_frame(frame, centroid)[0]
         world_inv = invert_rigid_transform_batch(world.unsqueeze(0))[0]
-        target = _canonical_grasp_vector(world_inv, world, grasp_poses[grasp_index])
+        target = _canonical_grasp_vector(world_inv, grasp_poses[grasp_index])
         return pc_t, torch.from_numpy(target).float()
 
 
@@ -144,7 +144,8 @@ def validate_grasp_dataset(dataset_root: Path) -> int:
     """Validate that a dataset root yields readable grasp samples.
 
     Args:
-        dataset_root: Root directory containing ``.npz`` grasp dataset records.
+        dataset_root: Root directory containing ``.npz`` grasp dataset records,
+            or one ``.npz`` record.
 
     Returns:
         Number of valid grasp samples discovered under ``dataset_root``.
@@ -209,11 +210,11 @@ def _augment_sample(
     return transformed_pc, transformed_grasp_poses, transformed_scores
 
 
-def _canonical_grasp_vector(world_inv: torch.Tensor, world: torch.Tensor, grasp_pose: np.ndarray) -> np.ndarray:
-    """Express one grasp pose in the canonical object frame as a 9D vector."""
+def _canonical_grasp_vector(world_inv: torch.Tensor, grasp_pose: np.ndarray) -> np.ndarray:
+    """Express an absolute grasp pose in the canonical object frame."""
     t_matrix = np.asarray(grasp_pose, dtype=np.float32)
     t_tensor = torch.from_numpy(t_matrix).float()
-    canonical = world_inv @ t_tensor @ world
+    canonical = world_inv @ t_tensor
     return se3_to_vec(canonical.numpy())
 
 

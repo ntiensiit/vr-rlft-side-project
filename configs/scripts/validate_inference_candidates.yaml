@@ -1,0 +1,23 @@
+# @package _global_
+defaults:
+  - /scripts/base
+  - _self_
+
+script:
+  candidate_file: null
+  observation: null
+  output: null
+  object_id: null
+  robot_xml: ${robot.description}
+  ycb_root: ${paths.ycb_mjcf}
+  table_xml: ${table_xml}
+  object_position: ${synthetic.sim_object_position}
+  num_simulation_steps: ${synthetic.num_simulation_steps}
+  gripper_width: ${synthetic.gripper_width}
+  lift_height_threshold: ${synthetic.lift_height_threshold}
+  lift_distance: ${synthetic.lift_distance}
+  max_linear_velocity: ${limits.max_linear_velocity}
+  max_angular_velocity: ${limits.max_angular_velocity}
+  min_contacts: ${synthetic.sim_validate_min_contacts}
+  require_ik: true
+  require_lift: true

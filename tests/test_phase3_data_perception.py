@@ -155,6 +155,22 @@ def test_prepare_data_rejects_empty_dataset(tmp_path: Path) -> None:
         discover_dataset_files(empty_root)
 
 
+def test_discover_dataset_files_accepts_single_npz_record(tmp_path: Path) -> None:
+    """A single processed record is a valid training dataset selection."""
+    record = tmp_path / "003_cracker_box.npz"
+    save_grasp_sample(
+        record,
+        {
+            "point_cloud": np.zeros((4, 3), dtype=np.float32),
+            "grasp_poses": np.tile(np.eye(4, dtype=np.float32), (1, 1, 1)),
+            "scores": np.ones(1, dtype=np.float32),
+            "object_id": "003_cracker_box",
+        },
+    )
+
+    assert discover_dataset_files(record) == [record]
+
+
 def test_index_loader_reads_prepared_index(tmp_path: Path) -> None:
     """Verify loading dataset via index iterate functions."""
     dataset_root = tmp_path / "dataset"
@@ -494,7 +510,7 @@ def _assert_dataset_error_paths(tmp_path: Path) -> None:
         discover_dataset_files("not-a-path")  # type: ignore[arg-type]
     file_path = tmp_path / "file.txt"
     file_path.write_text("not a dir", encoding="utf-8")
-    with pytest.raises(ValueError, match="not a directory"):
+    with pytest.raises(ValueError, match="must use the .npz extension"):
         discover_dataset_files(file_path)
 
     # load_grasp_sample validations

@@ -9,6 +9,7 @@ from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 DEGENERATE_COMPONENT_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.degenerate_component_eps", 1e-9))
 DEGENERATE_SPAN_EPS = float(FLATTENED_YAML_CONFIG.get("tolerances.degenerate_span_eps", 1e-12))
 GRASP_POSES_NDIM = int(FLATTENED_YAML_CONFIG.get("grasp.poses_ndim", 3))
+GRASP_POSE_REPRESENTATION = "absolute-pose-left-action-v1"
 MIN_ANTIPODAL_CONTACTS = int(FLATTENED_YAML_CONFIG.get("grasp.min_antipodal_contacts", 2))
 SPATIAL_DIM = int(FLATTENED_YAML_CONFIG.get("geometry.spatial_dim", 3))
 TORCH_DEGENERATE_CLAMP_MIN = float(FLATTENED_YAML_CONFIG.get("grasp.torch_degenerate_clamp_min", 1e-12))
@@ -147,9 +148,10 @@ def invert_rigid_transform_batch(transforms: torch.Tensor) -> torch.Tensor:
 def compose_with_se3_frame(transforms: torch.Tensor, frame: torch.Tensor, centroid: torch.Tensor) -> torch.Tensor:
     """Express canonical-frame grasp poses in the input point-cloud frame.
 
-    Grasps sampled in the canonical object frame must be conjugated by the
-    frame world transform ``M = [[R, c], [0, 1]]`` so that they are returned
-    in the frame of the original point cloud: ``T_input = M T_canonical M^-1``.
+    A grasp transform is an absolute gripper pose, not a rigid displacement.
+    It therefore transforms by the left SE(3) action. With frame transform
+    ``M = [[R, c], [0, 1]]``, the input-frame pose is
+    ``T_input = M T_canonical``.
 
     Args:
         transforms: Canonical-frame grasp transforms with shape ``(B, 4, 4)``.
@@ -160,8 +162,7 @@ def compose_with_se3_frame(transforms: torch.Tensor, frame: torch.Tensor, centro
         Input-frame grasp transforms with shape ``(B, 4, 4)``.
     """
     world = world_transform_from_frame(frame, centroid)
-    world_inv = invert_rigid_transform_batch(world)
-    return torch.matmul(torch.matmul(world, transforms), world_inv)
+    return torch.matmul(world, transforms)
 
 
 class SE3EquivariantPointNet(torch.nn.Module):

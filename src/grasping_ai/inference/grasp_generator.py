@@ -17,6 +17,7 @@ from grasping_ai.models.diffusion import (
     build_diffusion_sampler,
     sample_grasps_with_diffusion,
 )
+from grasping_ai.models.equivariant_encoder import GRASP_POSE_REPRESENTATION
 from grasping_ai.models.flow import (
     build_flow_integrator,
     load_flow_model_from_state,
@@ -50,6 +51,17 @@ class GraspPoseGenerator(Protocol):
         ...
 
 
+def _require_current_pose_representation(checkpoint: dict[str, Any]) -> None:
+    """Reject checkpoints trained against the former invalid pose action."""
+    representation = checkpoint.get("grasp_pose_representation")
+    if representation != GRASP_POSE_REPRESENTATION:
+        msg = (
+            "Checkpoint uses an incompatible or unspecified grasp-pose representation. "
+            "Retrain it with the current absolute-pose left-action canonicalization."
+        )
+        raise ValueError(msg)
+
+
 def build_diffusion_grasp_generator(
     checkpoint: dict[str, Any],
     feature_dim: int = FEATURE_DIM,
@@ -72,6 +84,7 @@ def build_diffusion_grasp_generator(
         A function that takes a point cloud ``(N, 3)`` and returns a set of
         candidate grasp poses as a numpy array.
     """
+    _require_current_pose_representation(checkpoint)
     if isinstance(num_steps, str) and device == DEVICE:
         device = num_steps
     hidden_dim = checkpoint_scalar_int(checkpoint["hidden_dim"])
@@ -128,6 +141,7 @@ def build_flow_grasp_generator(
         A function that takes a point cloud ``(N, 3)`` and returns a set of
         candidate grasp poses as a numpy array.
     """
+    _require_current_pose_representation(checkpoint)
     hidden_dim = checkpoint_scalar_int(checkpoint["hidden_dim"])
     num_layers = checkpoint_scalar_int(checkpoint["num_layers"])
 

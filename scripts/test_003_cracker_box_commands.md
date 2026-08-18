@@ -50,19 +50,20 @@ uv run python scripts/audit_synthetic_labels.py `
 ## Visualize a validated grasp
 
 Automatically select a reachable object-frame candidate from the 003 archive.
-The table is enabled, the gripper is closed, and animation is disabled:
+The table is enabled, the gripper is closed, and `animation_duration=0` opens
+the selected static pose immediately (with no lift trajectory):
 
 ```powershell
 uv run python scripts/visualize_robot.py `
   script.grasp_file=data/processed/003_cracker_box.npz `
   script.object_id=003_cracker_box `
   script.grasp_pose_format=object `
-  script.top_down_pick=true `
   script.auto_select_reachable=true `
   script.allow_ik_failure=false `
   script.close_gripper=true `
-  script.lift_object=false `
-  script.animation_duration=0 `
+  script.lift_object=true `
+  script.lift_height=0.1 `
+  script.animation_duration=1.0 `
   script.table_xml=deploy/table.xml
 ```
 
@@ -75,9 +76,14 @@ uv run python scripts/prepare_observations.py `
 
 ## Train Flow and run single-object inference
 
+The corrected pose pipeline uses absolute-pose left-action canonicalization.
+Train a fresh checkpoint from the 003 record only; older checkpoints are
+rejected because they used the incompatible conjugation representation.
+
 ```powershell
 uv run python scripts/train_flow.py `
-  paths.dataset_root=data/processed `
+  paths.dataset_root=data/processed/003_cracker_box.npz `
+  model.checkpoint=artifacts/checkpoints/003_cracker_box_flow_left_action.pt `
   supervised.num_epochs=5000 `
   supervised.batch_size=2 `
   supervised.learning_rate=0.0005 `
@@ -89,24 +95,43 @@ uv run python scripts/train_flow.py `
 ```powershell
 uv run python scripts/run_grasp_inference.py `
   model=flow `
+  script.checkpoint=artifacts/checkpoints/003_cracker_box_flow_left_action.pt `
   script.observation=data/observations/003_cracker_box.npy `
   script.object_id=003_cracker_box `
-  script.output=artifacts/exports/003_cracker_box_flow_candidates.npy
+  script.output=artifacts/exports/003_cracker_box_grasp_candidates.npy
 ```
 
-Visualize the inferred 003 candidates:
+## Physically validate the exact inferred candidates
+
+Inference produces raw object-frame `.npy` candidates only. They must pass
+the MuJoCo IK, collision, contact, and dynamic-lift checks before they are
+used for visualization or lifting.
+
+```powershell
+uv run python scripts/validate_inference_candidates.py `
+  script.candidate_file=artifacts/exports/003_cracker_box_grasp_candidates.npy `
+  script.observation=data/observations/003_cracker_box.npy `
+  script.output=artifacts/validated/003_cracker_box_flow_validated.npz `
+  script.object_id=003_cracker_box `
+  script.table_xml=deploy/table.xml `
+  script.require_ik=true `
+  script.require_lift=true `
+  script.min_contacts=2
+```
+
+The validator prints a per-reason rejection summary. If it reports `0/N`,
+the viewer must stop instead of displaying an unverified pose.
+
+Visualize only physically validated 003 candidates:
 
 ```powershell
 uv run python scripts/visualize_robot.py `
-  script.grasp_file=artifacts/exports/003_cracker_box_flow_candidates.npy `
+  script.grasp_file=artifacts/validated/003_cracker_box_flow_validated.npz `
   script.object_id=003_cracker_box `
-  script.grasp_pose_format=object `
-  script.top_down_pick=true `
   script.auto_select_reachable=true `
   script.allow_ik_failure=false `
   script.close_gripper=true `
-  script.lift_object=false `
-  script.animation_duration=0 `
+  script.lift_object=true `
   script.table_xml=deploy/table.xml
 ```
 

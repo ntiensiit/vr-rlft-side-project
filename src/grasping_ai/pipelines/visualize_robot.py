@@ -560,8 +560,10 @@ def run_robot_viewer(  # noqa: C901, PLR0912,PLR0913  # viewer hooks are injecte
     dt = float(mj_model.opt.timestep)
     if dt <= 0 or not np.isfinite(dt):
         dt = FALLBACK_TIMESTEP
-    if trajectory_duration_s <= 0 or not np.isfinite(trajectory_duration_s):
-        raise ValueError("trajectory_duration_s must be positive and finite")
+    if trajectory_duration_s < 0 or not np.isfinite(trajectory_duration_s):
+        raise ValueError("trajectory_duration_s must be non-negative and finite")
+    if trajectory_duration_s == 0 and lift_trajectory is not None:
+        raise ValueError("trajectory_duration_s=0 is only valid for a static pose without a lift trajectory")
 
     logger.info("Launching MuJoCo viewer...")
     viewer = launch_passive(mj_model, mj_data)

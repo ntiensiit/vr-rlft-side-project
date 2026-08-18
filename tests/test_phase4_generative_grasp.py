@@ -16,6 +16,8 @@ from grasping_ai.config.diffusion import (
     DiffusionSchedule,
     linear_beta_schedule,
 )
+from grasping_ai.data import training_pairs
+from grasping_ai.data.grasp_vector import vec_to_se3
 from grasping_ai.inference.grasp_generator import (
     build_diffusion_grasp_generator,
     build_flow_grasp_generator,
@@ -31,6 +33,7 @@ from grasping_ai.models.equivariant_encoder import (
     compose_with_se3_frame,
     compute_se3_frame,
     encode_point_cloud,
+    invert_rigid_transform_batch,
     pool_object_features,
 )
 from grasping_ai.models.flow import (
@@ -670,9 +673,83 @@ def test_compose_with_se3_frame_maps_canonical_to_input() -> None:
     world = torch.eye(4)
     world[:3, :3] = frame[0]
     world[:3, 3] = centroid[0]
-    expected = world @ canonical_grasp @ torch.linalg.inv(world)
+    expected = world @ canonical_grasp
     if not (torch.allclose(input_frame, expected, atol=1e-5)):
         raise AssertionError
+
+
+def test_absolute_grasp_pose_uses_left_se3_action() -> None:
+    """A global object transform must left-multiply its absolute grasp pose."""
+    canonical = torch.eye(4).unsqueeze(0)
+    canonical[0, :3, :3] = _random_rotation()
+    canonical[0, :3, 3] = torch.tensor([0.04, -0.02, 0.11])
+    frame = _random_rotation().unsqueeze(0)
+    centroid = torch.tensor([[0.3, -0.4, 0.7]])
+
+    actual = compose_with_se3_frame(canonical, frame, centroid)
+    world = torch.eye(4)
+    world[:3, :3] = frame[0]
+    world[:3, 3] = centroid[0]
+
+    if not torch.allclose(actual, world @ canonical, atol=1e-5):
+        raise AssertionError
+    expected_translation = frame[0] @ canonical[0, :3, 3] + centroid[0]
+    if not torch.allclose(actual[0, :3, 3], expected_translation, atol=1e-5):
+        raise AssertionError
+
+
+def test_absolute_grasp_pose_canonicalization_round_trip() -> None:
+    """Training canonicalization must exactly invert inference composition."""
+    canonical = torch.eye(4).unsqueeze(0)
+    canonical[0, :3, :3] = _random_rotation()
+    canonical[0, :3, 3] = torch.tensor([-0.03, 0.06, 0.14])
+    frame = _random_rotation().unsqueeze(0)
+    centroid = torch.tensor([[-0.2, 0.5, 0.8]])
+    world = torch.eye(4).unsqueeze(0)
+    world[0, :3, :3] = frame[0]
+    world[0, :3, 3] = centroid[0]
+    absolute_pose = (world @ canonical)[0].numpy()
+    world_inv = invert_rigid_transform_batch(world)[0]
+
+    vector = training_pairs._canonical_grasp_vector(world_inv, absolute_pose)  # noqa: SLF001
+    recovered = vec_to_se3(torch.from_numpy(vector).unsqueeze(0))
+
+    if not torch.allclose(recovered, canonical, atol=1e-5):
+        raise AssertionError
+
+
+def test_canonical_grasp_target_is_invariant_to_global_augmentation() -> None:
+    """Applying the same SE(3) transform to cloud and pose keeps the target fixed."""
+    canonical = torch.eye(4).unsqueeze(0)
+    canonical[0, :3, :3] = _random_rotation()
+    canonical[0, :3, 3] = torch.tensor([0.02, 0.05, -0.08])
+    world = torch.eye(4).unsqueeze(0)
+    world[0, :3, :3] = _random_rotation()
+    world[0, :3, 3] = torch.tensor([0.1, -0.2, 0.4])
+    augmentation = torch.eye(4).unsqueeze(0)
+    augmentation[0, :3, :3] = _random_rotation()
+    augmentation[0, :3, 3] = torch.tensor([-0.3, 0.7, 0.2])
+    pose = world @ canonical
+    transformed_world = augmentation @ world
+    transformed_pose = augmentation @ pose
+
+    target = training_pairs._canonical_grasp_vector(  # noqa: SLF001
+        invert_rigid_transform_batch(world)[0],
+        pose[0].numpy(),
+    )
+    transformed_target = training_pairs._canonical_grasp_vector(  # noqa: SLF001
+        invert_rigid_transform_batch(transformed_world)[0],
+        transformed_pose[0].numpy(),
+    )
+
+    if not np.allclose(target, transformed_target, atol=1e-5):
+        raise AssertionError
+
+
+def test_legacy_pose_representation_checkpoint_is_rejected() -> None:
+    """Old conjugation-trained checkpoints must not silently emit bad poses."""
+    with pytest.raises(ValueError, match="incompatible or unspecified grasp-pose representation"):
+        build_flow_grasp_generator({}, feature_dim=8, num_flow_steps=5, device="cpu")
 
 
 def _build_checkpoint_generator(builder: str) -> tuple[object, Path]:
@@ -722,7 +799,7 @@ def test_generated_grasps_are_equivariant(builder: str) -> None:
     g_transform[:3, :3] = r_rot
     g_transform[:3, 3] = t
 
-    expected = np.stack([g_transform @ grasp @ np.linalg.inv(g_transform) for grasp in grasps])
+    expected = np.stack([g_transform @ grasp for grasp in grasps])
     if not (np.allclose(grasps_transformed, expected, atol=1e-3)):
         raise AssertionError
 
