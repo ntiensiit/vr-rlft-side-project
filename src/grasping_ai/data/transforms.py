@@ -86,6 +86,16 @@ def make_random_rotation_jitter(rng: np.random.Generator) -> SampleTransform:
         grasp_poses: np.ndarray | None,
         scores: np.ndarray | None,
     ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
+        """Apply random rotation jitter to the point cloud and grasps.
+
+        Args:
+            points: Array of point cloud coordinates.
+            grasp_poses: Optional array of SE(3) grasp poses.
+            scores: Optional array of grasp scores.
+
+        Returns:
+            A tuple of (rotated points, rotated grasp poses, scores).
+        """
         _validate_points(points)
 
         q, _ = np.linalg.qr(rng.standard_normal((3, 3)))
@@ -137,6 +147,16 @@ def make_translation_jitter(rng: np.random.Generator, scale: float) -> SampleTra
         grasp_poses: np.ndarray | None,
         scores: np.ndarray | None,
     ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
+        """Apply translation jitter to the point cloud and grasps.
+
+        Args:
+            points: Array of point cloud coordinates.
+            grasp_poses: Optional array of SE(3) grasp poses.
+            scores: Optional array of grasp scores.
+
+        Returns:
+            A tuple of (translated points, translated grasp poses, scores).
+        """
         _validate_points(points)
 
         t = rng.uniform(-scale, scale, size=3)
@@ -171,6 +191,16 @@ def compose_transforms(*transforms: SampleTransform) -> SampleTransform:
         grasp_poses: np.ndarray | None,
         scores: np.ndarray | None,
     ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
+        """Apply composed transformations to the sample.
+
+        Args:
+            points: Array of point cloud coordinates.
+            grasp_poses: Optional array of SE(3) grasp poses.
+            scores: Optional array of grasp scores.
+
+        Returns:
+            A tuple of (transformed points, transformed grasp poses, transformed scores).
+        """
         for t in transforms:
             if not callable(t):
                 msg = "All transforms in compose_transforms must be callable"

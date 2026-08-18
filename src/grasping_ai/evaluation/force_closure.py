@@ -182,6 +182,14 @@ def build_force_closure_judge(friction_coefficient: float, wrench_regularization
         raise ValueError(msg)
 
     def judge(contact_set: ContactSet) -> bool:
+        """Evaluate if the given contact set provides force closure.
+
+        Args:
+            contact_set: A list of contact records.
+
+        Returns:
+            True if the grasp provides force closure, False otherwise.
+        """
         if not contact_set:
             return False
 

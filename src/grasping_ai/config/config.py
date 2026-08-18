@@ -19,6 +19,14 @@ DEFAULT_CONFIG_DIR = Path("configs")
 
 
 def _key_path(*keys: str) -> str:
+    """Join multiple configuration keys with a dot separator.
+
+    Args:
+        *keys: String configuration keys to join.
+
+    Returns:
+        A dot-separated string path.
+    """
     return ".".join(keys)
 
 

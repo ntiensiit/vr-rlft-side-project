@@ -96,6 +96,16 @@ def build_flow_integrator(num_steps: int) -> FlowIntegrator:
         x0: torch.Tensor,
         conditioning: torch.Tensor,
     ) -> torch.Tensor:
+        """Integrate samples forward in time along the flow field.
+
+        Args:
+            flow_field: Callable representing the learned flow field.
+            x0: Initial state tensor.
+            conditioning: Conditioning tensor for the flow field.
+
+        Returns:
+            The integrated terminal states with the same shape as x0.
+        """
         dt = 1.0 / num_steps
         x = x0
         for _ in range(num_steps):

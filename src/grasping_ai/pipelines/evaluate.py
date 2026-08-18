@@ -128,6 +128,14 @@ def evaluate_generated_grasps(  # noqa: PLR0913  # public evaluation API; tests/
         file_contacts = load_contact_set(contact_path)
 
         def contact_set_provider(pose: np.ndarray) -> list[dict[str, np.ndarray]]:
+            """Provide a constant set of contact records loaded from a file.
+
+            Args:
+                pose: Grasp pose to evaluate.
+
+            Returns:
+                A list of contact records.
+            """
             del pose
             return file_contacts
 

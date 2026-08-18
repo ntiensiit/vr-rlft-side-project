@@ -104,6 +104,17 @@ def build_diffusion_sampler() -> DiffusionSampler:
         conditioning: torch.Tensor,
         rng: torch.Generator | None = None,
     ) -> torch.Tensor:
+        """Sample grasp poses from initial noise using the score model.
+
+        Args:
+            initial_noise: Starting noise tensor.
+            score_model: Callable representing the score network.
+            conditioning: Conditioning tensor for the score model.
+            rng: Optional PyTorch random number generator.
+
+        Returns:
+            A tensor containing the sampled grasp poses.
+        """
         device = initial_noise.device
         dtype = initial_noise.dtype
         b_val = beta.to(device=device, dtype=dtype)

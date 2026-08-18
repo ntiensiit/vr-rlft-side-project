@@ -48,6 +48,14 @@ def build_collision_checker(
     tree = build_kdtree(object_point_cloud)
 
     def checker(grasp_pose: np.ndarray) -> bool:
+        """Check if a given grasp pose is collision-free.
+
+        Args:
+            grasp_pose: Grasp pose represented as a (4, 4) transformation.
+
+        Returns:
+            True if the grasp is collision-free, False otherwise.
+        """
         if grasp_pose.shape != SE3_MATRIX_SHAPE:
             msg = f"grasp_pose must have shape (4, 4), got {grasp_pose.shape}"
             raise ValueError(msg)

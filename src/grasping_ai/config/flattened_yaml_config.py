@@ -52,6 +52,14 @@ class FlattenedYAMLConfig:
 
     @staticmethod
     def _split_key(key: str) -> tuple[str, ...]:
+        """Split a dot-separated configuration key into its segments.
+
+        Args:
+            key: A dot-separated string key.
+
+        Returns:
+            A tuple of string path segments.
+        """
         return tuple(part for part in key.split(".") if part)
 
     @overload

@@ -33,6 +33,14 @@ def build_stability_judge(max_linear_velocity: float, max_angular_velocity: floa
         raise ValueError(msg)
 
     def judge(object_velocity: np.ndarray) -> bool:
+        """Evaluate if the object velocity is within stability thresholds.
+
+        Args:
+            object_velocity: A 6D array containing linear and angular velocity.
+
+        Returns:
+            True if the grasp is considered stable, False otherwise.
+        """
         if not isinstance(object_velocity, np.ndarray):
             msg = "object_velocity must be a numpy array"
             raise TypeError(msg)
@@ -81,6 +89,15 @@ def build_lift_outcome_judge(lift_height_threshold: float) -> LiftOutcomeJudge:
         raise ValueError(msg)
 
     def judge(initial_height: float, final_height: float) -> bool:
+        """Evaluate if the lift attempt achieved the required height.
+
+        Args:
+            initial_height: The starting height of the object.
+            final_height: The final height of the object after lifting.
+
+        Returns:
+            True if the object was lifted by at least the required threshold, False otherwise.
+        """
         if not isinstance(initial_height, (int, float, np.floating, np.integer)):
             msg = "initial_height must be a number"
             raise TypeError(msg)
