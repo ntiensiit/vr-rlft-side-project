@@ -11,6 +11,7 @@ from grasping_ai.config import FLATTENED_YAML_CONFIG, SCRIPTS_CONFIG_PATH, Flatt
 from grasping_ai.pipelines.train_rl import run_rl_training_pipeline
 
 ROBOT_XML_PATH = Path(str(FLATTENED_YAML_CONFIG.get("script.robot_xml", "deploy/robot.xml")))
+TABLE_XML_PATH = Path(str(FLATTENED_YAML_CONFIG.get("script.table_xml", "deploy/table.xml")))
 YCB_ROOT = Path(str(FLATTENED_YAML_CONFIG.get("script.ycb_root", "data/processed/ycb_mjcf")))
 OBJECT_IDS = tuple(FLATTENED_YAML_CONFIG.get("script.object_ids", []))
 POLICY_CHECKPOINT_PATH = Path(
@@ -27,7 +28,12 @@ SEED = int(FLATTENED_YAML_CONFIG.get("script.seed", 42))
 N_STEPS = int(FLATTENED_YAML_CONFIG.get("script.n_steps", 64))
 BATCH_SIZE = int(FLATTENED_YAML_CONFIG.get("script.batch_size", 64))
 N_EPOCHS = int(FLATTENED_YAML_CONFIG.get("script.n_epochs", 1))
+LOG_STD_INIT = float(FLATTENED_YAML_CONFIG.get("script.log_std_init", -1.5))
+ENTROPY_COEFFICIENT = float(FLATTENED_YAML_CONFIG.get("script.entropy_coefficient", 0.0))
 POLICY_NUM_LAYERS = int(FLATTENED_YAML_CONFIG.get("script.policy_num_layers", 2))
+GRASP_FILE = FLATTENED_YAML_CONFIG.get("script.grasp_file", None)
+GRASP_INDEX = int(FLATTENED_YAML_CONFIG.get("script.grasp_index", 0))
+PREGRASP_DISTANCE = float(FLATTENED_YAML_CONFIG.get("script.pregrasp_distance", 0.05))
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
@@ -43,6 +49,22 @@ def main(cfg: DictConfig) -> None:
     run_rl_training_pipeline(
         robot_xml_path=yaml_config.value(
             "robot_xml", "robot", "description", value_type=Path, script_or=True, default=ROBOT_XML_PATH,
+        ),
+        table_xml_path=yaml_config.value(
+            "table_xml", "env", "table_xml", value_type=Path, script_or=True, default=TABLE_XML_PATH,
+        ),
+        grasp_file=(
+            None
+            if (raw_grasp_file := yaml_config.value(
+                "grasp_file", value_type=object, script_or=True, default=GRASP_FILE,
+            )) is None
+            else Path(str(raw_grasp_file))
+        ),
+        grasp_index=yaml_config.value(
+            "grasp_index", value_type=int, script_or=True, default=GRASP_INDEX,
+        ),
+        pregrasp_distance=yaml_config.value(
+            "pregrasp_distance", value_type=float, script_or=True, default=PREGRASP_DISTANCE,
         ),
         ycb_root=yaml_config.value(
             "ycb_root", "paths", "ycb_mjcf", value_type=Path, script_or=True, default=YCB_ROOT,
@@ -79,6 +101,17 @@ def main(cfg: DictConfig) -> None:
             "batch_size", "rl", "batch_size", value_type=int, script_or=True, default=BATCH_SIZE,
         ),
         n_epochs=yaml_config.value("n_epochs", "rl", "n_epochs", value_type=int, script_or=True, default=N_EPOCHS),
+        log_std_init=yaml_config.value(
+            "log_std_init", "rl", "log_std_init", value_type=float, script_or=True, default=LOG_STD_INIT,
+        ),
+        entropy_coefficient=yaml_config.value(
+            "entropy_coefficient",
+            "rl",
+            "entropy_coefficient",
+            value_type=float,
+            script_or=True,
+            default=ENTROPY_COEFFICIENT,
+        ),
         policy_num_layers=yaml_config.value(
             "policy_num_layers",
             "rl",

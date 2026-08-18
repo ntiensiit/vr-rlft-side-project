@@ -5,16 +5,22 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 from stable_baselines3 import PPO
 
 from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
+from grasping_ai.data.pointcloud_dataset import load_grasp_sample
 from grasping_ai.models.rl_policy import (
     build_policy_network,
     build_sb3_net_arch,
     copy_sb3_policy_weights,
     save_rl_policy_checkpoint,
 )
+from grasping_ai.perception.geometry import invert_transform
+from grasping_ai.robotics.gripper import panda_hand_to_contact_transform
+from grasping_ai.robotics.kinematics import build_inverse_kinematics, load_robot_model, solve_inverse_kinematics
+from grasping_ai.robotics.transforms import transform_grasp_pose
 from grasping_ai.simulation import mujoco_env
 from grasping_ai.simulation.scene import build_scene_xml
 from grasping_ai.simulation.ycb import (
@@ -41,8 +47,12 @@ SEED = int(FLATTENED_YAML_CONFIG.get("seed", 42))
 N_STEPS = int(FLATTENED_YAML_CONFIG.get("rl.n_steps", 64))
 BATCH_SIZE = int(FLATTENED_YAML_CONFIG.get("rl.batch_size", 64))
 N_EPOCHS = int(FLATTENED_YAML_CONFIG.get("rl.n_epochs", 1))
+LOG_STD_INIT = float(FLATTENED_YAML_CONFIG.get("rl.log_std_init", -1.5))
+ENTROPY_COEFFICIENT = float(FLATTENED_YAML_CONFIG.get("rl.entropy_coefficient", 0.0))
 POLICY_NUM_LAYERS = int(FLATTENED_YAML_CONFIG.get("rl.policy_num_layers", 2))
 VERBOSE = int(FLATTENED_YAML_CONFIG.get("rl.verbose", 1))
+PREGRASP_DISTANCE = float(FLATTENED_YAML_CONFIG.get("rl.pregrasp_distance", 0.05))
+PANDA_QPOS_SIZE = 9
 
 
 def _validate_rl_paths(robot_xml_path: Path, ycb_root: Path, object_ids: list[str]) -> None:
@@ -58,12 +68,66 @@ def _validate_rl_paths(robot_xml_path: Path, ycb_root: Path, object_ids: list[st
         raise FileNotFoundError(msg)
 
 
-def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestration
+def _load_validated_object_grasp(grasp_file: Path, object_id: str, grasp_index: int) -> np.ndarray:
+    """Load one simulation-validated object-frame grasp candidate."""
+    sample = load_grasp_sample(grasp_file)
+    if sample.get("object_id") != object_id:
+        raise ValueError(f"grasp archive object_id {sample.get('object_id')!r} does not match {object_id!r}")
+    poses = np.asarray(sample["grasp_poses"], dtype=np.float64)
+    if poses.ndim != 3 or poses.shape[1:] != (4, 4) or not 0 <= grasp_index < len(poses):  # noqa: PLR2004
+        raise ValueError("invalid grasp candidate index or pose array")
+    if sample.get("grasp_pose_format", "object") != "object":
+        raise ValueError("grasp-conditioned RL requires object-frame grasp poses")
+    valid = sample.get("sim_validated")
+    if valid is not None and not bool(np.asarray(valid)[grasp_index]):
+        raise ValueError(f"candidate {grasp_index} is not simulation-validated")
+    return poses[grasp_index]
+
+
+def configure_grasp_conditioned_reset(  # noqa: PLR0913, PLR0917
+    env: mujoco_env.MuJoCoGraspingEnv,
+    robot_xml_path: Path,
+    object_id: str,
+    grasp_file: Path,
+    grasp_index: int,
+    pregrasp_distance: float,
+) -> None:
+    """Reset the robot above a valid candidate while leaving the object free.
+
+    The candidate is object-relative. Its world pose is calculated only after
+    MuJoCo has placed the object on the table, then IK targets a pose displaced
+    along the candidate approach axis. No object coordinates are copied into
+    the robot state or updated during rollout.
+    """
+    if pregrasp_distance <= 0.0:
+        raise ValueError("pregrasp_distance must be positive")
+    object_grasp = _load_validated_object_grasp(grasp_file, object_id, grasp_index)
+    env.reset()
+    state = env._state  # noqa: SLF001 - read-only object pose after physical table placement
+    object_world = mujoco_env.read_body_pose(state, object_id)
+    contact_world = object_world @ object_grasp
+    pregrasp_contact = np.array(contact_world, copy=True)
+    pregrasp_contact[:3, 3] -= pregrasp_distance * contact_world[:3, 2]
+    hand_target = transform_grasp_pose(pregrasp_contact, invert_transform(panda_hand_to_contact_transform()))
+
+    robot = load_robot_model(str(robot_xml_path))
+    q0 = np.asarray(state["data"].qpos[: robot["model"].nq], dtype=np.float64)
+    ik = build_inverse_kinematics(robot, max_iterations=500, tolerance=1e-3)
+    q_pregrasp = solve_inverse_kinematics(ik, hand_target, q0)
+    if q_pregrasp.size >= PANDA_QPOS_SIZE:
+        q_pregrasp[-2:] = 0.04
+    env.set_reset_robot_configuration(q_pregrasp)
+
+
+def run_rl_training_pipeline(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917  # end-to-end orchestration
     robot_xml_path: Path = ROBOT_XML_PATH,
     ycb_root: Path = YCB_ROOT,
     object_ids: tuple[str, ...] = OBJECT_IDS,
     policy_checkpoint_path: Path = POLICY_CHECKPOINT_PATH,
     experiment_log_dir: Path | None = None,
+    table_xml_path: Path | None = None,
+    grasp_file: Path | None = None,
+    grasp_index: int = 0,
     **options: Any,  # noqa: ANN401
 ) -> None:
     """Run an end-to-end RL training pipeline using MuJoCo as the environment.
@@ -84,6 +148,11 @@ def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestrat
         device: Device identifier such as ``"cpu"`` or ``"cuda"``.
         seed: Optional random seed for reproducible policy initialization.
         experiment_log_dir: Optional path to write TensorBoard experiment events.
+        table_xml_path: Optional workbench MJCF included in training scenes.
+        grasp_file: Optional archive of simulation-validated object-frame
+            candidates used to initialize each episode at a candidate-consistent
+            pregrasp configuration.
+        grasp_index: Candidate index selected from ``grasp_file``.
         n_steps: PPO rollout length per environment per update.
         batch_size: PPO minibatch size.
         n_epochs: Number of PPO optimization epochs per update.
@@ -101,7 +170,10 @@ def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestrat
     n_steps = int(options.pop("n_steps", N_STEPS))
     batch_size = int(options.pop("batch_size", BATCH_SIZE))
     n_epochs = int(options.pop("n_epochs", N_EPOCHS))
+    log_std_init = float(options.pop("log_std_init", LOG_STD_INIT))
+    entropy_coefficient = float(options.pop("entropy_coefficient", ENTROPY_COEFFICIENT))
     policy_num_layers = int(options.pop("policy_num_layers", POLICY_NUM_LAYERS))
+    pregrasp_distance = float(options.pop("pregrasp_distance", PREGRASP_DISTANCE))
     if options:
         unexpected = ", ".join(sorted(options))
         msg = f"Unexpected RL training options: {unexpected}"
@@ -119,6 +191,7 @@ def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestrat
         ("batch_size", batch_size),
         ("n_epochs", n_epochs),
         ("policy_num_layers", policy_num_layers),
+        ("pregrasp_distance", pregrasp_distance),
     ):
         if value <= 0:
             msg = f"{name} must be positive"
@@ -126,6 +199,10 @@ def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestrat
     if not 0.0 <= gamma <= 1.0:
         msg = "gamma must be in [0, 1]"
         raise ValueError(msg)
+    if not np.isfinite(log_std_init):
+        raise ValueError("log_std_init must be finite")
+    if entropy_coefficient < 0.0 or not np.isfinite(entropy_coefficient):
+        raise ValueError("entropy_coefficient must be finite and non-negative")
     if len(object_ids) > 1:
         msg = (
             "object_ids must contain at most one object; the environment tracks a single object body during RL training"
@@ -140,9 +217,26 @@ def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestrat
         object_dir = resolve_ycb_object_directory(ycb_root, object_ids[0])
         object_xml_path = find_ycb_mjcf(object_dir)
         object_name = object_ids[0]
-        env_xml_path = build_scene_xml(robot_xml_path, object_xml_path, None, object_name)
+        env_xml_path = build_scene_xml(robot_xml_path, object_xml_path, table_xml_path, object_name)
 
-    env = mujoco_env.MuJoCoGraspingEnv(env_xml_path, object_name=object_name)
+    env = mujoco_env.MuJoCoGraspingEnv(
+        env_xml_path,
+        object_name=object_name,
+        place_object_on_table=table_xml_path is not None,
+        control_mode=mujoco_env.CONTROL_MODE,
+        task_observations=True,
+    )
+    if grasp_file is not None:
+        if object_name is None:
+            raise ValueError("grasp_file requires exactly one object_id")
+        configure_grasp_conditioned_reset(
+            env,
+            robot_xml_path,
+            object_name,
+            grasp_file,
+            grasp_index,
+            pregrasp_distance,
+        )
 
     obs_shape = env.observation_space.shape
     act_shape = env.action_space.shape
@@ -164,6 +258,7 @@ def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestrat
     policy_kwargs = {
         "net_arch": build_sb3_net_arch(hidden_dim, policy_num_layers),
         "activation_fn": torch.nn.Tanh,
+        "log_std_init": log_std_init,
     }
 
     sb3_model = PPO(
@@ -174,6 +269,7 @@ def run_rl_training_pipeline(  # noqa: PLR0915  # end-to-end pipeline orchestrat
         batch_size=batch_size,
         n_epochs=n_epochs,
         gamma=gamma,
+        ent_coef=entropy_coefficient,
         device=device,
         seed=seed,
         policy_kwargs=policy_kwargs,

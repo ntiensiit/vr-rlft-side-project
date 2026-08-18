@@ -13,6 +13,7 @@ from grasping_ai.config.flattened_yaml_config import (
     FLATTENED_YAML_CONFIG,
 )
 from grasping_ai.perception.geometry import make_transform
+from grasping_ai.robotics.gripper import panda_fingertip_object_contacts
 from grasping_ai.utils.path_validation import require_path
 
 if TYPE_CHECKING:
@@ -23,11 +24,25 @@ REWARD_CLIP_MAX = float(FLATTENED_YAML_CONFIG.get("rl.reward.clip_max", 10.0))
 ACTION_COST_WEIGHT = float(FLATTENED_YAML_CONFIG.get("rl.reward.action_cost_weight", 0.01))
 SURVIVAL_BONUS = float(FLATTENED_YAML_CONFIG.get("rl.reward.survival_bonus", 1.0))
 CONTACT_REWARD = float(FLATTENED_YAML_CONFIG.get("rl.reward.contact_reward", 0.0))
+BILATERAL_CONTACT_REWARD = float(FLATTENED_YAML_CONFIG.get("rl.reward.bilateral_contact_reward", 0.0))
+BILATERAL_HOLD_REWARD = float(FLATTENED_YAML_CONFIG.get("rl.reward.bilateral_hold_reward", 0.0))
+CONTACT_LOSS_PENALTY = float(FLATTENED_YAML_CONFIG.get("rl.reward.contact_loss_penalty", 0.0))
+DISTANCE_PROGRESS_WEIGHT = float(FLATTENED_YAML_CONFIG.get("rl.reward.distance_progress_weight", 0.0))
+FINGERTIP_PROGRESS_WEIGHT = float(FLATTENED_YAML_CONFIG.get("rl.reward.fingertip_progress_weight", 0.0))
 LIFT_REWARD_WEIGHT = float(FLATTENED_YAML_CONFIG.get("rl.reward.lift_reward_weight", 0.0))
 GRASP_SUCCESS_BONUS = float(FLATTENED_YAML_CONFIG.get("rl.reward.grasp_success_bonus", 0.0))
 LIFT_HEIGHT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("rl.reward.lift_height_threshold", 0.05))
 DROP_HEIGHT_THRESHOLD = float(FLATTENED_YAML_CONFIG.get("rl.reward.drop_height_threshold", 0.1))
 TERMINATE_ON_NON_FINITE = bool(FLATTENED_YAML_CONFIG.get("rl.reward.terminate_on_non_finite", True))
+MAX_EPISODE_STEPS = int(FLATTENED_YAML_CONFIG.get("rl.max_episode_steps", 250))
+CONTROL_MODE = str(FLATTENED_YAML_CONFIG.get("rl.control.mode", "normalized_delta"))
+ARM_DELTA_SCALE = float(FLATTENED_YAML_CONFIG.get("rl.control.arm_delta_scale", 0.025))
+GRIPPER_DELTA_SCALE = float(FLATTENED_YAML_CONFIG.get("rl.control.gripper_delta_scale", 25.5))
+PANDA_ARM_DOF = 7
+PANDA_QPOS_SIZE = 9
+PANDA_FINGER_MAX = 0.04
+PANDA_GRIPPER_CTRL_MAX = 255.0
+TASK_OBSERVATION_SIZE = 8
 
 SimulationStep = Callable[[float], None]
 ContactReporter = Callable[[], list[dict[str, np.ndarray]]]
@@ -283,6 +298,10 @@ class MuJoCoGraspingEnv(gym.Env):
         self,
         robot_xml_path: Path,
         object_name: str | None = None,
+        *,
+        place_object_on_table: bool = False,
+        control_mode: str = "direct",
+        task_observations: bool = False,
     ) -> None:
         """Initialize the environment from a robot MJCF file.
 
@@ -290,6 +309,16 @@ class MuJoCoGraspingEnv(gym.Env):
             robot_xml_path: Path to the robot MJCF XML description.
             object_name: Optional name of the object body to track for
                 contact, lift, and drop rewards.
+            place_object_on_table: Place a free object on the ``table_top``
+                support at every reset. This preserves physical dynamics while
+                preventing episodes from beginning with a floating object.
+            control_mode: ``"direct"`` writes actions as raw actuator
+                controls. ``"normalized_delta"`` interprets actions in
+                ``[-1, 1]`` as incremental position commands, where zero
+                holds the current robot pose.
+            task_observations: Append grasp-relevant geometric features to
+                raw MuJoCo state: hand-to-object translation, left/right
+                fingertip distances, and object height gain.
 
         Raises:
             FileNotFoundError: If the robot XML file does not exist.
@@ -302,8 +331,22 @@ class MuJoCoGraspingEnv(gym.Env):
             msg = "object_name must be a string or None"
             raise TypeError(msg)
         self._object_name = object_name
+        self._place_object_on_table = place_object_on_table
+        if control_mode not in {"direct", "normalized_delta"}:
+            raise ValueError("control_mode must be 'direct' or 'normalized_delta'")
+        self._control_mode = control_mode
+        self._task_observations = task_observations
+        self._control_target: np.ndarray | None = None
         self._initial_object_height: float | None = None
+        self._previous_object_height: float | None = None
+        self._previous_hand_object_distance: float | None = None
+        self._previous_fingertip_object_distance: float | None = None
+        self._reset_robot_qpos: np.ndarray | None = None
         self._grasp_success_granted = False
+        self._had_object_contact = False
+        self._had_bilateral_contact = False
+        self._contact_loss_penalized = False
+        self._elapsed_steps = 0
 
         model_handle = load_mujoco_model(robot_xml_path)
         self._state, self._step_fn, self._contacts_fn = create_simulation(model_handle)
@@ -319,7 +362,7 @@ class MuJoCoGraspingEnv(gym.Env):
             msg = "MuJoCo model has zero actuators; the RL environment requires a non-empty action space"
             raise ValueError(msg)
 
-        obs_size = nq + nv
+        obs_size = nq + nv + (TASK_OBSERVATION_SIZE if task_observations else 0)
         space_dtype = FLATTENED_YAML_CONFIG.numpy_dtype()
         self.observation_space = gym.spaces.Box(
             low=-np.inf,
@@ -330,7 +373,7 @@ class MuJoCoGraspingEnv(gym.Env):
 
         act_low = np.full(nu, -1.0, dtype=space_dtype)
         act_high = np.full(nu, 1.0, dtype=space_dtype)
-        if hasattr(mj_model, "actuator_ctrlrange"):
+        if control_mode == "direct" and hasattr(mj_model, "actuator_ctrlrange"):
             ctrl_range = np.array(mj_model.actuator_ctrlrange, copy=True)
             if ctrl_range.shape == (nu, 2):
                 for i in range(nu):
@@ -365,13 +408,114 @@ class MuJoCoGraspingEnv(gym.Env):
         super().reset(seed=seed, options=options)
         reset_simulation(self._state)
         self._grasp_success_granted = False
+        self._had_object_contact = False
+        self._had_bilateral_contact = False
+        self._contact_loss_penalized = False
+        self._elapsed_steps = 0
+        if self._object_name is not None and self._place_object_on_table:
+            # Imported lazily because scene composition imports this module.
+            from grasping_ai.simulation.scene import place_freejoint_body_on_surface  # noqa: PLC0415
+
+            state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
+            place_freejoint_body_on_surface(state_dict["model"], state_dict["data"], self._object_name)
+        if self._reset_robot_qpos is not None:
+            self.set_robot_configuration(self._reset_robot_qpos)
+        self._initialize_control_target()
         if self._object_name is not None:
             self._initial_object_height = self._get_object_height()
+            self._previous_object_height = self._initial_object_height
+            self._previous_hand_object_distance = self._hand_object_distance()
+            self._previous_fingertip_object_distance = self._max_fingertip_object_distance()
         else:
             self._initial_object_height = None
+            self._previous_object_height = None
+            self._previous_hand_object_distance = None
+            self._previous_fingertip_object_distance = None
         return self._get_observation(), {}
 
-    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    def set_reset_robot_configuration(self, joint_positions: np.ndarray) -> None:
+        """Configure robot qpos restored at the beginning of every episode.
+
+        Only the robot prefix is stored. Object freejoint coordinates remain
+        under MuJoCo's reset and contact dynamics, rather than being copied
+        from a grasp candidate or artificially moved with the robot.
+        """
+        joint_positions = np.asarray(joint_positions, dtype=np.float64)
+        state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
+        mj_model: Any = state_dict["model"]
+        if joint_positions.ndim != 1 or joint_positions.size == 0 or joint_positions.size > mj_model.nq:
+            msg = f"joint_positions must have shape (N,) for 1 <= N <= {mj_model.nq}"
+            raise ValueError(msg)
+        if not np.isfinite(joint_positions).all():
+            raise ValueError("joint_positions must be finite")
+        self._reset_robot_qpos = np.array(joint_positions, copy=True)
+
+    def set_robot_configuration(self, joint_positions: np.ndarray) -> np.ndarray:
+        """Set only the robot prefix of ``qpos`` without moving a free object.
+
+        This supports pose-conditioned execution experiments.  In particular,
+        the object freejoint remains owned by MuJoCo and is never teleported
+        to manufacture a grasp.
+        """
+        joint_positions = np.asarray(joint_positions, dtype=np.float64)
+        state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
+        mj_model: Any = state_dict["model"]
+        mj_data: Any = state_dict["data"]
+        if joint_positions.ndim != 1 or joint_positions.size == 0 or joint_positions.size > mj_model.nq:
+            msg = f"joint_positions must have shape (N,) for 1 <= N <= {mj_model.nq}"
+            raise ValueError(msg)
+        if not np.isfinite(joint_positions).all():
+            raise ValueError("joint_positions must be finite")
+        mj_data.qpos[: joint_positions.size] = joint_positions
+        mj_data.qvel[:] = 0.0
+        mujoco.mj_forward(mj_model, mj_data)
+        self._initialize_control_target()
+        return self._get_observation()
+
+    def _initialize_control_target(self) -> None:
+        """Initialize actuator targets from the current physical robot pose."""
+        if self._control_mode != "normalized_delta":
+            return
+        state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
+        model: Any = state_dict["model"]
+        data: Any = state_dict["data"]
+        target = np.zeros(model.nu, dtype=np.float64)
+        arm_count = min(PANDA_ARM_DOF, model.nu, data.qpos.size)
+        target[:arm_count] = data.qpos[:arm_count]
+        if model.nu > PANDA_ARM_DOF and data.qpos.size >= PANDA_QPOS_SIZE:
+            max_width = 2.0 * PANDA_FINGER_MAX
+            finger_width = float(np.clip(data.qpos[PANDA_ARM_DOF : PANDA_QPOS_SIZE].sum(), 0.0, max_width))
+            target[PANDA_ARM_DOF] = PANDA_GRIPPER_CTRL_MAX * finger_width / max_width
+        target = np.clip(target, model.actuator_ctrlrange[:, 0], model.actuator_ctrlrange[:, 1])
+        self._control_target = target
+        set_actuator_controls(self._state, target)
+
+    def _action_to_control(self, action: np.ndarray) -> np.ndarray:
+        """Convert a normalized incremental action into actuator targets."""
+        if self._control_mode == "direct":
+            return action
+        if self._control_target is None:
+            self._initialize_control_target()
+        if self._control_target is None:  # pragma: no cover - defensive invariant
+            raise RuntimeError("normalized control target was not initialized")
+        state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
+        model: Any = state_dict["model"]
+        delta = np.asarray(action, dtype=np.float64)
+        arm_count = min(PANDA_ARM_DOF, model.nu)
+        self._control_target[:arm_count] += ARM_DELTA_SCALE * delta[:arm_count]
+        if model.nu > PANDA_ARM_DOF:
+            self._control_target[PANDA_ARM_DOF] += GRIPPER_DELTA_SCALE * delta[PANDA_ARM_DOF]
+        self._control_target[:] = np.clip(
+            self._control_target,
+            model.actuator_ctrlrange[:, 0],
+            model.actuator_ctrlrange[:, 1],
+        )
+        return np.array(self._control_target, copy=True)
+
+    def step(  # noqa: C901, PLR0912, PLR0915
+        self,
+        action: np.ndarray,
+    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         """Advance the simulation by one step.
 
         Args:
@@ -402,13 +546,25 @@ class MuJoCoGraspingEnv(gym.Env):
             padded[: action.shape[0]] = action
             action = padded
 
-        set_actuator_controls(self._state, action)
+        normalized_action = (
+            np.clip(action, self.action_space.low, self.action_space.high)
+            if self._control_mode == "normalized_delta"
+            else action
+        )
+        control = self._action_to_control(normalized_action)
+        set_actuator_controls(self._state, control)
         mujoco.mj_step(mj_model, mj_data)
+        self._elapsed_steps += 1
 
         obs = self._get_observation()
 
-        reward = ACTION_COST_WEIGHT * -float(np.sum(action**2))
+        # Penalize policy motion, not absolute joint position targets.
+        reward = ACTION_COST_WEIGHT * -float(np.sum(normalized_action**2))
         terminated = bool(TERMINATE_ON_NON_FINITE and not np.isfinite(obs).all())
+        contact_count = 0
+        bilateral_contact = False
+        current_height = None
+        height_gain = 0.0
 
         if np.isfinite(obs).all():
             reward += SURVIVAL_BONUS
@@ -416,24 +572,65 @@ class MuJoCoGraspingEnv(gym.Env):
                 current_height = self._get_object_height()
                 height_gain = current_height - self._initial_object_height
 
-                if self._has_object_contact():
+                contact_count, bilateral_contact = self._fingertip_object_contacts()
+                has_object_contact = self._has_object_contact()
+                if has_object_contact and not self._had_object_contact:
                     reward += CONTACT_REWARD
-                if LIFT_REWARD_WEIGHT > 0.0 and height_gain > 0.0:
-                    reward += LIFT_REWARD_WEIGHT * height_gain
+                    self._had_object_contact = True
+                if bilateral_contact and not self._had_bilateral_contact:
+                    reward += BILATERAL_CONTACT_REWARD
+                    self._had_bilateral_contact = True
+                elif bilateral_contact:
+                    reward += BILATERAL_HOLD_REWARD
+                elif self._had_bilateral_contact and not self._contact_loss_penalized:
+                    reward -= CONTACT_LOSS_PENALTY
+                    self._contact_loss_penalized = True
+                distance = self._hand_object_distance()
+                if self._previous_hand_object_distance is not None:
+                    reward += DISTANCE_PROGRESS_WEIGHT * (self._previous_hand_object_distance - distance)
+                self._previous_hand_object_distance = distance
+                fingertip_distance = self._max_fingertip_object_distance()
+                if self._previous_fingertip_object_distance is not None:
+                    reward += FINGERTIP_PROGRESS_WEIGHT * (
+                        self._previous_fingertip_object_distance - fingertip_distance
+                    )
+                self._previous_fingertip_object_distance = fingertip_distance
+                # Reward signed *progress*, not the absolute height gain on
+                # every step. Paying absolute gain makes hovering immediately
+                # below the success threshold more profitable than completing
+                # the task and terminating the episode.
+                height_progress = 0.0
+                if self._previous_object_height is not None:
+                    height_progress = current_height - self._previous_object_height
+                self._previous_object_height = current_height
+                # Height alone is not a grasp. The object can rise by bouncing
+                # or being pushed, so lift progress only counts under a valid
+                # bilateral fingertip grasp.
+                if bilateral_contact and LIFT_REWARD_WEIGHT > 0.0:
+                    reward += LIFT_REWARD_WEIGHT * height_progress
                 if (
+                    bilateral_contact
+                    and
                     GRASP_SUCCESS_BONUS > 0.0
                     and not self._grasp_success_granted
                     and height_gain > LIFT_HEIGHT_THRESHOLD
                 ):
                     reward += GRASP_SUCCESS_BONUS
                     self._grasp_success_granted = True
+                    terminated = True
                 if height_gain < -DROP_HEIGHT_THRESHOLD:
                     terminated = True
 
         reward = float(np.clip(reward, REWARD_CLIP_MIN, REWARD_CLIP_MAX))
-        truncated = False
+        truncated = self._elapsed_steps >= MAX_EPISODE_STEPS
 
-        return obs, reward, terminated, truncated, {}
+        return obs, reward, terminated, truncated, {
+            "fingertip_contact_count": int(contact_count),
+            "bilateral_contact": bool(bilateral_contact),
+            "object_height": None if current_height is None else float(current_height),
+            "height_gain": float(height_gain),
+            "actuator_control": np.array(control, copy=True),
+        }
 
     def _get_object_height(self) -> float:
         """Read the current height of the tracked object body.
@@ -445,13 +642,66 @@ class MuJoCoGraspingEnv(gym.Env):
         return float(pose[2, 3])
 
     def _has_object_contact(self) -> bool:
-        """Report whether the tracked object is currently in contact.
+        """Report whether a Panda fingertip touches the tracked object.
 
         Returns:
-            ``True`` if any contact report involves the object body.
+            ``True`` only for gripper-object contact. Object-table support
+            contact intentionally does not count as grasp progress.
         """
-        reports = self._contacts_fn()
-        return any(self._object_name in set(contact["body_names"]) for contact in reports)
+        contact_count, _bilateral = self._fingertip_object_contacts()
+        return contact_count > 0.0
+
+    def _fingertip_object_contacts(self) -> tuple[float, bool]:
+        """Return opposed Panda fingertip contact state for the tracked object."""
+        if self._object_name is None:
+            return 0.0, False
+        state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
+        return panda_fingertip_object_contacts(state_dict["model"], state_dict["data"], self._object_name)
+
+    def _hand_object_distance(self) -> float:
+        """Return the world-frame distance from Panda hand to object center."""
+        if self._object_name is None:
+            return 0.0
+        hand_pose = read_body_pose(self._state, "hand")
+        object_pose = read_body_pose(self._state, self._object_name)
+        return float(np.linalg.norm(hand_pose[:3, 3] - object_pose[:3, 3]))
+
+    def _fingertip_object_distances(self) -> tuple[float, float]:
+        """Return center distances from each Panda finger to the object."""
+        if self._object_name is None:
+            return 0.0, 0.0
+        object_position = read_body_pose(self._state, self._object_name)[:3, 3]
+        left_position = read_body_pose(self._state, "left_finger")[:3, 3]
+        right_position = read_body_pose(self._state, "right_finger")[:3, 3]
+        return (
+            float(np.linalg.norm(left_position - object_position)),
+            float(np.linalg.norm(right_position - object_position)),
+        )
+
+    def _max_fingertip_object_distance(self) -> float:
+        """Return the worse of the two finger-to-object distances."""
+        return max(self._fingertip_object_distances())
+
+    def _task_observation(self) -> np.ndarray:
+        """Build compact geometric features for candidate-conditioned RL."""
+        if self._object_name is None:
+            return np.zeros(TASK_OBSERVATION_SIZE, dtype=np.float32)
+        hand_position = read_body_pose(self._state, "hand")[:3, 3]
+        object_position = read_body_pose(self._state, self._object_name)[:3, 3]
+        left_distance, right_distance = self._fingertip_object_distances()
+        contact_count, bilateral_contact = self._fingertip_object_contacts()
+        height_gain = 0.0 if self._initial_object_height is None else object_position[2] - self._initial_object_height
+        return np.asarray(
+            [
+                *(object_position - hand_position),
+                left_distance,
+                right_distance,
+                height_gain,
+                contact_count,
+                float(bilateral_contact),
+            ],
+            dtype=np.float32,
+        )
 
     def _get_observation(self) -> np.ndarray:
         """Read and concatenate qpos and qvel into a float32 observation.
@@ -463,4 +713,7 @@ class MuJoCoGraspingEnv(gym.Env):
         mj_data: Any = state_dict["data"]
         qpos = np.array(mj_data.qpos, copy=True)
         qvel = np.array(mj_data.qvel, copy=True)
-        return np.concatenate([qpos, qvel]).astype(np.float32)
+        observation = np.concatenate([qpos, qvel]).astype(np.float32)
+        if self._task_observations:
+            observation = np.concatenate([observation, self._task_observation()])
+        return observation

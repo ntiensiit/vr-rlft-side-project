@@ -253,10 +253,19 @@ def write_jsonl_records(
     """
     require_path(output_path, "output_path")
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def json_default(value: object) -> object:
+        """Convert NumPy report values to JSON-native containers/scalars."""
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, np.generic):
+            return value.item()
+        raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+
     try:
         with output_path.open(mode, encoding="utf-8") as fp:
             for record in records:
-                fp.write(json.dumps(record, allow_nan=True))
+                fp.write(json.dumps(record, allow_nan=True, default=json_default))
                 fp.write("\n")
     except Exception as e:
         msg = f"Failed to write JSONL records: {e}"

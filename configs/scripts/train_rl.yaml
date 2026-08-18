@@ -5,6 +5,10 @@ defaults:
 
 script:
   robot_xml: ${robot.description}
+  table_xml: ${table_xml}
+  grasp_file: null
+  grasp_index: 0
+  pregrasp_distance: ${rl.pregrasp_distance}
   ycb_root: ${paths.ycb_mjcf}
   object_ids: ${objects.ids}
   policy_checkpoint: ${rl.checkpoint}
@@ -19,4 +23,6 @@ script:
   n_steps: ${rl.n_steps}
   batch_size: ${rl.batch_size}
   n_epochs: ${rl.n_epochs}
+  log_std_init: ${rl.log_std_init}
+  entropy_coefficient: ${rl.entropy_coefficient}
   policy_num_layers: ${rl.policy_num_layers}

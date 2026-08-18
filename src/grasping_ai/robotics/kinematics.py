@@ -10,8 +10,8 @@ import mujoco  # type: ignore[import-untyped]
 import numpy as np
 import pytransform3d.rotations as pr
 import pytransform3d.transformations as pt
-from scipy.optimize import least_squares
 from loguru import logger
+from scipy.optimize import least_squares
 
 from grasping_ai.config.flattened_yaml_config import FLATTENED_YAML_CONFIG
 from grasping_ai.perception.geometry import make_transform
@@ -216,7 +216,7 @@ def _clamp_joint_limits(q: np.ndarray, model: mujoco.MjModel) -> None:
             q[qadr] = np.clip(q[qadr], model.jnt_range[j, 0], model.jnt_range[j, 1])
 
 
-def build_inverse_kinematics(
+def build_inverse_kinematics(  # noqa: C901, PLR0915
     robot_model: dict[str, object],
     max_iterations: int,
     tolerance: float,
@@ -266,6 +266,11 @@ def build_inverse_kinematics(
         _validate_ik_inputs(target_pose, initial_joints, model)
 
         q = np.copy(initial_joints)
+        # MuJoCo's reset qpos can contain a neutral value outside a limited
+        # finger joint's declared range. Clamp before both the iterative solve
+        # and SciPy's bounded fallback; otherwise a valid Cartesian target is
+        # rejected before IK evaluates it.
+        _clamp_joint_limits(q, model)
         damping = IK_DAMPING
 
         for _ in range(max_iterations):
@@ -304,19 +309,20 @@ def build_inverse_kinematics(
                 mujoco.mj_forward(model, local_data)
                 return _se3_pose_error(target_pose, _ee_pose(local_data, body_id))
 
-            results = []
-            for seed in (q, initial_joints):
-                results.append(
-                    least_squares(
-                        residual,
-                        seed,
-                        bounds=(lower, upper),
-                        max_nfev=max(500, max_iterations * 10),
-                        xtol=tolerance * 0.1,
-                        ftol=tolerance * 0.1,
-                        gtol=tolerance * 0.1,
-                    ),
+            bounded_initial = np.copy(initial_joints)
+            _clamp_joint_limits(bounded_initial, model)
+            results = [
+                least_squares(
+                    residual,
+                    seed,
+                    bounds=(lower, upper),
+                    max_nfev=max(500, max_iterations * 10),
+                    xtol=tolerance * 0.1,
+                    ftol=tolerance * 0.1,
+                    gtol=tolerance * 0.1,
                 )
+                for seed in (q, bounded_initial)
+            ]
             result = min(results, key=lambda candidate: float(np.linalg.norm(candidate.fun)))
             q = np.asarray(result.x, dtype=np.float64)
             local_data.qpos[:] = q

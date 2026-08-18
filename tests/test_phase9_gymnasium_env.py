@@ -196,12 +196,13 @@ def test_env_step_padding_truncation(panda_robot_xml: Path) -> None:
         raise AssertionError
 
 
-def test_default_reward_preserves_legacy_behavior(panda_robot_xml: Path) -> None:
-    """Verify that the default reward computation matches legacy scaling (action cost + survival bonus)."""
+def test_default_reward_uses_configured_action_cost_and_survival_bonus(panda_robot_xml: Path) -> None:
+    """Verify configured action cost and survival terms without hard-coded legacy reward values."""
     env = MuJoCoGraspingEnv(panda_robot_xml)
     env.reset(seed=42)
     _obs, reward, terminated, truncated, _info = env.step(np.array([0.5], dtype=np.float32))
-    if not (reward == pytest.approx(-0.01 * 0.25 + 1.0)):
+    expected = mujoco_env_module.SURVIVAL_BONUS - mujoco_env_module.ACTION_COST_WEIGHT * 0.25
+    if not (reward == pytest.approx(expected)):
         raise AssertionError
     if terminated is not False:
         raise AssertionError
@@ -210,14 +211,23 @@ def test_default_reward_preserves_legacy_behavior(panda_robot_xml: Path) -> None
 
 
 def test_contact_reward_term(scene_xml: Path) -> None:
-    """Verify that the reward correctly adds contact bonuses when tracked objects are touched."""
+    """Verify that contact bonuses are granted once on contact acquisition."""
     env = MuJoCoGraspingEnv(scene_xml, object_name="object")
     env.reset(seed=42)
     env._has_object_contact = lambda: True  # type: ignore[method-assign]  # noqa: SLF001  # stub internal contact probe
+    env._fingertip_object_contacts = lambda: (0, False)  # type: ignore[method-assign]  # noqa: SLF001
+    env._hand_object_distance = lambda: 0.0  # type: ignore[method-assign]  # noqa: SLF001
+    env._previous_hand_object_distance = 0.0  # noqa: SLF001
+    env._max_fingertip_object_distance = lambda: 0.0  # type: ignore[method-assign]  # noqa: SLF001
+    env._previous_fingertip_object_distance = 0.0  # noqa: SLF001
+    env._get_object_height = lambda: env._initial_object_height  # type: ignore[method-assign]  # noqa: SLF001
     _obs, reward, terminated, _truncated, _info = env.step(np.array([0.0], dtype=np.float32))
     if not (reward == pytest.approx(mujoco_env_module.SURVIVAL_BONUS + mujoco_env_module.CONTACT_REWARD)):
         raise AssertionError
     if terminated is not False:
+        raise AssertionError
+    _obs, held_reward, _terminated, _truncated, _info = env.step(np.array([0.0], dtype=np.float32))
+    if not (held_reward == pytest.approx(mujoco_env_module.SURVIVAL_BONUS)):
         raise AssertionError
 
 
@@ -230,24 +240,40 @@ def test_lift_and_grasp_success_rewards(scene_xml: Path) -> None:
     env.reset(seed=42)
     initial = env._initial_object_height  # noqa: SLF001  # read internal baseline height
     env._has_object_contact = lambda: False  # type: ignore[method-assign]  # noqa: SLF001  # isolate lift rewards
+    env._fingertip_object_contacts = lambda: (0.0, False)  # type: ignore[method-assign]  # noqa: SLF001
+    env._hand_object_distance = lambda: 0.0  # type: ignore[method-assign]  # noqa: SLF001
+    env._previous_hand_object_distance = 0.0  # noqa: SLF001
+    env._max_fingertip_object_distance = lambda: 0.0  # type: ignore[method-assign]  # noqa: SLF001
+    env._previous_fingertip_object_distance = 0.0  # noqa: SLF001
 
     env._get_object_height = lambda: initial + 0.03  # type: ignore[method-assign]  # noqa: SLF001  # stub internal height probe
     _obs, reward1, _term, _trunc, _info = env.step(np.array([0.0], dtype=np.float32))
-    if not (reward1 == pytest.approx(mujoco_env_module.SURVIVAL_BONUS + mujoco_env_module.LIFT_REWARD_WEIGHT * 0.03)):
+    if not (reward1 == pytest.approx(mujoco_env_module.SURVIVAL_BONUS)):
         raise AssertionError
 
+    env._fingertip_object_contacts = lambda: (2.0, True)  # type: ignore[method-assign]  # noqa: SLF001
     env._get_object_height = lambda: initial + 0.08  # type: ignore[method-assign]  # noqa: SLF001  # stub internal height probe
     _obs, reward2, _term, _trunc, _info = env.step(np.array([0.0], dtype=np.float32))
     expected_reward2 = (
         mujoco_env_module.SURVIVAL_BONUS
-        + mujoco_env_module.LIFT_REWARD_WEIGHT * 0.08
+        + mujoco_env_module.BILATERAL_CONTACT_REWARD
+        + mujoco_env_module.LIFT_REWARD_WEIGHT * 0.05
         + mujoco_env_module.GRASP_SUCCESS_BONUS
+    )
+    expected_reward2 = float(
+        np.clip(expected_reward2, mujoco_env_module.REWARD_CLIP_MIN, mujoco_env_module.REWARD_CLIP_MAX),
     )
     if not (reward2 == pytest.approx(expected_reward2)):
         raise AssertionError
 
     _obs, reward3, _term, _trunc, _info = env.step(np.array([0.0], dtype=np.float32))
-    if not (reward3 == pytest.approx(mujoco_env_module.SURVIVAL_BONUS + mujoco_env_module.LIFT_REWARD_WEIGHT * 0.08)):
+    if not (
+        reward3
+        == pytest.approx(
+            mujoco_env_module.SURVIVAL_BONUS
+            + mujoco_env_module.BILATERAL_HOLD_REWARD,
+        )
+    ):
         raise AssertionError
 
 
@@ -302,6 +328,42 @@ def test_env_step_routes_through_shared_command_path(panda_robot_xml: Path, monk
     expected = np.zeros(8, dtype=np.float32)
     expected[0] = 0.5
     if not (np.allclose(calls[0], expected)):
+        raise AssertionError
+
+
+def test_normalized_delta_control_holds_pose_and_scales_commands(panda_robot_xml: Path) -> None:
+    """Verify zero holds the current pose and normalized actions increment actuator targets."""
+    env = MuJoCoGraspingEnv(panda_robot_xml, control_mode="normalized_delta")
+    env.reset(seed=42)
+    initial_target = np.array(env._control_target, copy=True)  # noqa: SLF001
+
+    if not np.allclose(env.action_space.low, -1.0) or not np.allclose(env.action_space.high, 1.0):
+        raise AssertionError
+
+    _obs, _reward, _terminated, _truncated, info = env.step(np.zeros(8, dtype=np.float32))
+    if not np.allclose(info["actuator_control"], initial_target):
+        raise AssertionError
+
+    action = np.zeros(8, dtype=np.float32)
+    action[0] = 1.0
+    action[7] = -1.0
+    _obs, _reward, _terminated, _truncated, info = env.step(action)
+    expected = np.array(initial_target, copy=True)
+    expected[0] += mujoco_env_module.ARM_DELTA_SCALE
+    expected[7] -= mujoco_env_module.GRIPPER_DELTA_SCALE
+    ctrl_range = env._state["model"].actuator_ctrlrange  # noqa: SLF001
+    expected = np.clip(expected, ctrl_range[:, 0], ctrl_range[:, 1])
+    if not np.allclose(info["actuator_control"], expected):
+        raise AssertionError
+
+
+def test_task_observations_append_grasp_geometry(scene_xml: Path) -> None:
+    """Verify task observations expose finite hand/finger/object geometry."""
+    env = MuJoCoGraspingEnv(scene_xml, object_name="object", task_observations=True)
+    obs, _info = env.reset(seed=42)
+    if obs.shape != (39,):
+        raise AssertionError
+    if not np.isfinite(obs[-mujoco_env_module.TASK_OBSERVATION_SIZE :]).all():
         raise AssertionError
 
 
