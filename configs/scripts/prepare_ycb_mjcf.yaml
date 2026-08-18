@@ -6,3 +6,6 @@ defaults:
 script:
   ycb_root: ${paths.ycb_root}
   ycb_mjcf: ${paths.ycb_mjcf}
+  # Keep asset conversion scoped to the curated, physically supported set.
+  # Override this field explicitly for an intentional one-object run.
+  object_ids: ${objects.ids}

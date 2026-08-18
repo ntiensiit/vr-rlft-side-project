@@ -28,13 +28,25 @@ def make_observations(  # noqa: PLR0913, PLR0917  # CLI helper; scripts call it 
     *,
     object_ids: list[str] | None = None,
 ) -> None:
-    """Sample selected or all per-object point clouds and a gripper cloud."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    """Sample selected or all per-object point clouds and a gripper cloud.
+
+    ``None`` retains the library helper's all-object behavior.  Project CLI
+    configuration supplies the curated object list explicitly.
+    """
+    if object_ids is not None and not object_ids:
+        raise ValueError("object_ids must not be empty when explicitly provided")
+
     rng = np.random.default_rng(seed)
     object_clouds: list[np.ndarray] = []
-    selected_object_ids = object_ids if object_ids else list_ycb_objects(ycb_root)
+    selected_object_ids = list(dict.fromkeys(object_ids)) if object_ids is not None else list_ycb_objects(ycb_root)
+
+    # Verify all selected meshes before touching output files, preventing a
+    # partially generated observation set if one configured object is absent.
+    mesh_paths = {object_id: resolve_ycb_object_id(ycb_root, object_id) for object_id in selected_object_ids}
+
+    output_dir.mkdir(parents=True, exist_ok=True)
     for object_id in selected_object_ids:
-        pts = sample_point_cloud_from_mesh(resolve_ycb_object_id(ycb_root, object_id), num_samples, rng)
+        pts = sample_point_cloud_from_mesh(mesh_paths[object_id], num_samples, rng)
         np.save(output_dir / f"{object_id}.npy", pts)
         object_clouds.append(pts)
 

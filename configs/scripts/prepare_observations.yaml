@@ -6,5 +6,7 @@ defaults:
 script:
   ycb_root: ${paths.ycb_root}
   observations_dir: ${paths.observations}
+  # Generate observations only for the curated object set by default.
+  object_ids: ${objects.ids}
   num_samples: ${observations.num_samples}
   seed: ${observations.seed}

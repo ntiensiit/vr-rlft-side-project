@@ -15,13 +15,26 @@ from grasping_ai.simulation.ycb import (
 )
 
 YCB_ROOT = Path(str(FLATTENED_YAML_CONFIG.get("script.ycb_root", "data/raw/ycb")))
-# Measured masses from the YCB Object and Model Set paper (Calli et al.).
-# Supplying these prevents MuJoCo from inferring mass with its 1000 kg/m^3
+# Measured masses from the YCB Object and Model Set table (Calli et al.).
+# Supplying them prevents MuJoCo from inferring mass from its 1000 kg/m^3
 # default mesh density (which makes the hollow cracker box weigh 2.17 kg).
+# Keep every curated ``objects.ids`` entry here: dynamics validation must not
+# silently use mesh volume as a proxy for a lightweight cup or cardboard box.
 YCB_MASSES_KG = {
     "003_cracker_box": 0.411,
     "004_sugar_box": 0.514,
+    "005_tomato_soup_can": 0.349,
     "006_mustard_bottle": 0.603,
+    "009_gelatin_box": 0.097,
+    "010_potted_meat_can": 0.370,
+    "036_wood_block": 0.729,
+    "065-a_cups": 0.020,
+    "065-b_cups": 0.020,
+    "065-c_cups": 0.020,
+    "065-d_cups": 0.020,
+    "065-g_cups": 0.020,
+    "065-i_cups": 0.020,
+    "077_rubiks_cube": 0.094,
 }
 
 if TYPE_CHECKING:
@@ -34,17 +47,29 @@ def convert_ycb_to_mjcf(
     *,
     object_ids: list[str] | None = None,
 ) -> list[Path]:
-    """Write MJCF wrappers for selected or all YCB meshes."""
+    """Write MJCF wrappers for selected or all YCB meshes.
+
+    ``None`` retains the library helper's all-object behavior.  CLI callers
+    supply the curated ``objects.ids`` list, so preparing project assets never
+    silently expands to every downloaded YCB object.
+    """
     if not ycb_root.is_dir():
         msg = f"YCB root directory '{ycb_root}' does not exist"
         raise FileNotFoundError(msg)
 
-    output_root.mkdir(parents=True, exist_ok=True)
+    if object_ids is not None and not object_ids:
+        raise ValueError("object_ids must not be empty when explicitly provided")
+
     generated: list[Path] = []
-    selected_object_ids = object_ids if object_ids else list_ycb_objects(ycb_root)
+    selected_object_ids = list(dict.fromkeys(object_ids)) if object_ids is not None else list_ycb_objects(ycb_root)
+
+    # Resolve every mesh before writing anything.  A typo or a missing raw
+    # asset must fail as one transaction rather than leave a partial MJCF set.
+    selected_meshes = {object_id: find_ycb_mesh_file(ycb_root / object_id) for object_id in selected_object_ids}
+
+    output_root.mkdir(parents=True, exist_ok=True)
     for object_id in selected_object_ids:
-        object_dir = ycb_root / object_id
-        mesh = find_ycb_mesh_file(object_dir)
+        mesh = selected_meshes[object_id]
         object_out_dir = output_root / object_id
         object_out_dir.mkdir(parents=True, exist_ok=True)
         wrapper_path = object_out_dir / "object.xml"
@@ -66,6 +91,7 @@ def convert_ycb_to_mjcf(
         generated.append(wrapper_path)
     return sorted(generated)
 
+
 @hydra.main(version_base=None, config_path=SCRIPTS_CONFIG_PATH, config_name="scripts/prepare_ycb_mjcf")
 def main(cfg: DictConfig) -> None:
     """Convert all YCB objects to MJCF wrappers and log the generated paths."""
@@ -84,6 +110,7 @@ def main(cfg: DictConfig) -> None:
     )
     for path in generated:
         logger.info("{}", path)
+
 
 if __name__ == "__main__":
     main()

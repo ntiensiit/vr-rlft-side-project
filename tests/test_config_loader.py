@@ -16,11 +16,12 @@ from grasping_ai.config.config import (
     hydra_cfg_to_dict,
 )
 from grasping_ai.config.flattened_yaml_config import FlattenedYAMLConfig
+from scripts.prepare_ycb_mjcf import YCB_MASSES_KG
 
 EXPECTED_FEATURE_DIM = 32
 EXPECTED_BATCH_SIZE = 2
 EXPECTED_LEARNING_RATE = 0.0003
-EXPECTED_OBSERVATION_DIM = 31
+EXPECTED_OBSERVATION_DIM = 39
 EXPECTED_FRICTION_COEFFICIENT = 0.5
 EXPECTED_MAX_LINEAR_VELOCITY = 0.05
 EXPECTED_RL_EPISODES = 5
@@ -28,6 +29,21 @@ EXPECTED_SEED_OVERRIDE = 100
 EXPECTED_SEED = 7
 EXPECTED_DEFAULT_SEED = 42
 EXPECTED_NUM_STEPS = 64
+EXPECTED_PROPER_OBJECT_IDS = [
+    "003_cracker_box",
+    "004_sugar_box",
+    "005_tomato_soup_can",
+    "009_gelatin_box",
+    "010_potted_meat_can",
+    "036_wood_block",
+    "065-a_cups",
+    "065-b_cups",
+    "065-c_cups",
+    "065-d_cups",
+    "065-g_cups",
+    "065-i_cups",
+    "077_rubiks_cube",
+]
 
 
 def test_compose_config_merges_layers() -> None:
@@ -96,15 +112,26 @@ def test_config_value_path_and_list_helpers() -> None:
     cfg = compose_config(Path("configs"))
     if not (config_value(cfg, "paths", "dataset_root", value_type=Path) == Path("data/processed")):
         raise AssertionError
-    if not (
-        config_value(cfg, "objects", "ids", value_type=list[str])
-        == [
-            "003_cracker_box",
-            "004_sugar_box",
-            "006_mustard_bottle",
-        ]
-    ):
+    if not (config_value(cfg, "objects", "ids", value_type=list[str]) == EXPECTED_PROPER_OBJECT_IDS):
         raise AssertionError
+
+
+@pytest.mark.parametrize(
+    "config_name",
+    ["scripts/prepare_ycb_mjcf", "scripts/prepare_observations"],
+)
+def test_proper_object_scripts_default_to_the_curated_object_list(config_name: str) -> None:
+    """Ensure asset and observation preparation do not expand to all YCB assets."""
+    cfg = compose_config(Path("configs"), config_name=config_name)
+    if config_value(cfg, "script", "object_ids", value_type=list[str]) != EXPECTED_PROPER_OBJECT_IDS:
+        raise AssertionError
+
+
+def test_proper_objects_have_explicit_physical_masses() -> None:
+    """Prevent curated simulated objects from falling back to mesh density."""
+    missing = set(EXPECTED_PROPER_OBJECT_IDS).difference(YCB_MASSES_KG)
+    if missing:
+        raise AssertionError(f"Missing YCB masses for curated objects: {sorted(missing)}")
 
 
 def test_compose_config_skips_missing_layers(tmp_path: Path) -> None:
