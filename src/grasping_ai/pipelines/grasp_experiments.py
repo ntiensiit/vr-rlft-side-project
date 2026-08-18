@@ -20,6 +20,8 @@ from grasping_ai.training.checkpoint_io import load_torch_checkpoint
 if TYPE_CHECKING:
     from pathlib import Path
 
+MIN_CONSECUTIVE_BILATERAL_CONTACT_STEPS = 2
+
 
 def _load_candidate(path: Path, object_id: str, index: int) -> np.ndarray:
     sample = load_grasp_sample(path)
@@ -29,7 +31,12 @@ def _load_candidate(path: Path, object_id: str, index: int) -> np.ndarray:
     if poses.ndim != 3 or poses.shape[1:] != (4, 4) or not 0 <= index < len(poses):  # noqa: PLR2004
         raise ValueError("invalid grasp candidate index or pose array")
     valid = sample.get("sim_validated")
-    if valid is not None and not bool(np.asarray(valid)[index]):
+    if valid is None:
+        raise ValueError("grasp archive is missing sim_validated metadata")
+    validation = np.asarray(valid, dtype=np.bool_)
+    if validation.shape != (len(poses),):
+        raise ValueError("sim_validated metadata does not match grasp candidate count")
+    if not bool(validation[index]):
         raise ValueError(f"candidate {index} is not simulation-validated")
     if sample.get("grasp_pose_format", "object") != "object":
         raise ValueError("comparison experiments require object-frame grasp poses")
@@ -51,13 +58,19 @@ def _world_grasp(env: MuJoCoGraspingEnv, object_id: str, object_grasp: np.ndarra
     return read_body_pose(env._state, object_id) @ object_grasp  # noqa: SLF001 - physical scene state is read-only
 
 
+def _has_sustained_bilateral_contact(max_consecutive_steps: int) -> bool:
+    """Return whether bilateral fingertip contact persisted beyond one physics step."""
+    return max_consecutive_steps >= MIN_CONSECUTIVE_BILATERAL_CONTACT_STEPS
+
+
 def _rollout(  # noqa: PLR0913, PLR0917
     env: MuJoCoGraspingEnv, runner: object, obs: np.ndarray, object_id: str, max_steps: int, lift_threshold: float,
 ) -> dict[str, object]:
     initial_height = float(read_body_pose(env._state, object_id)[2, 3])  # noqa: SLF001
     max_height = initial_height
     max_contact_count = 0.0
-    bilateral_steps = 0
+    consecutive_bilateral_steps = 0
+    max_consecutive_bilateral_steps = 0
     max_bilateral_height = initial_height
     physical_success = False
     success_step: int | None = None
@@ -69,10 +82,14 @@ def _rollout(  # noqa: PLR0913, PLR0917
         state = env._state  # noqa: SLF001
         count, bilateral = panda_fingertip_object_contacts(state["model"], state["data"], object_id)
         max_contact_count = max(max_contact_count, float(count))
-        bilateral_steps += int(bilateral)
+        consecutive_bilateral_steps = consecutive_bilateral_steps + 1 if bilateral else 0
+        max_consecutive_bilateral_steps = max(
+            max_consecutive_bilateral_steps,
+            consecutive_bilateral_steps,
+        )
         object_height = float(read_body_pose(state, object_id)[2, 3])
         max_height = max(max_height, object_height)
-        if bool(info["bilateral_contact"]):
+        if bilateral:
             max_bilateral_height = max(max_bilateral_height, object_height)
             if float(info["height_gain"]) >= lift_threshold:
                 physical_success = True
@@ -91,7 +108,8 @@ def _rollout(  # noqa: PLR0913, PLR0917
         "contact_count": max_contact_count,
         "final_contact_count": float(count),
         "bilateral_contact": bool(bilateral),
-        "contact_sustained": bilateral_steps > 0,
+        "max_consecutive_bilateral_contact_steps": max_consecutive_bilateral_steps,
+        "contact_sustained": _has_sustained_bilateral_contact(max_consecutive_bilateral_steps),
         "success_step": success_step,
         "episode_return": total_reward,
         "success": physical_success,
