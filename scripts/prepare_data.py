@@ -32,6 +32,7 @@ NEIGHBORHOOD_SIZE = int(FLATTENED_YAML_CONFIG.get("script.neighborhood_size", 30
 NUM_GRASPS = int(FLATTENED_YAML_CONFIG.get("script.num_grasps", 16))
 NUM_SAMPLES = int(FLATTENED_YAML_CONFIG.get("script.num_samples", 512))
 NUM_SIMULATION_STEPS = int(FLATTENED_YAML_CONFIG.get("script.num_simulation_steps", 500))
+MAX_WORKERS = int(FLATTENED_YAML_CONFIG.get("script.max_workers", 4))
 OVERSAMPLE_EXTRA = int(FLATTENED_YAML_CONFIG.get("script.oversample_extra", 256))
 OVERSAMPLE_FACTOR = int(FLATTENED_YAML_CONFIG.get("script.oversample_factor", 2))
 RELAXED_ANTIPODAL_DOT = float(FLATTENED_YAML_CONFIG.get("script.relaxed_antipodal_dot", 0.3))
@@ -59,11 +60,21 @@ def main(cfg: DictConfig) -> None:
     yaml_config = FlattenedYAMLConfig(cfg)
     mode = str(yaml_config.value("mode", "prepare", "mode", value_type=object, script_or=True, default="index"))
     dataset_root = yaml_config.value(
-        "dataset_root", "paths", "dataset_root", value_type=Path, script_or=True, default=DATASET_ROOT,
+        "dataset_root",
+        "paths",
+        "dataset_root",
+        value_type=Path,
+        script_or=True,
+        default=DATASET_ROOT,
     )
     output_dir = yaml_config.value("output_dir", "prepare", "output_dir", value_type=Path, script_or=True)
     output_index = yaml_config.value(
-        "output_index", "paths", "output_index", value_type=Path, script_or=True, required=True,
+        "output_index",
+        "paths",
+        "output_index",
+        value_type=Path,
+        script_or=True,
+        required=True,
     )
     target_dir = output_dir if output_dir is not None else dataset_root
 
@@ -96,17 +107,37 @@ def main(cfg: DictConfig) -> None:
             ycb_root=ycb_root,
             output_dir=target_dir,
             num_samples=yaml_config.value(
-                "num_samples", "synthetic", "num_samples", value_type=int, script_or=True, default=NUM_SAMPLES,
+                "num_samples",
+                "synthetic",
+                "num_samples",
+                value_type=int,
+                script_or=True,
+                default=NUM_SAMPLES,
             ),
             num_grasps=yaml_config.value(
-                "num_grasps", "synthetic", "num_grasps", value_type=int, script_or=True, default=NUM_GRASPS,
+                "num_grasps",
+                "synthetic",
+                "num_grasps",
+                value_type=int,
+                script_or=True,
+                default=NUM_GRASPS,
             ),
             gripper_width=yaml_config.value(
-                "gripper_width", "synthetic", "gripper_width", value_type=float, script_or=True, default=GRIPPER_WIDTH,
+                "gripper_width",
+                "synthetic",
+                "gripper_width",
+                value_type=float,
+                script_or=True,
+                default=GRIPPER_WIDTH,
             ),
             seed=yaml_config.value("seed", "synthetic", "seed", value_type=int, script_or=True, default=SEED),
             required_objects=yaml_config.value(
-                "object_ids", "objects", "ids", value_type=list[str], script_or=True, default=list(OBJECT_IDS),
+                "object_ids",
+                "objects",
+                "ids",
+                value_type=list[str],
+                script_or=True,
+                default=list(OBJECT_IDS),
             ),
             oversample_factor=yaml_config.value(
                 "oversample_factor",
@@ -133,7 +164,12 @@ def main(cfg: DictConfig) -> None:
                 default=NEIGHBORHOOD_SIZE,
             ),
             voxel_size=yaml_config.value(
-                "voxel_size", "synthetic", "voxel_size", value_type=float, script_or=True, default=VOXEL_SIZE,
+                "voxel_size",
+                "synthetic",
+                "voxel_size",
+                value_type=float,
+                script_or=True,
+                default=VOXEL_SIZE,
             ),
             strict_antipodal_dot=yaml_config.value(
                 "strict_antipodal_dot",
@@ -160,7 +196,12 @@ def main(cfg: DictConfig) -> None:
                 default=RELAXED_ANTIPODAL_DOT,
             ),
             allow_relaxed=yaml_config.value(
-                "allow_relaxed", "synthetic", "allow_relaxed", value_type=bool, script_or=True, default=ALLOW_RELAXED,
+                "allow_relaxed",
+                "synthetic",
+                "allow_relaxed",
+                value_type=bool,
+                script_or=True,
+                default=ALLOW_RELAXED,
             ),
             search_multiplier=yaml_config.value(
                 "search_multiplier",
@@ -219,11 +260,21 @@ def main(cfg: DictConfig) -> None:
                 default=COLLISION_CLEARANCE,
             ),
             sim_validate=yaml_config.value(
-                "sim_validate", "synthetic", "sim_validate", value_type=bool, script_or=True, default=SIM_VALIDATE,
+                "sim_validate",
+                "synthetic",
+                "sim_validate",
+                value_type=bool,
+                script_or=True,
+                default=SIM_VALIDATE,
             ),
             mjcf_root=yaml_config.value("mjcf_root", "paths", "ycb_mjcf", value_type=Path, script_or=True),
             robot_xml=yaml_config.value(
-                "robot_xml", "robot", "description", value_type=Path, script_or=True, default=ROBOT_XML_PATH,
+                "robot_xml",
+                "robot",
+                "description",
+                value_type=Path,
+                script_or=True,
+                default=ROBOT_XML_PATH,
             ),
             num_simulation_steps=yaml_config.value(
                 "num_simulation_steps",
@@ -232,6 +283,14 @@ def main(cfg: DictConfig) -> None:
                 value_type=int,
                 script_or=True,
                 default=NUM_SIMULATION_STEPS,
+            ),
+            max_workers=yaml_config.value(
+                "max_workers",
+                "synthetic",
+                "max_workers",
+                value_type=int,
+                script_or=True,
+                default=MAX_WORKERS,
             ),
             gripper_close_command=close_command,
             lift_height_threshold=yaml_config.value(
@@ -267,7 +326,11 @@ def main(cfg: DictConfig) -> None:
                 default=MAX_ANGULAR_VELOCITY,
             ),
             quality_report_path=yaml_config.value(
-                "quality_report", "prepare", "quality_report", value_type=Path, script_or=True,
+                "quality_report",
+                "prepare",
+                "quality_report",
+                value_type=Path,
+                script_or=True,
             ),
             sim_object_position=sim_object_position,
             sim_validate_require_lift=yaml_config.value(

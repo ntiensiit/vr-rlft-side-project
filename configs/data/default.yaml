@@ -44,6 +44,7 @@ synthetic:
   # 0.1 s pre-grasp + 0.5 s close + up to 1.0 s contact acquisition,
   # 0.2 s contact confirmation + 1.0 s lift + at least 1.2 s stability hold.
   num_simulation_steps: 2000
+  max_workers: 4
 geometry:
   point_cloud_ndim: 2
   spatial_dim: 3

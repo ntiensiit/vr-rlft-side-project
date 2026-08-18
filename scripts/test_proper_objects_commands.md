@@ -28,10 +28,14 @@ validation for every configured object.
 uv run python scripts/prepare_data.py `
   script.mode=synthetic `
   script.output_dir=data/processed `
-  script.quality_report=artifacts/reports/full_synthetic_quality.json `
-  script.num_grasps=8 `
-  script.candidate_multiplier=20 `
-  script.search_multiplier=500 `
+  script.max_workers=4 `
+  script.quality_report=artifacts/reports/full_synthetic_quality_large.json `
+  script.num_samples=1024 `
+  script.num_grasps=32 `
+  script.candidate_multiplier=10 `
+  script.search_multiplier=300 `
+  script.oversample_factor=4 `
+  script.oversample_extra=1024 `
   script.sim_validate=true `
   script.sim_validate_require_ik=true `
   script.sim_validate_require_lift=true `

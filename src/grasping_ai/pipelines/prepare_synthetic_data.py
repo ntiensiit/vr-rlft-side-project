@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TYPE_CHECKING, Any, cast
 
@@ -186,9 +187,7 @@ def sim_validation_passes(
     stable_ok = bool(outcome.get("stable", False)) if sim_validate_require_lift else True
     sustained_ok = bool(outcome.get("contact_sustained", False)) if sim_validate_require_lift else True
     collision_ok = (
-        bool(outcome.get("initial_robot_object_collision_free", False))
-        if sim_validate_require_lift
-        else True
+        bool(outcome.get("initial_robot_object_collision_free", False)) if sim_validate_require_lift else True
     )
     return ik_ok and contact_ok and lift_ok and stable_ok and sustained_ok and collision_ok and success_ok
 
@@ -206,9 +205,7 @@ def apply_sim_validation(  # noqa: PLR0913  # grouped configuration dictionaries
     sim_filtered: list[tuple[np.ndarray, float]] = []
     validation_by_pose: dict[bytes, Mapping[str, object]] = {}
     table_xml_path = (
-        simulation["table_xml"]
-        if simulation["table_xml"] is not None and simulation["table_xml"].is_file()
-        else None
+        simulation["table_xml"] if simulation["table_xml"] is not None and simulation["table_xml"].is_file() else None
     )
     object_to_world = shared["object_to_world"]
     if simulation["sim_validate"]:
@@ -477,8 +474,7 @@ def process_object_synthetic(
         ),
         "lift_height_gains": np.asarray(
             [
-                float(outcome.get("final_height", 0.0))
-                - float(outcome.get("initial_height", 0.0))
+                float(outcome.get("final_height", 0.0)) - float(outcome.get("initial_height", 0.0))
                 for outcome in kept_outcomes
             ],
             dtype=np.float32,
@@ -573,6 +569,47 @@ def _process_one_object(  # noqa: PLR0913, PLR0917  # grouped configuration dict
             failures.append(f"{name}: no grasps passed quality filters")
 
 
+async def _process_objects_concurrently(  # noqa: PLR0913, PLR0917
+    object_names: list[str],
+    shared: dict[str, Any],
+    sampling: dict[str, Any],
+    grasp: dict[str, Any],
+    simulation: dict[str, Any],
+    required_set: set[str],
+    seed: int,
+    max_workers: int,
+) -> tuple[list[dict[str, object]], list[str]]:
+    """Run per-object generation with bounded async/thread concurrency."""
+    semaphore = asyncio.Semaphore(max_workers)
+
+    async def run_one(index: int, name: str) -> tuple[list[dict[str, object]], list[str]]:
+        async with semaphore:
+            local_shared = {
+                **shared,
+                "rng": np.random.default_rng(np.random.SeedSequence([seed, index])),
+            }
+            quality_records: list[dict[str, object]] = []
+            failures: list[str] = []
+            await asyncio.to_thread(
+                _process_one_object,
+                name,
+                local_shared,
+                sampling,
+                grasp,
+                simulation,
+                required_set,
+                quality_records,
+                failures,
+            )
+            return quality_records, failures
+
+    results = await asyncio.gather(*(run_one(index, name) for index, name in enumerate(object_names)))
+    return (
+        [record for records, _ in results for record in records],
+        [failure for _, failures in results for failure in failures],
+    )
+
+
 def generate_synthetic_dataset(  # noqa: PLR0913  # preserve legacy keyword compatibility
     ycb_root: Path,
     output_dir: Path,
@@ -585,6 +622,9 @@ def generate_synthetic_dataset(  # noqa: PLR0913  # preserve legacy keyword comp
 ) -> None:
     """Generate synthetic grasp dataset from YCB meshes."""
     seed = options.pop("seed", SEED)
+    max_workers = options.pop("max_workers", 1)
+    if not isinstance(max_workers, int) or isinstance(max_workers, bool) or max_workers <= 0:
+        raise ValueError("max_workers must be a positive integer")
     sampling = {
         "num_samples": options.pop("num_samples", NUM_SAMPLES),
         "oversample_factor": options.pop("oversample_factor", OVERSAMPLE_FACTOR),
@@ -621,7 +661,8 @@ def generate_synthetic_dataset(  # noqa: PLR0913  # preserve legacy keyword comp
         "sim_validate_require_ik": options.pop("sim_validate_require_ik", SIM_VALIDATE_REQUIRE_IK),
         "sim_validate_min_contacts": options.pop("sim_validate_min_contacts", SIM_VALIDATE_MIN_CONTACTS),
         "sim_validate_fallback_analytical": options.pop(
-            "sim_validate_fallback_analytical", SIM_VALIDATE_FALLBACK_ANALYTICAL,
+            "sim_validate_fallback_analytical",
+            SIM_VALIDATE_FALLBACK_ANALYTICAL,
         ),
         "table_xml": table_xml,
     }
@@ -644,9 +685,6 @@ def generate_synthetic_dataset(  # noqa: PLR0913  # preserve legacy keyword comp
     )
 
     required_set = set(required_objects or [])
-    failures: list[str] = []
-    quality_records: list[dict[str, object]] = []
-
     output_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
     gripper_point_cloud = default_gripper_point_cloud()
@@ -664,10 +702,19 @@ def generate_synthetic_dataset(  # noqa: PLR0913  # preserve legacy keyword comp
         "gripper_point_cloud": gripper_point_cloud,
         "object_to_world": make_transform(np.eye(3, dtype=np.float64), object_position),
     }
-    for name in list_ycb_objects(ycb_root):
-        if required_set and name not in required_set:
-            continue
-        _process_one_object(name, shared, sampling, grasp, simulation, required_set, quality_records, failures)
+    object_names = [name for name in list_ycb_objects(ycb_root) if not required_set or name in required_set]
+    quality_records, failures = asyncio.run(
+        _process_objects_concurrently(
+            object_names,
+            shared,
+            sampling,
+            grasp,
+            simulation,
+            required_set,
+            int(seed),
+            max_workers,
+        ),
+    )
 
     if quality_report_path is not None:
         quality_report_path.parent.mkdir(parents=True, exist_ok=True)

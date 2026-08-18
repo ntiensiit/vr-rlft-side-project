@@ -27,6 +27,7 @@ script:
   num_grasps: ${synthetic.num_grasps}
   num_samples: ${synthetic.num_samples}
   num_simulation_steps: ${synthetic.num_simulation_steps}
+  max_workers: ${synthetic.max_workers}
   oversample_extra: ${synthetic.oversample_extra}
   oversample_factor: ${synthetic.oversample_factor}
   relaxed_antipodal_dot: ${synthetic.relaxed_antipodal_dot}
