@@ -33,7 +33,17 @@ _EE_BODY_CANDIDATES = (
 
 
 def _resolve_end_effector_body_name(model: mujoco.MjModel, robot_model: dict[str, object]) -> str:
-    """Return the end-effector body name for FK/IK."""
+    """Resolve the name of the end-effector body used for FK and IK.
+
+    Args:
+        model: MuJoCo model whose body names are searched.
+        robot_model: Robot model dictionary returned by ``load_robot_model``.
+
+    Returns:
+        The end-effector body name. When ``robot_model`` does not provide one,
+        the first registered candidate body name is used, falling back to the
+        last body in the model.
+    """
     ee_body_name: Any = robot_model.get("end_effector_body_name")
     if ee_body_name is None:
         for name in _EE_BODY_CANDIDATES:
@@ -161,6 +171,19 @@ def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematic
     local_data = mujoco.MjData(model)
 
     def fk(joints: JointConfiguration) -> RigidTransform:
+        """Compute forward kinematics for a given joint configuration.
+
+        Args:
+            joints: Joint configuration array with shape ``(model.nq,)``.
+
+        Returns:
+            The end-effector transform in the world frame with shape ``(4, 4)``.
+
+        Raises:
+            TypeError: If ``joints`` is not a numpy array.
+            ValueError: If ``joints`` has the wrong shape or contains non-finite
+                values.
+        """
         if not isinstance(joints, np.ndarray):
             msg = "joints must be a numpy array"
             raise TypeError(msg)
@@ -183,7 +206,17 @@ def build_forward_kinematics(robot_model: dict[str, object]) -> ForwardKinematic
 
 
 def _validate_ik_inputs(target_pose: np.ndarray, initial_joints: np.ndarray, model: mujoco.MjModel) -> None:
-    """Validate an IK target pose and initial joint configuration."""
+    """Validate an IK target pose and initial joint configuration.
+
+    Args:
+        target_pose: Desired end-effector transform with shape ``(4, 4)``.
+        initial_joints: Initial joint configuration with shape ``(model.nq,)``.
+        model: MuJoCo model defining the expected joint dimension ``nq``.
+
+    Raises:
+        ValueError: If ``target_pose`` is not a finite ``(4, 4)`` array, or if
+            ``initial_joints`` is not a finite array matching ``model.nq``.
+    """
     if not isinstance(target_pose, np.ndarray) or target_pose.shape != SE3_MATRIX_SHAPE:
         msg = "target_pose must be a (4, 4) numpy array"
         raise ValueError(msg)
@@ -199,14 +232,27 @@ def _validate_ik_inputs(target_pose: np.ndarray, initial_joints: np.ndarray, mod
 
 
 def _ee_pose(local_data: mujoco.MjData, body_id: int) -> np.ndarray:
-    """Read the current pose of a body from simulation data."""
+    """Read the current pose of a body from simulation data.
+
+    Args:
+        local_data: MuJoCo data holding the current body transforms.
+        body_id: Index of the body whose pose is read.
+
+    Returns:
+        The body's world-frame transform with shape ``(4, 4)``.
+    """
     curr_pos = local_data.xpos[body_id]
     curr_rot = local_data.xmat[body_id].reshape(3, 3)
     return make_transform(curr_rot, curr_pos)
 
 
 def _clamp_joint_limits(q: np.ndarray, model: mujoco.MjModel) -> None:
-    """Clamp hinge/slide joint positions to their configured ranges in place."""
+    """Clamp hinge/slide joint positions to their configured ranges in place.
+
+    Args:
+        q: Joint position vector to clamp in place.
+        model: MuJoCo model defining joint types and configurable ranges.
+    """
     for j in range(model.njnt):
         if model.jnt_limited[j] and model.jnt_type[j] in [
             mujoco.mjtJoint.mjJNT_HINGE,
@@ -263,6 +309,19 @@ def build_inverse_kinematics(  # noqa: C901, PLR0915
         lower[qadr], upper[qadr] = model.jnt_range[joint_id]
 
     def ik(target_pose: RigidTransform, initial_joints: JointConfiguration) -> JointConfiguration:
+        """Solve inverse kinematics for the target pose using damped least squares.
+
+        Args:
+            target_pose: Desired end-effector transform with shape ``(4, 4)``.
+            initial_joints: Initial joint configuration with shape ``(model.nq,)``.
+
+        Returns:
+            A joint configuration that achieves ``target_pose`` to within the
+            configured tolerance.
+
+        Raises:
+            ValueError: If the solver fails to converge within tolerance.
+        """
         _validate_ik_inputs(target_pose, initial_joints, model)
 
         q = np.copy(initial_joints)
@@ -305,6 +364,14 @@ def build_inverse_kinematics(  # noqa: C901, PLR0915
             # state with a bounded trust-region least-squares solve so valid
             # generated grasps are not mislabeled as IK failures.
             def residual(candidate: np.ndarray) -> np.ndarray:
+                """Compute the pose error residual for bounded least-squares IK.
+
+                Args:
+                    candidate: Joint configuration candidate with shape ``(model.nq,)``.
+
+                Returns:
+                    The 6D SE(3) pose error vector for ``candidate``.
+                """
                 local_data.qpos[:] = candidate
                 mujoco.mj_forward(model, local_data)
                 return _se3_pose_error(target_pose, _ee_pose(local_data, body_id))

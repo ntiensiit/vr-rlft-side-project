@@ -358,7 +358,24 @@ def build_top_down_pick_trajectory(  # noqa: C901, PLR0913, PLR0915, PLR0917
             joint_lower[qadr], joint_upper[qadr] = robot_mj_model.jnt_range[joint_id]
 
     def solve_target(target: np.ndarray, initial: np.ndarray) -> np.ndarray:
+        """Solve bounded least-squares IK for a single target hand pose.
+
+        Args:
+            target: The desired hand pose in the world frame.
+            initial: The initial joint configuration guess.
+
+        Returns:
+            The resolved joint configuration.
+        """
         def residual(q: np.ndarray) -> np.ndarray:
+            """Compute the pose error residual for a given joint configuration.
+
+            Args:
+                q: The joint configuration to evaluate.
+
+            Returns:
+                A flat array of positional and rotational residuals.
+            """
             local_data = mujoco.MjData(robot_mj_model)
             local_data.qpos[:nq_robot] = q
             mujoco.mj_forward(robot_mj_model, local_data)
@@ -440,6 +457,14 @@ def _robot_contacts_table(mj_model: mujoco.MjModel, mj_data: mujoco.MjData) -> b
         return False
 
     def is_robot_body(body_id: int) -> bool:
+        """Check if a given body ID belongs to the robot.
+
+        Args:
+            body_id: The MuJoCo body identifier to check.
+
+        Returns:
+            True if the body is part of the robot, False otherwise.
+        """
         current = body_id
         while current > 0:
             if current == robot_root_id:

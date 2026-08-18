@@ -174,6 +174,16 @@ def validate_inference_candidates(  # noqa: PLR0913
         )
 
     def values(*, key: str, default: object, dtype: object) -> np.ndarray:
+        """Extract an array of values from the simulation outcomes.
+
+        Args:
+            key: The dictionary key to extract from each outcome.
+            default: The fallback value if the key is missing.
+            dtype: The NumPy data type for the resulting array.
+
+        Returns:
+            A NumPy array containing the extracted values.
+        """
         return np.asarray([outcome.get(key, default) for outcome in outcomes], dtype=dtype)
 
     validation = np.asarray(validated, dtype=np.bool_)

@@ -69,6 +69,14 @@ def build_ycb_object_name_classifier(
         vocabularies[name] = set(node.counter.keys())
 
     def classify(query: str) -> str | None:
+        """Classify a query string against the known YCB vocabulary.
+
+        Args:
+            query: The free-form YCB object name to look up.
+
+        Returns:
+            The canonical YCB directory name if matched, else None.
+        """
         query_tokens = set(tokenize_ycb_object_name(query))
         if not query_tokens:
             return None

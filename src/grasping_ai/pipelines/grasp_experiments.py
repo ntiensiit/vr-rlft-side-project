@@ -24,6 +24,16 @@ MIN_CONSECUTIVE_BILATERAL_CONTACT_STEPS = 2
 
 
 def _load_candidate(path: Path, object_id: str, index: int) -> np.ndarray:
+    """Load a specific grasp candidate pose from an archive.
+
+    Args:
+        path: Path to the serialized grasp dataset.
+        object_id: The identifier of the target object.
+        index: The index of the grasp candidate to load.
+
+    Returns:
+        The grasp pose array in the object frame.
+    """
     sample = load_grasp_sample(path)
     if sample.get("object_id") != object_id:
         raise ValueError(f"grasp archive object_id {sample.get('object_id')!r} does not match {object_id!r}")
@@ -44,6 +54,17 @@ def _load_candidate(path: Path, object_id: str, index: int) -> np.ndarray:
 
 
 def _make_env(robot_xml: Path, ycb_root: Path, table_xml: Path, object_id: str) -> MuJoCoGraspingEnv:
+    """Instantiate a MuJoCo grasping environment for the experiment.
+
+    Args:
+        robot_xml: Path to the robot MJCF file.
+        ycb_root: Path to the root directory containing YCB object assets.
+        table_xml: Path to the table MJCF file.
+        object_id: Identifier for the YCB object to load.
+
+    Returns:
+        The configured MuJoCoGraspingEnv instance.
+    """
     object_xml = find_ycb_mjcf(resolve_ycb_object_directory(ycb_root, object_id))
     return MuJoCoGraspingEnv(
         build_scene_xml(robot_xml, object_xml, table_xml, object_id),
@@ -55,6 +76,16 @@ def _make_env(robot_xml: Path, ycb_root: Path, table_xml: Path, object_id: str) 
 
 
 def _world_grasp(env: MuJoCoGraspingEnv, object_id: str, object_grasp: np.ndarray) -> np.ndarray:
+    """Convert an object-frame grasp pose into the world frame.
+
+    Args:
+        env: The instantiated grasping environment.
+        object_id: The identifier of the target object.
+        object_grasp: The grasp pose in the object's local frame.
+
+    Returns:
+        The grasp pose in the world frame.
+    """
     return read_body_pose(env._state, object_id) @ object_grasp  # noqa: SLF001 - physical scene state is read-only
 
 
@@ -66,6 +97,19 @@ def _has_sustained_bilateral_contact(max_consecutive_steps: int) -> bool:
 def _rollout(  # noqa: PLR0913, PLR0917
     env: MuJoCoGraspingEnv, runner: object, obs: np.ndarray, object_id: str, max_steps: int, lift_threshold: float,
 ) -> dict[str, object]:
+    """Execute a single policy rollout in the environment and record statistics.
+
+    Args:
+        env: The grasping environment.
+        runner: The policy runner to query for actions.
+        obs: The initial observation from the environment.
+        object_id: The identifier of the grasped object.
+        max_steps: The maximum number of steps to run the episode.
+        lift_threshold: The vertical displacement required to consider the lift a success.
+
+    Returns:
+        A dictionary containing rollout metrics and success criteria.
+    """
     initial_height = float(read_body_pose(env._state, object_id)[2, 3])  # noqa: SLF001
     max_height = initial_height
     max_contact_count = 0.0

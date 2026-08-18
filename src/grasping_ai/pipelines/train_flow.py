@@ -66,6 +66,15 @@ def build_flow_training_step(
         generator = torch.Generator(device=device_obj).manual_seed(seed)
 
     def flow_forward(point_clouds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """Execute a forward pass of the flow model and compute the loss.
+
+        Args:
+            point_clouds: Batched point clouds with shape (B, N, 3).
+            targets: Batched target grasps.
+
+        Returns:
+            A scalar tensor representing the mean flow-matching loss.
+        """
         pcs = point_clouds
         x_1 = targets
         batch_size_val = x_1.shape[0]

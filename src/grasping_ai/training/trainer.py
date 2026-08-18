@@ -103,6 +103,15 @@ def build_training_step(
         generator = torch.Generator(device=device_obj).manual_seed(seed)
 
     def diffusion_forward(cond: torch.Tensor, x_0: torch.Tensor) -> torch.Tensor:
+        """Compute the diffusion loss for a batch of data.
+
+        Args:
+            cond: The conditioning tensor for the diffusion model.
+            x_0: The target tensor at timestep 0.
+
+        Returns:
+            The scalar loss tensor for the current batch.
+        """
         batch_size_val = x_0.shape[0]
 
         num_steps = DEFAULT_DIFFUSION_SCHEDULE.num_steps

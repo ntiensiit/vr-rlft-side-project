@@ -15,18 +15,10 @@ dist/
 .env
 wandb/
 
-artifacts/checkpoints/*.pt
-artifacts/exports/*.npy
-artifacts/exports/tensorboard/
-artifacts/reports/*.jsonl
-artifacts/manifest.jsonl
-artifacts/rl_inference_smoke.py
-data/processed/*.npz
-data/processed/index.json
-data/processed/ycb_mjcf/
-data/observations/
-data/interim/*
-!data/interim/.gitkeep
+artifacts/*
+data/*
+!artifacts/.gitkeep
+!data/.gitkeep
 
 # Logging and Tracking
 logs/*

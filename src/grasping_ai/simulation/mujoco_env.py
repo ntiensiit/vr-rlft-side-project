@@ -103,6 +103,15 @@ def create_simulation(model: object) -> tuple[object, SimulationStep, ContactRep
     }
 
     def step(dt: float) -> None:
+        """Advance the MuJoCo simulation by one time step.
+
+        Args:
+            dt: Simulation time step in seconds.
+
+        Raises:
+            TypeError: If ``dt`` is not a float or integer.
+            ValueError: If ``dt`` is non-positive or non-finite.
+        """
         if not isinstance(dt, (int, float, np.floating, np.integer)):
             msg = "dt must be a float or integer"
             raise TypeError(msg)
@@ -119,6 +128,12 @@ def create_simulation(model: object) -> tuple[object, SimulationStep, ContactRep
         mujoco.mj_step(current_model, current_data)
 
     def contacts() -> list[dict[str, np.ndarray]]:
+        """Report the contacts currently active in the MuJoCo data.
+
+        Returns:
+            A list of contact reports, each containing ``position``, ``normal``,
+            ``force``, and the two involved ``body_names``.
+        """
         current_model: Any = state["model"]
         current_data: Any = state["data"]
         reports = []
@@ -439,6 +454,14 @@ class MuJoCoGraspingEnv(gym.Env):
         Only the robot prefix is stored. Object freejoint coordinates remain
         under MuJoCo's reset and contact dynamics, rather than being copied
         from a grasp candidate or artificially moved with the robot.
+
+        Args:
+            joint_positions: Robot joint positions with shape ``(N,)`` for
+                ``1 <= N <= model.nq``.
+
+        Raises:
+            ValueError: If ``joint_positions`` has an invalid shape or contains
+                non-finite values.
         """
         joint_positions = np.asarray(joint_positions, dtype=np.float64)
         state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
@@ -456,6 +479,17 @@ class MuJoCoGraspingEnv(gym.Env):
         This supports pose-conditioned execution experiments.  In particular,
         the object freejoint remains owned by MuJoCo and is never teleported
         to manufacture a grasp.
+
+        Args:
+            joint_positions: Robot joint positions with shape ``(N,)`` for
+                ``1 <= N <= model.nq``.
+
+        Returns:
+            The resulting observation vector.
+
+        Raises:
+            ValueError: If ``joint_positions`` has an invalid shape or contains
+                non-finite values.
         """
         joint_positions = np.asarray(joint_positions, dtype=np.float64)
         state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
@@ -473,7 +507,11 @@ class MuJoCoGraspingEnv(gym.Env):
         return self._get_observation()
 
     def _initialize_control_target(self) -> None:
-        """Initialize actuator targets from the current physical robot pose."""
+        """Initialize actuator targets from the current physical robot pose.
+
+        Only meaningful in ``normalized_delta`` control mode; a no-op otherwise.
+        The computed targets are stored and written to the actuators.
+        """
         if self._control_mode != "normalized_delta":
             return
         state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
@@ -491,7 +529,15 @@ class MuJoCoGraspingEnv(gym.Env):
         set_actuator_controls(self._state, target)
 
     def _action_to_control(self, action: np.ndarray) -> np.ndarray:
-        """Convert a normalized incremental action into actuator targets."""
+        """Convert a normalized incremental action into actuator targets.
+
+        Args:
+            action: Normalized action in ``[-1, 1]`` whose scaled increments
+                are applied to the current control target.
+
+        Returns:
+            The resulting actuator control vector.
+        """
         if self._control_mode == "direct":
             return action
         if self._control_target is None:
@@ -652,14 +698,25 @@ class MuJoCoGraspingEnv(gym.Env):
         return contact_count > 0.0
 
     def _fingertip_object_contacts(self) -> tuple[float, bool]:
-        """Return opposed Panda fingertip contact state for the tracked object."""
+        """Return opposed Panda fingertip contact state for the tracked object.
+
+        Returns:
+            A tuple ``(contact_count, bilateral_contact)`` where
+            ``contact_count`` is the number of fingertips in contact and
+            ``bilateral_contact`` indicates opposed fingertip contact. Both are
+            zero/false when no object is tracked.
+        """
         if self._object_name is None:
             return 0.0, False
         state_dict: dict[str, Any] = self._state  # type: ignore[assignment]
         return panda_fingertip_object_contacts(state_dict["model"], state_dict["data"], self._object_name)
 
     def _hand_object_distance(self) -> float:
-        """Return the world-frame distance from Panda hand to object center."""
+        """Return the world-frame distance from Panda hand to object center.
+
+        Returns:
+            The Euclidean distance, or ``0.0`` when no object is tracked.
+        """
         if self._object_name is None:
             return 0.0
         hand_pose = read_body_pose(self._state, "hand")
@@ -667,7 +724,12 @@ class MuJoCoGraspingEnv(gym.Env):
         return float(np.linalg.norm(hand_pose[:3, 3] - object_pose[:3, 3]))
 
     def _fingertip_object_distances(self) -> tuple[float, float]:
-        """Return center distances from each Panda finger to the object."""
+        """Return center distances from each Panda finger to the object.
+
+        Returns:
+            A tuple of ``(left, right)`` finger-to-object Euclidean distances,
+            or ``(0.0, 0.0)`` when no object is tracked.
+        """
         if self._object_name is None:
             return 0.0, 0.0
         object_position = read_body_pose(self._state, self._object_name)[:3, 3]
@@ -679,11 +741,20 @@ class MuJoCoGraspingEnv(gym.Env):
         )
 
     def _max_fingertip_object_distance(self) -> float:
-        """Return the worse of the two finger-to-object distances."""
+        """Return the worse of the two finger-to-object distances.
+
+        Returns:
+            The larger of the left/right finger-to-object distances.
+        """
         return max(self._fingertip_object_distances())
 
     def _task_observation(self) -> np.ndarray:
-        """Build compact geometric features for candidate-conditioned RL."""
+        """Build compact geometric features for candidate-conditioned RL.
+
+        Returns:
+            A float32 feature vector of shape ``(TASK_OBSERVATION_SIZE,)``,
+            or zeros when no object is tracked.
+        """
         if self._object_name is None:
             return np.zeros(TASK_OBSERVATION_SIZE, dtype=np.float32)
         hand_position = read_body_pose(self._state, "hand")[:3, 3]

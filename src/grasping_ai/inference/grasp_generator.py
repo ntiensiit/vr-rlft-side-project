@@ -98,6 +98,16 @@ def build_diffusion_grasp_generator(
     sampler = build_diffusion_sampler()
 
     def generator(point_cloud: np.ndarray, num_grasps: int = NUM_GRASPS) -> np.ndarray:
+        """Generate grasp poses from a point cloud using the diffusion model.
+
+        Args:
+            point_cloud: Object point cloud with shape ``(N, 3)``.
+            num_grasps: Number of candidate grasps to sample.
+
+        Returns:
+            Grasp transforms with shape ``(K, 4, 4)`` represented in the world
+            frame.
+        """
         pc_tensor = prepare_point_cloud_tensor(point_cloud, device)
 
         with torch.no_grad():
@@ -150,6 +160,16 @@ def build_flow_grasp_generator(
     integrator = build_flow_integrator(num_flow_steps)
 
     def generator(point_cloud: np.ndarray, num_grasps: int = NUM_GRASPS) -> np.ndarray:
+        """Generate grasp poses from a point cloud using the flow model.
+
+        Args:
+            point_cloud: Object point cloud with shape ``(N, 3)``.
+            num_grasps: Number of candidate grasps to sample.
+
+        Returns:
+            Grasp transforms with shape ``(K, 4, 4)`` represented in the world
+            frame.
+        """
         pc_tensor = prepare_point_cloud_tensor(point_cloud, device)
 
         with torch.no_grad():

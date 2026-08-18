@@ -51,6 +51,14 @@ def build_conditioned_dataloader(
     device_obj = torch.device(device)
 
     def collate(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor]:
+        """Collate and encode a batch of point clouds and targets.
+
+        Args:
+            batch: A list of (point_cloud, target) tuples.
+
+        Returns:
+            A tuple of (encoded_conditioning, batched_targets) tensors.
+        """
         point_clouds, targets = torch.utils.data.default_collate(batch)
         conditioning, _, _ = encode_grasp_conditioning(encoder, point_clouds.to(device_obj))
         return conditioning, targets.to(device_obj)

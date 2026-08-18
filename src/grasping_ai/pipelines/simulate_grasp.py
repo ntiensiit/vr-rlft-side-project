@@ -83,6 +83,14 @@ def _robot_contacts_table(mj_model: mujoco.MjModel, mj_data: mujoco.MjData) -> b
         return False
 
     def is_robot_body(body_id: int) -> bool:
+        """Check if a given body ID belongs to the robot.
+
+        Args:
+            body_id: The MuJoCo body identifier to check.
+
+        Returns:
+            True if the body is part of the robot, False otherwise.
+        """
         current = body_id
         while current > 0:
             if current == robot_root_id:
@@ -563,6 +571,12 @@ def simulate_grasp(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917  # public 
     max_object_height = initial_height
 
     def step_and_check(command: np.ndarray, step_dt: float) -> None:
+        """Step the simulation and check for table collisions and height gains.
+
+        Args:
+            command: The actuator control command array.
+            step_dt: The timestep duration.
+        """
         nonlocal max_object_height, table_collision_free
         scene.step(command, step_dt)
         table_collision_free = table_collision_free and not _robot_contacts_table(mj_model, mj_data)
@@ -579,6 +593,14 @@ def simulate_grasp(  # noqa: C901, PLR0912, PLR0913, PLR0915, PLR0917  # public 
     contact_width = float("nan")
 
     def capture_contact_hold_command(base_command: np.ndarray) -> np.ndarray:
+        """Capture the current gripper width and build a command to hold it.
+
+        Args:
+            base_command: The underlying close command being executed.
+
+        Returns:
+            A new command array configured to hold the current contact width.
+        """
         nonlocal contact_width
         held = np.asarray(base_command, dtype=np.float64).copy()
         actual_width = float(np.sum(mj_data.qpos[q_target.shape[0] - 2 : q_target.shape[0]]))

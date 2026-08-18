@@ -37,7 +37,21 @@ def set_freejoint_body_pose(
     position: np.ndarray,
     quaternion_wxyz: np.ndarray | None = None,
 ) -> None:
-    """Place a freejoint body at a world-frame pose and update kinematics."""
+    """Place a freejoint body at a world-frame pose and update kinematics.
+
+    Args:
+        mj_model: MuJoCo model containing the body.
+        mj_data: MuJoCo data whose qpos and pose are updated.
+        body_name: Name of the freejoint body to place.
+        position: World-frame position with shape ``(3,)``.
+        quaternion_wxyz: Optional unit quaternion with shape ``(4,)`` in
+            ``(w, x, y, z)`` order. When ``None`` the current orientation is
+            kept.
+
+    Raises:
+        ValueError: If ``position`` or ``quaternion_wxyz`` are invalid, the
+            body does not exist, or the body has no freejoint.
+    """
     if position.shape != (3,) or not np.isfinite(position).all():
         msg = "position must be a finite array with shape (3,)"
         raise ValueError(msg)
@@ -70,7 +84,22 @@ def place_freejoint_body_on_surface(
     body_name: str,
     support_geom_name: str = "table_top",
 ) -> float:
-    """Place a freejoint body's lowest compiled geom point on a support geom."""
+    """Place a freejoint body's lowest compiled geom point on a support geom.
+
+    Args:
+        mj_model: MuJoCo model containing the body and support geom.
+        mj_data: MuJoCo data used to read geometry poses.
+        body_name: Name of the freejoint body to place.
+        support_geom_name: Name of the support geom whose top surface is used.
+
+    Returns:
+        The final world-frame z-coordinate of the body's lowest geometry point
+        after placement.
+
+    Raises:
+        ValueError: If the body or support geom does not exist, or the body has
+            no geometry.
+    """
     body_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_BODY, body_name)
     support_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_GEOM, support_geom_name)
     if body_id == -1:
@@ -94,6 +123,11 @@ def place_freejoint_body_on_surface(
         raise ValueError(f"Body '{body_name}' has no geometry")
 
     def bottom_height() -> float:
+        """Compute the lowest z-coordinate of the body geometry.
+
+        Returns:
+            The minimum world-frame z-coordinate across all of the body's geoms.
+        """
         heights = []
         for geom_id in object_geom_ids:
             if mj_model.geom_type[geom_id] == mujoco.mjtGeom.mjGEOM_MESH:
@@ -155,6 +189,15 @@ def _xml_with_absolute_meshdir(xml_path: Path, out_dir: Path) -> Path:
     text = xml_path.read_text(encoding="utf-8")
 
     def _replace(match: re.Match[str]) -> str:
+        """Rebase a ``meshdir`` attribute to an absolute path.
+
+        Args:
+            match: Regex match capturing a ``meshdir`` attribute value.
+
+        Returns:
+            A ``meshdir="<path>"`` attribute string whose path is absolute,
+            resolved against the original XML's parent directory.
+        """
         raw = match.group(1)
         meshdir = Path(raw)
         if not meshdir.is_absolute():
