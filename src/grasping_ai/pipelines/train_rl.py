@@ -102,6 +102,16 @@ def configure_grasp_conditioned_reset(  # noqa: PLR0913, PLR0917
     if pregrasp_distance <= 0.0:
         raise ValueError("pregrasp_distance must be positive")
     object_grasp = _load_validated_object_grasp(grasp_file, object_id, grasp_index)
+    # The grasp candidates are generated and validated from the robot's
+    # declared home pose.  MuJoCo otherwise resets an assembled scene to
+    # zero qpos, which is a poor IK basin for the side grasps used here.
+    robot = load_robot_model(str(robot_xml_path))
+    model = robot["model"]
+    if int(model.nkey) > 0:
+        q_home = np.asarray(model.key_qpos[0, : model.nq], dtype=np.float64)
+    else:
+        q_home = np.zeros(model.nq, dtype=np.float64)
+    env.set_reset_robot_configuration(q_home)
     env.reset()
     state = env._state  # noqa: SLF001 - read-only object pose after physical table placement
     object_world = mujoco_env.read_body_pose(state, object_id)
@@ -110,7 +120,6 @@ def configure_grasp_conditioned_reset(  # noqa: PLR0913, PLR0917
     pregrasp_contact[:3, 3] -= pregrasp_distance * contact_world[:3, 2]
     hand_target = transform_grasp_pose(pregrasp_contact, invert_transform(panda_hand_to_contact_transform()))
 
-    robot = load_robot_model(str(robot_xml_path))
     q0 = np.asarray(state["data"].qpos[: robot["model"].nq], dtype=np.float64)
     ik = build_inverse_kinematics(robot, max_iterations=500, tolerance=1e-3)
     q_pregrasp = solve_inverse_kinematics(ik, hand_target, q0)
